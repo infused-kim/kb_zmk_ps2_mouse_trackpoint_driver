@@ -1,0 +1,7 @@
+# Copyright (c) 2017 Linaro Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
+config PS2_GPIO
+	bool "GPIO bit banging PS/2 support"
+	help
+	  Enable software driven (bit banging) PS/2 support using GPIO pins
