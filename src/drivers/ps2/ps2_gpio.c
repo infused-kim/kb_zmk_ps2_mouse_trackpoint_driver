@@ -18,6 +18,7 @@
 #define LOG_LEVEL CONFIG_PS2_LOG_LEVEL
 LOG_MODULE_REGISTER(ps2_gpio);
 
+#define PS2_GPIO_TIMEOUT_READ K_SECONDS(2)
 #define PS2_GPIO_POS_START 0
 #define PS2_GPIO_POS_PARITY 9
 #define PS2_GPIO_POS_STOP 10
@@ -43,7 +44,10 @@ struct ps2_gpio_data {
 	const struct device *sda_gpio;	/* GPIO used for PS2 SDA line */
 
 	struct gpio_callback scl_cb_data;
+
 	ps2_callback_t callback_isr;
+	bool callback_enabled;
+	struct k_fifo data_queue;
 
 	ps2_gpio_mode mode;
 
@@ -70,6 +74,7 @@ static struct ps2_gpio_data ps2_gpio_data = {
 	.sda_gpio = NULL,
 
     .callback_isr = NULL,
+	.callback_enabled = false,
 	.mode = PS2_GPIO_MODE_READ,
 
 	.cur_read_byte = 0x0,
@@ -154,10 +159,28 @@ bool ps2_gpio_check_parity(uint8_t byte, int parity_bit_val)
 	return 1;  // Match
 }
 
+void ps2_gpio_empty_data_queue()
+{
+	struct ps2_gpio_data *data = &ps2_gpio_data;
+	while(k_fifo_get(&data->data_queue, K_NO_WAIT) != NULL) {
+		// Do nothing except call k_fifo_get() until it's empty.
+	}
+}
+
 void ps2_gpio_process_received_byte(uint8_t byte)
 {
-
 	LOG_INF("Successfully received value: 0x%x", byte);
+
+	struct ps2_gpio_data *data = &ps2_gpio_data;
+	if(data->callback_isr != NULL && data->callback_enabled) {
+
+		data->callback_isr(NULL, byte);
+	} else {
+
+		// If no callback is set, we add the data to a fifo queue
+		// that can be read later with the read using `ps2_read`
+		k_fifo_put(&data->data_queue, &byte);
+	}
 }
 
 /*
@@ -232,13 +255,12 @@ void scl_interrupt_handler(const struct device *dev,
 /*
  * Zephyr PS/2 driver interface
  */
+static int ps2_gpio_enable_callback(const struct device *dev);
 
 static int ps2_gpio_configure(const struct device *dev,
 			     ps2_callback_t callback_isr)
 {
 	LOG_ERR("In ps2_gpio_configure");
-
-	// const struct ps2_gpio_config *config = dev->config;
 	struct ps2_gpio_data *data = dev->data;
 
 	if (!callback_isr) {
@@ -246,6 +268,29 @@ static int ps2_gpio_configure(const struct device *dev,
 	}
 
 	data->callback_isr = callback_isr;
+	ps2_gpio_enable_callback(dev);
+
+	return 0;
+}
+
+int ps2_gpio_read(const struct device *dev, uint8_t *value)
+{
+	// TODO: Add a way to not return old queue items
+	// Maybe only bytes that were received within past 10 seconds.
+	LOG_INF("In ps2_gpio_read...");
+
+	struct ps2_gpio_data *data = dev->data;
+
+	uint8_t *queue_byte;
+	queue_byte = k_fifo_get(&data->data_queue, PS2_GPIO_TIMEOUT_READ);
+	if(queue_byte == NULL) {
+		LOG_ERR("ps2_gpio_read: Fifo timed out...");
+
+		return -ETIMEDOUT;
+	}
+
+	LOG_DBG("ps2_gpio_read: Returning 0x%x", *queue_byte);
+	*value =  *queue_byte;
 
 	return 0;
 }
@@ -257,26 +302,39 @@ static int ps2_gpio_write(const struct device *dev, uint8_t value)
 	return 0;
 }
 
-static int ps2_gpio_inhibit_interface(const struct device *dev)
+static int ps2_gpio_disable_callback(const struct device *dev)
 {
-	LOG_ERR("Not implemented: ps2_gpio_inhibit_interface");
+	struct ps2_gpio_data *data = dev->data;
+
+	// Make sure there are no stale items in the data queue
+	// from before the callback was disabled.
+	ps2_gpio_empty_data_queue();
+
+	data->callback_enabled = false;
+
+	LOG_INF("Disabled PS2 callback.");
 
 	return 0;
 }
 
-static int ps2_gpio_enable_interface(const struct device *dev)
+static int ps2_gpio_enable_callback(const struct device *dev)
 {
-	LOG_ERR("Not implemented: ps2_gpio_enable_interface");
+	struct ps2_gpio_data *data = dev->data;
+	data->callback_enabled = true;
+
+	LOG_INF("Enabled PS2 callback.");
+
+	ps2_gpio_empty_data_queue();
 
 	return 0;
 }
 
 static const struct ps2_driver_api ps2_gpio_driver_api = {
 	.config = ps2_gpio_configure,
-	.read = NULL,
+	.read = ps2_gpio_read,
 	.write = ps2_gpio_write,
-	.disable_callback = ps2_gpio_inhibit_interface,
-	.enable_callback = ps2_gpio_enable_interface,
+	.disable_callback = ps2_gpio_disable_callback,
+	.enable_callback = ps2_gpio_enable_callback,
 };
 
 /*
@@ -348,6 +406,8 @@ static int ps2_gpio_init(const struct device *dev)
 	}
 
 	LOG_INF("Finished configuring ps2_gpio.");
+
+	k_fifo_init(&data->data_queue);
 
 	return 0;
 }
