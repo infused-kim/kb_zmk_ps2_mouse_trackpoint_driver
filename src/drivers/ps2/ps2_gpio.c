@@ -27,6 +27,8 @@ LOG_MODULE_REGISTER(ps2_gpio);
 #define PS2_GPIO_GET_BIT(data, bit_pos) ( (data >> bit_pos) & 0x1 )
 #define PS2_GPIO_SET_BIT(data, bit_val, bit_pos) ( data |= (bit_val) << bit_pos )
 
+void ps2_gpio_write_byte(uint8_t byte);
+
 typedef enum
 {
     PS2_GPIO_MODE_READ,
@@ -47,8 +49,7 @@ struct ps2_gpio_data {
 	const struct device *scl_gpio;	/* GPIO used for PS2 SCL line */
 	const struct device *sda_gpio;	/* GPIO used for PS2 SDA line */
 
-	struct gpio_callback scl_cb_falling_data;
-	struct gpio_callback scl_cb_rising_data;
+	struct gpio_callback scl_cb_data;
 
 	ps2_callback_t callback_isr;
 	bool callback_enabled;
@@ -130,17 +131,10 @@ void ps2_gpio_set_sda(int state)
 	gpio_pin_set(data->scl_gpio, config->scl_pin, state);
 }
 
-int ps2_gpio_send_byte(uint8_t byte)
-{
-	LOG_ERR("Not implemented ps2_gpio_send_byte");
-
-	return -1;
-}
-
-int ps2_gpio_send_cmd_resend()
+void ps2_gpio_send_cmd_resend()
 {
 	uint8_t cmd = 0xfe;
-	return ps2_gpio_send_byte(cmd);
+	ps2_gpio_write_byte(cmd);
 }
 
 void ps2_gpio_empty_data_queue()
@@ -181,15 +175,13 @@ void ps2_gpio_process_received_byte(uint8_t byte)
 	}
 }
 
-int ps2_gpio_abort_read()
+void ps2_gpio_abort_read()
 {
 	struct ps2_gpio_data *data = &ps2_gpio_data;
 
-	int err = ps2_gpio_send_cmd_resend();
+	ps2_gpio_send_cmd_resend();
 	data->cur_read_pos = 0;
 	data->cur_read_byte = 0x0;
-
-	return err;
 }
 
 bool ps2_gpio_check_parity(uint8_t byte, int parity_bit_val)
@@ -212,7 +204,7 @@ void ps2_gpio_scl_interrupt_falling_read_bit()
 	int sda_val = ps2_gpio_get_sda();
 
 	LOG_INF(
-		"ps2_gpio_scl_interrupt_handler called with position=%d; scl=%d; sda=%d",
+		"ps2_gpio_scl_interrupt_falling_read_bit called with position=%d; scl=%d; sda=%d",
 		data->cur_read_pos, scl_val, sda_val
 	);
 
@@ -310,11 +302,13 @@ void ps2_gpio_write_byte(uint8_t byte) {
 	ps2_gpio_set_scl(1);
 
 	// From here on the device takes over the control of the clock again
-	// Every time it is ready for the next bit to be trasmitted, it will
+	// Every time it is ready for the next bit to be trasmitted, it will...
 	//  - Pull the clock line low
 	//  - Which will trigger our `ps2_gpio_scl_interrupt_falling_handler`
 	//  - Which will call `ps2_gpio_scl_interrupt_falling_write_bit`
 	//  - Which will send the correct bit
+	//  - After all bits are sent `interrupt_rising_check_write_ack` is called
+	//  - Which verifies if the transaction was successful
 }
 
 void ps2_gpio_scl_interrupt_falling_write_bit()
@@ -326,9 +320,15 @@ void ps2_gpio_scl_interrupt_falling_write_bit()
 	// We just continue to send all the bits
 	struct ps2_gpio_data *data = &ps2_gpio_data;
 
+	if(data->cur_write_pos > PS2_GPIO_POS_STOP) {
+		// That part of the process is handled by
+		// ps2_gpio_scl_interrupt_rising_check_write_ack
+		return;
+	}
+
 	int data_bit = PS2_GPIO_GET_BIT(data->write_buffer, data->cur_write_pos);
 
-	LOG_INF("Sending pos=%d; bit=%d", data->cur_write_pos, data_bit);
+	LOG_INF("ps2_gpio_scl_interrupt_falling_write_bit called with pos=%d; bit=%d", data->cur_write_pos, data_bit);
 	ps2_gpio_set_sda(data_bit);
 
 	data->cur_write_pos += 1;
@@ -342,7 +342,7 @@ void ps2_gpio_scl_interrupt_rising_check_write_ack()
 	struct ps2_gpio_data *data = &ps2_gpio_data;
 
 	int ack_val = ps2_gpio_get_sda();
-	LOG_INF("Received ack packet: %d", ack_val);
+	LOG_INF("ps2_gpio_scl_interrupt_rising_check_write_ack ack_val: %d", ack_val);
 	if(ack_val == 0) {
 		LOG_INF("Sending was successful");
 	}
@@ -363,6 +363,8 @@ void ps2_gpio_scl_interrupt_falling_handler(const struct device *dev,
 {
 	const struct ps2_gpio_data *data = &ps2_gpio_data;
 
+	LOG_INF("ps2_gpio_scl_interrupt_falling_handler called with mode=%d",data->mode);
+
 	if(data->mode == PS2_GPIO_MODE_READ) {
 		ps2_gpio_scl_interrupt_falling_read_bit();
 	} else {
@@ -375,10 +377,32 @@ void ps2_gpio_scl_interrupt_rising_handler(const struct device *dev,
 						   				   uint32_t pins)
 {
 	const struct ps2_gpio_data *data = &ps2_gpio_data;
-	if(data->cur_write_pos == PS2_GPIO_POS_ACK) {
+	LOG_INF("ps2_gpio_scl_interrupt_rising_handler called with cur_write_pos=%d, mode=%d", data->cur_write_pos, data->mode);
+
+	if(data->mode == PS2_GPIO_MODE_WRITE &&
+	   data->cur_write_pos == PS2_GPIO_POS_ACK)
+	{
 		ps2_gpio_scl_interrupt_rising_check_write_ack();
 	}
 }
+
+void ps2_gpio_scl_interrupt_handler(const struct device *dev,
+						   			struct gpio_callback *cb,
+						   			uint32_t pins)
+{
+	const struct ps2_gpio_data *data = &ps2_gpio_data;
+
+	int scl_val = ps2_gpio_get_scl();
+
+	LOG_INF("ps2_gpio_scl_interrupt_handler called with scl_val=%d, mode=%d", scl_val, data->mode);
+
+	if(scl_val == 0) {
+		ps2_gpio_scl_interrupt_falling_handler(dev, cb, pins);
+	} else {
+		ps2_gpio_scl_interrupt_rising_handler(dev, cb, pins);
+	}
+}
+
 
 /*
  * Zephyr PS/2 driver interface
@@ -491,61 +515,32 @@ int ps2_gpio_configure_scl_pin(struct ps2_gpio_data *data,
 		return err;
 	}
 
-	// Interrupt for clock line falling edge
-	// This is the interrupt used for most reading and writing operations.
-	err = gpio_pin_interrupt_configure(
-		data->scl_gpio,
-		config->scl_pin,
-		(GPIO_INT_EDGE_FALLING)
-	);
-	if (err) {
-		LOG_ERR(
-			"failed to configure edge falling interrupt on "
-			"SCL GPIO pin (err %d)", err
-		);
-		return err;
-	}
-
-	gpio_init_callback(
-		&data->scl_cb_falling_data,
-		ps2_gpio_scl_interrupt_falling_handler,
-		BIT(config->scl_pin)
-	);
-	err = gpio_add_callback(data->scl_gpio, &data->scl_cb_falling_data);
-	if (err) {
-		LOG_ERR(
-			"failed to configure edge falling interrupt callback on "
-			"SCL GPIO pin (err %d)", err
-		);
-		return err;
-	}
-
-	// Interrupt for clock line rising edge
+	// Interrupt for clock line
 	// Almost all actions happen on the falling edge, but at the end of a write
-	// the device sends an ack bit on the rising edge. This interrupt allows
-	// us to detect it.
+	// the device sends an ack bit on the rising edge. Setting up both edges
+	// allows us to detect it.
 	err = gpio_pin_interrupt_configure(
 		data->scl_gpio,
 		config->scl_pin,
-		(GPIO_INT_EDGE_RISING)
+		(GPIO_INT_EDGE_BOTH)
 	);
 	if (err) {
 		LOG_ERR(
-			"failed to configure edge rising interrupt on s"
+			"failed to configure interrupt on "
 			"SCL GPIO pin (err %d)", err
 		);
 		return err;
 	}
 
 	gpio_init_callback(
-		&data->scl_cb_rising_data,
-		ps2_gpio_scl_interrupt_rising_handler,
+		&data->scl_cb_data,
+		ps2_gpio_scl_interrupt_handler,
 		BIT(config->scl_pin)
 	);
-	err = gpio_add_callback(data->scl_gpio, &data->scl_cb_rising_data);
+	err = gpio_add_callback(data->scl_gpio, &data->scl_cb_data);
 	if (err) {
 		LOG_ERR(
-			"failed to configure edge rising interrupt callback on "
+			"failed to configure interrupt callback on "
 			"SCL GPIO pin (err %d)", err
 		);
 		return err;
