@@ -134,7 +134,7 @@ void ps2_gpio_set_sda(int state)
 void ps2_gpio_send_cmd_resend()
 {
 	uint8_t cmd = 0xfe;
-	ps2_gpio_write_byte(cmd);
+	// ps2_gpio_write_byte(cmd);
 }
 
 void ps2_gpio_empty_data_queue()
@@ -522,7 +522,7 @@ int ps2_gpio_configure_scl_pin(struct ps2_gpio_data *data,
 	err = gpio_pin_interrupt_configure(
 		data->scl_gpio,
 		config->scl_pin,
-		(GPIO_INT_EDGE_BOTH)
+		(GPIO_INT_EDGE_TO_INACTIVE)
 	);
 	if (err) {
 		LOG_ERR(
@@ -534,7 +534,7 @@ int ps2_gpio_configure_scl_pin(struct ps2_gpio_data *data,
 
 	gpio_init_callback(
 		&data->scl_cb_data,
-		ps2_gpio_scl_interrupt_handler,
+		ps2_gpio_scl_interrupt_falling_handler,
 		BIT(config->scl_pin)
 	);
 	err = gpio_add_callback(data->scl_gpio, &data->scl_cb_data);
@@ -591,11 +591,11 @@ static int ps2_gpio_init(const struct device *dev)
 	}
 
 	// Check if this stuff is needed
-	LOG_INF("init scl=%d; sda=%d", ps2_gpio_get_scl(), ps2_gpio_get_sda());
-	LOG_INF("Setting sda to 1");
-	ps2_gpio_set_sda(1);
-	LOG_INF("Setting scl to 1");
-	ps2_gpio_set_scl(1);
+	// LOG_INF("init scl=%d; sda=%d", ps2_gpio_get_scl(), ps2_gpio_get_sda());
+	// LOG_INF("Setting sda to 1");
+	// ps2_gpio_set_sda(1);
+	// LOG_INF("Setting scl to 1");
+	// ps2_gpio_set_scl(1);
 
 	LOG_INF("Finished configuring ps2_gpio.");
 
