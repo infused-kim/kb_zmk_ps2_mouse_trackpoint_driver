@@ -363,7 +363,7 @@ void ps2_gpio_scl_interrupt_falling_handler(const struct device *dev,
 {
 	const struct ps2_gpio_data *data = &ps2_gpio_data;
 
-	LOG_INF("ps2_gpio_scl_interrupt_falling_handler called with mode=%d",data->mode);
+	// LOG_INF("ps2_gpio_scl_interrupt_falling_handler called with mode=%d",data->mode);
 
 	if(data->mode == PS2_GPIO_MODE_READ) {
 		ps2_gpio_scl_interrupt_falling_read_bit();
@@ -591,11 +591,9 @@ static int ps2_gpio_init(const struct device *dev)
 	}
 
 	// Check if this stuff is needed
-	// LOG_INF("init scl=%d; sda=%d", ps2_gpio_get_scl(), ps2_gpio_get_sda());
-	// LOG_INF("Setting sda to 1");
-	// ps2_gpio_set_sda(1);
-	// LOG_INF("Setting scl to 1");
-	// ps2_gpio_set_scl(1);
+	// TODO: Figure out why this is requiered.
+	ps2_gpio_set_sda(1);
+	ps2_gpio_set_scl(1);
 
 	LOG_INF("Finished configuring ps2_gpio.");
 
