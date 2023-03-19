@@ -522,7 +522,7 @@ int ps2_gpio_configure_scl_pin(struct ps2_gpio_data *data,
 	err = gpio_pin_interrupt_configure(
 		data->scl_gpio,
 		config->scl_pin,
-		(GPIO_INT_EDGE_TO_INACTIVE)
+		(GPIO_INT_EDGE_FALLING)
 	);
 	if (err) {
 		LOG_ERR(
