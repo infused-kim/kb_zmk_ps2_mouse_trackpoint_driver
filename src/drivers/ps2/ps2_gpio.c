@@ -214,7 +214,7 @@ void scl_interrupt_handler_mode_read()
 			return;
 		}
 	} else if(data->cur_read_pos == PS2_GPIO_POS_STOP) {
-		if(sda_val != 0) {
+		if(sda_val != 1) {
 			ps2_gpio_abort_read();
 			LOG_ERR("Restarting receiving due to invalid stop bit.");
 			return;
@@ -358,7 +358,7 @@ static int ps2_gpio_init(const struct device *dev)
 	err = gpio_pin_configure(
 		data->scl_gpio,
 		config->scl_pin,
-		(GPIO_ACTIVE_HIGH | GPIO_INPUT | GPIO_OUTPUT_HIGH)
+		(GPIO_INPUT)
 	);
 	if (err) {
 		LOG_ERR("failed to configure SCL GPIO pin (err %d)", err);
