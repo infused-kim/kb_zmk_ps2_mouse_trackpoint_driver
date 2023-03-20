@@ -27,7 +27,7 @@ LOG_MODULE_REGISTER(ps2_gpio);
 #define PS2_GPIO_GET_BIT(data, bit_pos) ( (data >> bit_pos) & 0x1 )
 #define PS2_GPIO_SET_BIT(data, bit_val, bit_pos) ( data |= (bit_val) << bit_pos )
 
-int ps2_gpio_write_byte(uint8_t byte);
+int ps2_gpio_write_byte_async(uint8_t byte);
 
 typedef enum
 {
@@ -131,7 +131,7 @@ void ps2_gpio_set_scl(int state)
 	const struct ps2_gpio_data *data = &ps2_gpio_data;
 	const struct ps2_gpio_config *config = &ps2_gpio_config;
 
-	LOG_INF("Seting scl to %d", state);
+	LOG_INF("Setting scl to %d", state);
 	gpio_pin_set(data->sda_gpio, config->sda_pin, state);
 }
 
@@ -147,7 +147,7 @@ void ps2_gpio_set_sda(int state)
 void ps2_gpio_send_cmd_resend()
 {
 	uint8_t cmd = 0xfe;
-	ps2_gpio_write_byte(cmd);
+	ps2_gpio_write_byte_async(cmd);
 }
 
 void ps2_gpio_empty_data_queue()
@@ -162,52 +162,22 @@ void ps2_gpio_empty_data_queue()
  * Reading PS/2 data
  */
 
-void ps2_gpio_process_received_byte(uint8_t byte)
-{
-	LOG_INF("Successfully received value: 0x%x", byte);
+bool ps2_gpio_check_parity(uint8_t byte, int parity_bit_val);
+void ps2_gpio_abort_read();
+void ps2_gpio_process_received_byte(uint8_t byte);
 
-	struct ps2_gpio_data *data = &ps2_gpio_data;
-	if(data->callback_isr != NULL && data->callback_enabled) {
-
-		data->callback_isr(NULL, byte);
-	} else {
-
-		// If no callback is set, we add the data to a fifo queue
-		// that can be read later with the read using `ps2_read`
-		k_fifo_put(&data->data_queue, &byte);
-	}
-}
-
-void ps2_gpio_abort_read()
-{
-	struct ps2_gpio_data *data = &ps2_gpio_data;
-
-	ps2_gpio_send_cmd_resend();
-	data->cur_read_pos = 0;
-	data->cur_read_byte = 0x0;
-}
-
-bool ps2_gpio_check_parity(uint8_t byte, int parity_bit_val)
-{
-	int byte_parity = __builtin_parity(byte);
-
-	// gcc parity returns 1 if there is an odd number of bits in byte
-	// But the PS2 protocol sets the parity bit to 0 if there is an odd number
-	if(byte_parity == parity_bit_val) {
-		return 0;  // Do not match
-	}
-
-	return 1;  // Match
-}
-
-void ps2_gpio_scl_interrupt_falling_read_bit()
+// Reading doesn't need to be initiated. It happens automatically whenever
+// the device sends data.
+// Once a full byte has been received successfully it is processed in
+// ps2_gpio_process_received_byte, which decides what should happen with it.
+void ps2_gpio_scl_interrupt_handler_read()
 {
 	struct ps2_gpio_data *data = &ps2_gpio_data;
 	int scl_val = ps2_gpio_get_scl();
 	int sda_val = ps2_gpio_get_sda();
 
 	LOG_INF(
-		"ps2_gpio_scl_interrupt_falling_read_bit called with position=%d; scl=%d; sda=%d",
+		"ps2_gpio_scl_interrupt_handler_read called with position=%d; scl=%d; sda=%d",
 		data->cur_read_pos, scl_val, sda_val
 	);
 
@@ -216,25 +186,25 @@ void ps2_gpio_scl_interrupt_falling_read_bit()
 		// If it is not, it means we are out of sync with the device.
 		// So we abort the transmission and start from scratch.
 		if(sda_val != 0) {
-			ps2_gpio_abort_read();
 			LOG_ERR("Restarting receiving due to invalid start bit.");
+			ps2_gpio_abort_read();
 			return;
 		}
 	} else if(data->cur_read_pos == PS2_GPIO_POS_PARITY) {
 		if(ps2_gpio_check_parity(data->cur_read_byte, sda_val) != true) {
-			ps2_gpio_abort_read();
 			LOG_ERR("Restarting receiving due to invalid parity bit.");
+			ps2_gpio_abort_read();
 			return;
 		}
 	} else if(data->cur_read_pos == PS2_GPIO_POS_STOP) {
 		if(sda_val != 1) {
-			ps2_gpio_abort_read();
 			LOG_ERR("Restarting receiving due to invalid stop bit.");
+			ps2_gpio_abort_read();
 			return;
 		}
 
 		ps2_gpio_process_received_byte(data->cur_read_byte);
-		data->cur_read_pos = 0;
+		data->cur_read_pos = PS2_GPIO_POS_START;
 		data->cur_read_byte = 0x0;
 
 		return;
@@ -249,18 +219,54 @@ void ps2_gpio_scl_interrupt_falling_read_bit()
 }
 
 
-/*
- * Writing PS2 data
- */
-
-bool ps2_gpio_get_byte_parity(uint8_t byte)
+bool ps2_gpio_check_parity(uint8_t byte, int parity_bit_val)
 {
 	int byte_parity = __builtin_parity(byte);
 
 	// gcc parity returns 1 if there is an odd number of bits in byte
 	// But the PS2 protocol sets the parity bit to 0 if there is an odd number
-	return !byte_parity;
+	if(byte_parity == parity_bit_val) {
+		return 0;  // Do not match
+	}
+
+	return 1;  // Match
 }
+
+void ps2_gpio_abort_read()
+{
+	struct ps2_gpio_data *data = &ps2_gpio_data;
+
+	ps2_gpio_send_cmd_resend();
+	data->cur_read_pos = PS2_GPIO_POS_START;
+	data->cur_read_byte = 0x0;
+}
+
+void ps2_gpio_process_received_byte(uint8_t byte)
+{
+	struct ps2_gpio_data *data = &ps2_gpio_data;
+
+	LOG_INF("Successfully received value: 0x%x", byte);
+
+	// If no callback is set, we add the data to a fifo queue
+	// that can be read later with the read using `ps2_read`
+
+	if(data->callback_isr != NULL && data->callback_enabled) {
+
+		data->callback_isr(NULL, byte);
+	} else {
+		k_fifo_put(&data->data_queue, &byte);
+	}
+}
+
+
+/*
+ * Writing PS2 data
+ */
+
+int ps2_gpio_write_byte_async(uint8_t byte);
+void ps2_gpio_scl_interrupt_handler_write_send_bit();
+void ps2_gpio_scl_interrupt_handler_write_check_ack();
+bool ps2_gpio_get_byte_parity(uint8_t byte);
 
 int ps2_gpio_write_byte_blocking(uint8_t byte)
 {
@@ -269,27 +275,26 @@ int ps2_gpio_write_byte_blocking(uint8_t byte)
 
 	LOG_INF("ps2_gpio_write_byte_blocking called with byte=0x%x",byte);
 
-	// The async `write_byte` function takes the only available semaphor.
-	// This causes the `k_sem_take` call below to block until
-	// `ps2_gpio_scl_interrupt_rising_check_write_ack` gives it back.
-	err = ps2_gpio_write_byte(byte);
+	err = ps2_gpio_write_byte_async(byte);
     if (err) {
 		LOG_ERR("Could not initiate writing of byte.");
 		return err;
 	}
 
-	LOG_INF("Trying to take semaphore in ps2_gpio_write_byte_blocking...");
+	// The async `write_byte_async` function takes the only available semaphor.
+	// This causes the `k_sem_take` call below to block until
+	// `ps2_gpio_scl_interrupt_handler_write_check_ack` gives it back.
 	err = k_sem_take(&data->write_lock, K_MSEC(500));
     if (err) {
-		LOG_ERR("Write timed out...");
+		LOG_ERR("Blocking write failed due to semaphore timeout: %d", err);
 		return err;
 	}
 
 	if(data->cur_write_status == PS2_GPIO_WRITE_STATUS_SUCCESS) {
-		LOG_INF("Blocking write finished successfully");
+		LOG_INF("Blocking write finished successfully for byte 0x%d", byte);
 		err = 0;
 	} else {
-		LOG_INF(
+		LOG_ERR(
 			"Blocking write finished with failure status: %d",
 			data->cur_write_status
 		);
@@ -301,21 +306,21 @@ int ps2_gpio_write_byte_blocking(uint8_t byte)
 	return err;
 }
 
-int ps2_gpio_write_byte(uint8_t byte) {
+int ps2_gpio_write_byte_async(uint8_t byte) {
 	struct ps2_gpio_data *data = &ps2_gpio_data;
 	const struct ps2_gpio_config *config = &ps2_gpio_config;
 
 	int err;
 
-	LOG_INF("ps2_gpio_write_byte called with byte=0x%x", byte);
+	LOG_INF("ps2_gpio_write_byte_async called with byte=0x%x", byte);
 
 	// Take semaphore so that when `ps2_gpio_write_byte_blocking` attempts
 	// taking it, the process gets blocked.
-	// It is released in `ps2_gpio_scl_interrupt_rising_check_write_ack`.
-	LOG_INF("Taking semaphore in ps2_gpio_write_byte");
+	// It is released in `ps2_gpio_scl_interrupt_handler_write_check_ack`.
+	LOG_INF("Taking semaphore in ps2_gpio_write_byte_async");
 	err = k_sem_take(&data->write_lock, K_NO_WAIT);
     if (err != 0 && err != -EBUSY) {
-		LOG_ERR("ps2_gpio_write_byte could not take semaphore: %d", err);
+		LOG_ERR("ps2_gpio_write_byte_async could not take semaphore: %d", err);
 
 		return err;
 	}
@@ -326,22 +331,29 @@ int ps2_gpio_write_byte(uint8_t byte) {
 	data->write_buffer = 0x0;
 
 	// Set bits for the entire transmission
-	PS2_GPIO_SET_BIT(data->write_buffer, 0, 0);  				// Start Bit
-	PS2_GPIO_SET_BIT(data->write_buffer, PS2_GPIO_GET_BIT(byte, 0), 1);  // Data Bit 0
-	PS2_GPIO_SET_BIT(data->write_buffer, PS2_GPIO_GET_BIT(byte, 1), 2);  // Data Bit 1
-	PS2_GPIO_SET_BIT(data->write_buffer, PS2_GPIO_GET_BIT(byte, 2), 3);  // Data Bit 2
-	PS2_GPIO_SET_BIT(data->write_buffer, PS2_GPIO_GET_BIT(byte, 3), 4);  // Data Bit 3
-	PS2_GPIO_SET_BIT(data->write_buffer, PS2_GPIO_GET_BIT(byte, 4), 5);  // Data Bit 4
-	PS2_GPIO_SET_BIT(data->write_buffer, PS2_GPIO_GET_BIT(byte, 5), 6);  // Data Bit 5
-	PS2_GPIO_SET_BIT(data->write_buffer, PS2_GPIO_GET_BIT(byte, 6), 7);  // Data Bit 6
-	PS2_GPIO_SET_BIT(data->write_buffer, PS2_GPIO_GET_BIT(byte, 7), 8);  // Data Bit 7
-	PS2_GPIO_SET_BIT(data->write_buffer, byte_parity, 9);  		// Parity Bit
-	PS2_GPIO_SET_BIT(data->write_buffer, 1, 10);  				// Stop Bit
+	// Start Bit
+	PS2_GPIO_SET_BIT(data->write_buffer, 0, 0);
 
-	// Change mode and set write_pos so that falling interrupt doesn't trigger
-	// when we bring the clock line low.
+	// Data Bit 1-8
+	PS2_GPIO_SET_BIT(data->write_buffer, PS2_GPIO_GET_BIT(byte, 0), 1);
+	PS2_GPIO_SET_BIT(data->write_buffer, PS2_GPIO_GET_BIT(byte, 1), 2);
+	PS2_GPIO_SET_BIT(data->write_buffer, PS2_GPIO_GET_BIT(byte, 2), 3);
+	PS2_GPIO_SET_BIT(data->write_buffer, PS2_GPIO_GET_BIT(byte, 3), 4);
+	PS2_GPIO_SET_BIT(data->write_buffer, PS2_GPIO_GET_BIT(byte, 4), 5);
+	PS2_GPIO_SET_BIT(data->write_buffer, PS2_GPIO_GET_BIT(byte, 5), 6);
+	PS2_GPIO_SET_BIT(data->write_buffer, PS2_GPIO_GET_BIT(byte, 6), 7);
+	PS2_GPIO_SET_BIT(data->write_buffer, PS2_GPIO_GET_BIT(byte, 7), 8);
+
+	// Parity Bit
+	PS2_GPIO_SET_BIT(data->write_buffer, byte_parity, 9);
+
+	// Stop Bit
+	PS2_GPIO_SET_BIT(data->write_buffer, 1, 10);
+
+	// Change mode and set write_pos so that the read interrupt handler
+	// doesn't trigger when we bring the clock line low.
 	data->mode = PS2_GPIO_MODE_WRITE;
-	data->cur_write_pos = 0;
+	data->cur_write_pos = PS2_GPIO_POS_START;
 
 	// Configure clock line for output and bring it low for 100 microseconds.
 	// This tells the PS/2 device that we would like to send data.
@@ -357,11 +369,11 @@ int ps2_gpio_write_byte(uint8_t byte) {
 
 	k_sleep(K_USEC(100));
 
-	// This aborts any in-progress reads, so we
+	// Initiating a send aborts any in-progress reads, so we
 	// reset the current read byte
 	data->cur_write_status = PS2_GPIO_WRITE_STATUS_ACTIVE;
 	data->cur_read_byte = 0x0;
-	data->cur_read_pos = 0;
+	data->cur_read_pos = PS2_GPIO_POS_START;
 
 	// Configure data for output and send the start bit
 	// The start bit is 0 and is sent through `GPIO_OUTPUT_LOW`
@@ -378,7 +390,7 @@ int ps2_gpio_write_byte(uint8_t byte) {
 	// The start bit was sent through `GPIO_OUTPUT_LOW`
 	data->cur_write_pos += 1;
 
-	// Release the clock line and configure it for input
+	// Release the clock line and configure it as input
 	// This let's the device take control of the clock again
 	ps2_gpio_set_scl(1);
 	err = gpio_pin_configure(
@@ -391,52 +403,41 @@ int ps2_gpio_write_byte(uint8_t byte) {
 		return err;
 	}
 
-
-
 	// From here on the device takes over the control of the clock again
 	// Every time it is ready for the next bit to be trasmitted, it will...
 	//  - Pull the clock line low
-	//  - Which will trigger our `ps2_gpio_scl_interrupt_falling_handler`
-	//  - Which will call `ps2_gpio_scl_interrupt_falling_write_bit`
+	//  - Which will trigger our `scl_interrupt_handler`
+	//  - Which will call `ps2_gpio_scl_interrupt_handler_write_send_bit`
 	//  - Which will send the correct bit
-	//  - After all bits are sent `interrupt_rising_check_write_ack` is called
-	//  - Which verifies if the transaction was successful
+	//  - After all bits are sent `scl_interrupt_handler_write_check_ack` is
+	//    called, which verifies if the transaction was successful
 
 	return 0;
 }
 
-void ps2_gpio_scl_interrupt_rising_check_write_ack();
-void ps2_gpio_scl_interrupt_falling_write_bit()
+void ps2_gpio_scl_interrupt_handler_write()
 {
-	// This function is called by `ps2_gpio_scl_interrupt_falling_handler`
-	// when the device pulls the clock line low after we initiated a
-	// write.
-	//
-	// We just continue to send all the bits
+	// After initiating writing, the device takes over
+	// the clock and asks us for a new bit of data on
+	// each falling edge.
 	struct ps2_gpio_data *data = &ps2_gpio_data;
 	const struct ps2_gpio_config *config = &ps2_gpio_config;
 
 	if(data->cur_write_pos == PS2_GPIO_POS_START)
 	{
-		// PS2_GPIO_POS_START is sent in ps2_gpio_write_byte
-		LOG_INF(
-			"ps2_gpio_scl_interrupt_falling_write_bit: Ignoring pos=%d",
+		// PS2_GPIO_POS_START is sent in ps2_gpio_write_byte_async
+		LOG_ERR(
+			"ps2_gpio_scl_interrupt_handler_write: Ignoring pos=%d",
 			data->cur_write_pos
 		);
+
 		return;
-	} else if(data->cur_write_pos == PS2_GPIO_POS_ACK)
+	} else if(data->cur_write_pos == PS2_GPIO_POS_STOP)
 	{
-		ps2_gpio_scl_interrupt_rising_check_write_ack();
-		return;
-	}
+		// Send the stop bit
+		ps2_gpio_scl_interrupt_handler_write_send_bit();
 
-	int data_bit = PS2_GPIO_GET_BIT(data->write_buffer, data->cur_write_pos);
-
-	LOG_INF("ps2_gpio_scl_interrupt_falling_write_bit called with pos=%d; bit=%d", data->cur_write_pos, data_bit);
-	ps2_gpio_set_sda(data_bit);
-
-	// Give control over data pin back to device after setting stop bit
-	if(data->cur_write_pos == PS2_GPIO_POS_STOP) {
+		// Give control over data pin back to device after sending stop bit
 		int err;
 		err = gpio_pin_configure(
 			data->sda_gpio,
@@ -444,23 +445,47 @@ void ps2_gpio_scl_interrupt_falling_write_bit()
 			(GPIO_INPUT)
 		);
 		if (err) {
-			LOG_ERR("failed to configure SDA GPIO pin to input (err %d)", err);
-			return;
+			LOG_ERR(
+				"failed to configure SDA GPIO pin to back to input after "
+				"write (err %d)", err
+			);
 		}
+	} else if(data->cur_write_pos == PS2_GPIO_POS_ACK)
+	{
+		ps2_gpio_scl_interrupt_handler_write_check_ack();
+	} else {
+		// All the data bits.
+		ps2_gpio_scl_interrupt_handler_write_send_bit();
 	}
 
 	data->cur_write_pos += 1;
 }
 
-void ps2_gpio_scl_interrupt_rising_check_write_ack()
+void ps2_gpio_scl_interrupt_handler_write_send_bit()
 {
-	// This function is called by `ps2_gpio_scl_interrupt_rising_handler`
-	// when the device pulls the clock line high after we send the stop bit
+	// This function is called by `ps2_gpio_scl_interrupt_handler_write`
+	// when the device pulls the clock line low after we initiated a
+	// write.
+	//
+	// We just continue to send all the bits
+	struct ps2_gpio_data *data = &ps2_gpio_data;
+
+	int data_bit = PS2_GPIO_GET_BIT(data->write_buffer, data->cur_write_pos);
+
+	LOG_INF("ps2_gpio_scl_interrupt_handler_write_send_bit called with pos=%d; bit=%d", data->cur_write_pos, data_bit);
+
+	ps2_gpio_set_sda(data_bit);
+}
+
+void ps2_gpio_scl_interrupt_handler_write_check_ack()
+{
+	// This function is called by `ps2_gpio_scl_interrupt_handler_write`
+	// when the device pulls the clock line low after we send the stop bit
 	// during a write.
 	struct ps2_gpio_data *data = &ps2_gpio_data;
 
 	int ack_val = ps2_gpio_get_sda();
-	LOG_INF("ps2_gpio_scl_interrupt_rising_check_write_ack ack_val: %d", ack_val);
+	LOG_INF("ps2_gpio_scl_interrupt_handler_write_check_ack ack_val: %d", ack_val);
 
 	if(ack_val == 0) {
 		LOG_INF("Write was successful");
@@ -473,56 +498,36 @@ void ps2_gpio_scl_interrupt_rising_check_write_ack()
 	// Reset write buffer and position
 	data->mode = PS2_GPIO_MODE_READ;
 	data->write_buffer = 0x0;
-	data->cur_write_pos = 0;
+	data->cur_write_pos = PS2_GPIO_POS_START;
 
-	LOG_INF("Giving back semaphore in ps2_gpio_write_byte");
 	k_sem_give(&data->write_lock);
 }
+
+bool ps2_gpio_get_byte_parity(uint8_t byte)
+{
+	int byte_parity = __builtin_parity(byte);
+
+	// gcc parity returns 1 if there is an odd number of bits in byte
+	// But the PS2 protocol sets the parity bit to 0 if there is an odd number
+	return !byte_parity;
+}
+
 /*
- * Interrupt Handlers
+ * Interrupt Handler
  */
 
-void ps2_gpio_scl_interrupt_falling_handler(const struct device *dev,
+void ps2_gpio_scl_interrupt_handler(const struct device *dev,
 						   struct gpio_callback *cb,
 						   uint32_t pins)
 {
 	const struct ps2_gpio_data *data = &ps2_gpio_data;
 
-	// LOG_INF("ps2_gpio_scl_interrupt_falling_handler called with mode=%d",data->mode);
+	// LOG_INF("ps2_gpio_scl_interrupt_handler called with mode=%d",data->mode);
 
 	if(data->mode == PS2_GPIO_MODE_READ) {
-		ps2_gpio_scl_interrupt_falling_read_bit();
+		ps2_gpio_scl_interrupt_handler_read();
 	} else {
-		ps2_gpio_scl_interrupt_falling_write_bit();
-	}
-}
-
-void ps2_gpio_scl_interrupt_rising_handler(const struct device *dev,
-						   				   struct gpio_callback *cb,
-						   				   uint32_t pins)
-{
-	const struct ps2_gpio_data *data = &ps2_gpio_data;
-	// LOG_INF("ps2_gpio_scl_interrupt_rising_handler called with cur_write_pos=%d, mode=%d", data->cur_write_pos, data->mode);
-
-	if(data->mode == PS2_GPIO_MODE_WRITE &&
-	   data->cur_write_pos == PS2_GPIO_POS_ACK)
-	{
-		ps2_gpio_scl_interrupt_rising_check_write_ack();
-	}
-}
-
-void ps2_gpio_scl_interrupt_handler(const struct device *dev,
-						   			struct gpio_callback *cb,
-						   			uint32_t pins)
-{
-	// const struct ps2_gpio_data *data = &ps2_gpio_data;
-	// LOG_INF("ps2_gpio_scl_interrupt_handler called with scl_val=%d, mode=%d", scl_val, data->mode);
-
-	int scl_val = ps2_gpio_get_scl();
-	if(scl_val == 0) {
-		ps2_gpio_scl_interrupt_falling_handler(dev, cb, pins);
-	} else {
-		ps2_gpio_scl_interrupt_rising_handler(dev, cb, pins);
+		ps2_gpio_scl_interrupt_handler_write();
 	}
 }
 
@@ -655,7 +660,7 @@ int ps2_gpio_configure_scl_pin(struct ps2_gpio_data *data,
 
 	gpio_init_callback(
 		&data->scl_cb_data,
-		ps2_gpio_scl_interrupt_falling_handler,
+		ps2_gpio_scl_interrupt_handler,
 		BIT(config->scl_pin)
 	);
 	err = gpio_add_callback(data->scl_gpio, &data->scl_cb_data);
@@ -722,7 +727,6 @@ static int ps2_gpio_init(const struct device *dev)
 	k_fifo_init(&data->data_queue);
 
 	// Init semaphore for blocking writes
-	LOG_INF("Initializing semaphore.");
 	k_sem_init(&data->write_lock, 0, 1);
 
 	return 0;
