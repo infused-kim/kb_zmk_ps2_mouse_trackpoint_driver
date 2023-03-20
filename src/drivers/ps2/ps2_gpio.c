@@ -367,7 +367,7 @@ int ps2_gpio_write_byte_async(uint8_t byte) {
 		return err;
 	}
 
-	k_sleep(K_USEC(100));
+	k_sleep(K_USEC(110));
 
 	// Initiating a send aborts any in-progress reads, so we
 	// reset the current read byte
