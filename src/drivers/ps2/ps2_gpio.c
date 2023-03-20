@@ -27,13 +27,22 @@ LOG_MODULE_REGISTER(ps2_gpio);
 #define PS2_GPIO_GET_BIT(data, bit_pos) ( (data >> bit_pos) & 0x1 )
 #define PS2_GPIO_SET_BIT(data, bit_val, bit_pos) ( data |= (bit_val) << bit_pos )
 
-void ps2_gpio_write_byte(uint8_t byte);
+int ps2_gpio_write_byte(uint8_t byte);
 
 typedef enum
 {
     PS2_GPIO_MODE_READ,
     PS2_GPIO_MODE_WRITE
 } ps2_gpio_mode;
+
+// Used to keep track of blocking write status
+typedef enum
+{
+    PS2_GPIO_WRITE_STATUS_INACTIVE,
+    PS2_GPIO_WRITE_STATUS_ACTIVE,
+	PS2_GPIO_WRITE_STATUS_SUCCESS,
+	PS2_GPIO_WRITE_STATUS_FAILURE,
+} ps2_gpio_write_status;
 
 struct ps2_gpio_config {
 	const char *scl_gpio_name;
@@ -62,6 +71,8 @@ struct ps2_gpio_data {
 
 	uint16_t write_buffer;
 	int cur_write_pos;
+	ps2_gpio_write_status cur_write_status;
+	struct k_sem write_lock;
 };
 
 
@@ -88,6 +99,7 @@ static struct ps2_gpio_data ps2_gpio_data = {
 
 	.write_buffer = 0x0,
 	.cur_write_pos = 0,
+	.cur_write_status = PS2_GPIO_WRITE_STATUS_INACTIVE,
 };
 
 
@@ -259,8 +271,63 @@ bool ps2_gpio_get_byte_parity(uint8_t byte)
 	return !byte_parity;
 }
 
-void ps2_gpio_write_byte(uint8_t byte) {
+int ps2_gpio_write_byte_blocking(uint8_t byte)
+{
 	struct ps2_gpio_data *data = &ps2_gpio_data;
+	int err;
+
+	LOG_INF("ps2_gpio_write_byte_blocking called with byte=0x%x",byte);
+
+	// The async `write_byte` function takes the only available semaphor.
+	// This causes the `k_sem_take` call below to block until
+	// `ps2_gpio_scl_interrupt_rising_check_write_ack` gives it back.
+	err = ps2_gpio_write_byte(byte);
+    if (err) {
+		LOG_ERR("Could not initiate writing of byte.");
+		return err;
+	}
+
+	LOG_INF("Trying to take semaphore in ps2_gpio_write_byte_blocking...");
+	err = k_sem_take(&data->write_lock, K_MSEC(500));
+    if (err) {
+		LOG_ERR("Write timed out...");
+		return err;
+	}
+
+	if(data->cur_write_status == PS2_GPIO_WRITE_STATUS_SUCCESS) {
+		LOG_INF("Blocking write finished successfully");
+		err = 0;
+	} else {
+		LOG_INF(
+			"Blocking write finished with failure status: %d",
+			data->cur_write_status
+		);
+		err = -data->cur_write_status;
+	}
+
+	data->cur_write_status = PS2_GPIO_WRITE_STATUS_INACTIVE;
+
+	return err;
+}
+
+int ps2_gpio_write_byte(uint8_t byte) {
+	struct ps2_gpio_data *data = &ps2_gpio_data;
+	struct ps2_gpio_config *config = &ps2_gpio_config;
+
+	int err;
+
+	LOG_INF("ps2_gpio_write_byte called with byte=0x%x", byte);
+
+	// Take semaphore so that when `ps2_gpio_write_byte_blocking` attempts
+	// taking it, the process gets blocked.
+	// It is released in `ps2_gpio_scl_interrupt_rising_check_write_ack`.
+	LOG_INF("Taking semaphore in ps2_gpio_write_byte");
+	err = k_sem_take(&data->write_lock, K_NO_WAIT);
+    if (err != 0 && err != -EBUSY) {
+		LOG_ERR("ps2_gpio_write_byte could not take semaphore: %d", err);
+
+		return err;
+	}
 
 	bool byte_parity = ps2_gpio_get_byte_parity(byte);
 
@@ -280,7 +347,29 @@ void ps2_gpio_write_byte(uint8_t byte) {
 	PS2_GPIO_SET_BIT(data->write_buffer, byte_parity, 9);  		// Parity Bit
 	PS2_GPIO_SET_BIT(data->write_buffer, 1, 10);  				// Stop Bit
 
+	// Change mode and set write_pos so that falling interrupt doesn't trigger
+	data->mode = PS2_GPIO_MODE_WRITE;
 	data->cur_write_pos = 0;
+
+	err = gpio_pin_configure(
+		data->scl_gpio,
+		config->scl_pin,
+		(GPIO_OUTPUT)
+	);
+	if (err) {
+		LOG_ERR("failed to configure SCL GPIO pin to output (err %d)", err);
+		return err;
+	}
+
+	err = gpio_pin_configure(
+		data->sda_gpio,
+		config->sda_pin,
+		(GPIO_OUTPUT)
+	);
+	if (err) {
+		LOG_ERR("failed to configure SDA GPIO pin to output (err %d)", err);
+		return err;
+	}
 
 	// Initiate host->device transmission by bringing clock down
 	// for at least 100 microseconds
@@ -288,15 +377,24 @@ void ps2_gpio_write_byte(uint8_t byte) {
 	k_sleep(K_USEC(110));
 
 	// This aborts any in-progress reads, so we
-	// change the mode to write and reset the
-	// current read byte
-	data->mode = PS2_GPIO_MODE_WRITE;
+	// reset the current read byte
+	data->cur_write_status = PS2_GPIO_WRITE_STATUS_ACTIVE;
 	data->cur_read_byte = 0x0;
 	data->cur_read_pos = 0;
 
 	// Send the start bit
 	ps2_gpio_set_sda(PS2_GPIO_GET_BIT(data->write_buffer, 0));
 	data->cur_write_pos += 1;
+
+	err = gpio_pin_configure(
+		data->scl_gpio,
+		config->scl_pin,
+		(GPIO_INPUT)
+	);
+	if (err) {
+		LOG_ERR("failed to configure SCL GPIO pin to input (err %d)", err);
+		return err;
+	}
 
 	// Release the clock line
 	ps2_gpio_set_scl(1);
@@ -309,6 +407,8 @@ void ps2_gpio_write_byte(uint8_t byte) {
 	//  - Which will send the correct bit
 	//  - After all bits are sent `interrupt_rising_check_write_ack` is called
 	//  - Which verifies if the transaction was successful
+
+	return 0;
 }
 
 void ps2_gpio_scl_interrupt_falling_write_bit()
@@ -319,10 +419,15 @@ void ps2_gpio_scl_interrupt_falling_write_bit()
 	//
 	// We just continue to send all the bits
 	struct ps2_gpio_data *data = &ps2_gpio_data;
+	struct ps2_gpio_config *config = &ps2_gpio_config;
 
-	if(data->cur_write_pos > PS2_GPIO_POS_STOP) {
-		// That part of the process is handled by
-		// ps2_gpio_scl_interrupt_rising_check_write_ack
+	if(data->cur_write_pos == PS2_GPIO_POS_START)
+	{
+		// PS2_GPIO_POS_START is sent in ps2_gpio_write_byte
+		LOG_INF(
+			"ps2_gpio_scl_interrupt_falling_write_bit: Ignoring pos=%d",
+			data->cur_write_pos
+		);
 		return;
 	}
 
@@ -332,6 +437,19 @@ void ps2_gpio_scl_interrupt_falling_write_bit()
 	ps2_gpio_set_sda(data_bit);
 
 	data->cur_write_pos += 1;
+
+	if(data->cur_write_pos == PS2_GPIO_POS_ACK) {
+		int err;
+		err = gpio_pin_configure(
+			data->sda_gpio,
+			config->sda_pin,
+			(GPIO_INPUT)
+		);
+		if (err) {
+			LOG_ERR("failed to configure SDA GPIO pin to input (err %d)", err);
+			return err;
+		}
+	}
 }
 
 void ps2_gpio_scl_interrupt_rising_check_write_ack()
@@ -343,8 +461,13 @@ void ps2_gpio_scl_interrupt_rising_check_write_ack()
 
 	int ack_val = ps2_gpio_get_sda();
 	LOG_INF("ps2_gpio_scl_interrupt_rising_check_write_ack ack_val: %d", ack_val);
+
 	if(ack_val == 0) {
-		LOG_INF("Sending was successful");
+		LOG_INF("Write was successful");
+		data->cur_write_status = PS2_GPIO_WRITE_STATUS_SUCCESS;
+	} else {
+		LOG_INF("Write failed with ack: %d", ack_val);
+		data->cur_write_status = PS2_GPIO_WRITE_STATUS_FAILURE;
 	}
 
 	// Reset write buffer and position
@@ -352,6 +475,8 @@ void ps2_gpio_scl_interrupt_rising_check_write_ack()
 	data->write_buffer = 0x0;
 	data->cur_write_pos = 0;
 
+	LOG_INF("Giving back semaphore in ps2_gpio_write_byte");
+	k_sem_give(&data->write_lock);
 }
 /*
  * Interrupt Handlers
@@ -377,7 +502,7 @@ void ps2_gpio_scl_interrupt_rising_handler(const struct device *dev,
 						   				   uint32_t pins)
 {
 	const struct ps2_gpio_data *data = &ps2_gpio_data;
-	LOG_INF("ps2_gpio_scl_interrupt_rising_handler called with cur_write_pos=%d, mode=%d", data->cur_write_pos, data->mode);
+	// LOG_INF("ps2_gpio_scl_interrupt_rising_handler called with cur_write_pos=%d, mode=%d", data->cur_write_pos, data->mode);
 
 	if(data->mode == PS2_GPIO_MODE_WRITE &&
 	   data->cur_write_pos == PS2_GPIO_POS_ACK)
@@ -390,12 +515,10 @@ void ps2_gpio_scl_interrupt_handler(const struct device *dev,
 						   			struct gpio_callback *cb,
 						   			uint32_t pins)
 {
-	const struct ps2_gpio_data *data = &ps2_gpio_data;
+	// const struct ps2_gpio_data *data = &ps2_gpio_data;
+	// LOG_INF("ps2_gpio_scl_interrupt_handler called with scl_val=%d, mode=%d", scl_val, data->mode);
 
 	int scl_val = ps2_gpio_get_scl();
-
-	LOG_INF("ps2_gpio_scl_interrupt_handler called with scl_val=%d, mode=%d", scl_val, data->mode);
-
 	if(scl_val == 0) {
 		ps2_gpio_scl_interrupt_falling_handler(dev, cb, pins);
 	} else {
@@ -449,9 +572,7 @@ int ps2_gpio_read(const struct device *dev, uint8_t *value)
 
 static int ps2_gpio_write(const struct device *dev, uint8_t value)
 {
-	LOG_ERR("Not implemented: ps2_gpio_write");
-
-	return 0;
+	return ps2_gpio_write_byte_blocking(value);
 }
 
 static int ps2_gpio_disable_callback(const struct device *dev)
@@ -599,6 +720,10 @@ static int ps2_gpio_init(const struct device *dev)
 
 	// Init fifo for synchronous read operations
 	k_fifo_init(&data->data_queue);
+
+	// Init semaphore for blocking writes
+	LOG_INF("Initializing semaphore.");
+	k_sem_init(&data->write_lock, 0, 1);
 
 	return 0;
 }
