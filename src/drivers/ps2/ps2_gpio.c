@@ -73,6 +73,7 @@ struct ps2_gpio_data {
 	int cur_write_pos;
 	ps2_gpio_write_status cur_write_status;
 	struct k_sem write_lock;
+	struct k_work_delayable write_scl_timout;
 };
 
 
@@ -155,16 +156,6 @@ void ps2_gpio_empty_data_queue()
 	while(k_fifo_get(&data->data_queue, K_NO_WAIT) != NULL) {
 		// Do nothing except call k_fifo_get() until it's empty.
 	}
-}
-
-bool get_bit(uint8_t byte, int bit_pos)
-{
-    return (byte >> bit_pos) & 0x1;
-}
-
-void set_bit(uint8_t *byte, bool bit_val, int bit_pos)
-{
-    *byte |= bit_val << bit_pos;
 }
 
 /*
@@ -312,7 +303,7 @@ int ps2_gpio_write_byte_blocking(uint8_t byte)
 
 int ps2_gpio_write_byte(uint8_t byte) {
 	struct ps2_gpio_data *data = &ps2_gpio_data;
-	struct ps2_gpio_config *config = &ps2_gpio_config;
+	const struct ps2_gpio_config *config = &ps2_gpio_config;
 
 	int err;
 
@@ -348,33 +339,23 @@ int ps2_gpio_write_byte(uint8_t byte) {
 	PS2_GPIO_SET_BIT(data->write_buffer, 1, 10);  				// Stop Bit
 
 	// Change mode and set write_pos so that falling interrupt doesn't trigger
+	// when we bring the clock line low.
 	data->mode = PS2_GPIO_MODE_WRITE;
 	data->cur_write_pos = 0;
 
+	// Configure clock line for output and bring it low for 100 microseconds.
+	// This tells the PS/2 device that we would like to send data.
 	err = gpio_pin_configure(
 		data->scl_gpio,
 		config->scl_pin,
-		(GPIO_OUTPUT)
+		(GPIO_OUTPUT_LOW)
 	);
 	if (err) {
 		LOG_ERR("failed to configure SCL GPIO pin to output (err %d)", err);
 		return err;
 	}
 
-	err = gpio_pin_configure(
-		data->sda_gpio,
-		config->sda_pin,
-		(GPIO_OUTPUT)
-	);
-	if (err) {
-		LOG_ERR("failed to configure SDA GPIO pin to output (err %d)", err);
-		return err;
-	}
-
-	// Initiate host->device transmission by bringing clock down
-	// for at least 100 microseconds
-	ps2_gpio_set_scl(0);
-	k_sleep(K_USEC(110));
+	k_sleep(K_USEC(100));
 
 	// This aborts any in-progress reads, so we
 	// reset the current read byte
@@ -382,10 +363,24 @@ int ps2_gpio_write_byte(uint8_t byte) {
 	data->cur_read_byte = 0x0;
 	data->cur_read_pos = 0;
 
-	// Send the start bit
-	ps2_gpio_set_sda(PS2_GPIO_GET_BIT(data->write_buffer, 0));
+	// Configure data for output and send the start bit
+	// The start bit is 0 and is sent through `GPIO_OUTPUT_LOW`
+	err = gpio_pin_configure(
+		data->sda_gpio,
+		config->sda_pin,
+		(GPIO_OUTPUT_LOW)
+	);
+	if (err) {
+		LOG_ERR("failed to configure SDA GPIO pin to output (err %d)", err);
+		return err;
+	}
+
+	// The start bit was sent through `GPIO_OUTPUT_LOW`
 	data->cur_write_pos += 1;
 
+	// Release the clock line and configure it for input
+	// This let's the device take control of the clock again
+	ps2_gpio_set_scl(1);
 	err = gpio_pin_configure(
 		data->scl_gpio,
 		config->scl_pin,
@@ -396,8 +391,7 @@ int ps2_gpio_write_byte(uint8_t byte) {
 		return err;
 	}
 
-	// Release the clock line
-	ps2_gpio_set_scl(1);
+
 
 	// From here on the device takes over the control of the clock again
 	// Every time it is ready for the next bit to be trasmitted, it will...
@@ -411,6 +405,7 @@ int ps2_gpio_write_byte(uint8_t byte) {
 	return 0;
 }
 
+void ps2_gpio_scl_interrupt_rising_check_write_ack();
 void ps2_gpio_scl_interrupt_falling_write_bit()
 {
 	// This function is called by `ps2_gpio_scl_interrupt_falling_handler`
@@ -419,7 +414,7 @@ void ps2_gpio_scl_interrupt_falling_write_bit()
 	//
 	// We just continue to send all the bits
 	struct ps2_gpio_data *data = &ps2_gpio_data;
-	struct ps2_gpio_config *config = &ps2_gpio_config;
+	const struct ps2_gpio_config *config = &ps2_gpio_config;
 
 	if(data->cur_write_pos == PS2_GPIO_POS_START)
 	{
@@ -429,6 +424,10 @@ void ps2_gpio_scl_interrupt_falling_write_bit()
 			data->cur_write_pos
 		);
 		return;
+	} else if(data->cur_write_pos == PS2_GPIO_POS_ACK)
+	{
+		ps2_gpio_scl_interrupt_rising_check_write_ack();
+		return;
 	}
 
 	int data_bit = PS2_GPIO_GET_BIT(data->write_buffer, data->cur_write_pos);
@@ -436,9 +435,8 @@ void ps2_gpio_scl_interrupt_falling_write_bit()
 	LOG_INF("ps2_gpio_scl_interrupt_falling_write_bit called with pos=%d; bit=%d", data->cur_write_pos, data_bit);
 	ps2_gpio_set_sda(data_bit);
 
-	data->cur_write_pos += 1;
-
-	if(data->cur_write_pos == PS2_GPIO_POS_ACK) {
+	// Give control over data pin back to device after setting stop bit
+	if(data->cur_write_pos == PS2_GPIO_POS_STOP) {
 		int err;
 		err = gpio_pin_configure(
 			data->sda_gpio,
@@ -447,9 +445,11 @@ void ps2_gpio_scl_interrupt_falling_write_bit()
 		);
 		if (err) {
 			LOG_ERR("failed to configure SDA GPIO pin to input (err %d)", err);
-			return err;
+			return;
 		}
 	}
+
+	data->cur_write_pos += 1;
 }
 
 void ps2_gpio_scl_interrupt_rising_check_write_ack()
@@ -643,7 +643,7 @@ int ps2_gpio_configure_scl_pin(struct ps2_gpio_data *data,
 	err = gpio_pin_interrupt_configure(
 		data->scl_gpio,
 		config->scl_pin,
-		(GPIO_INT_EDGE_BOTH)
+		(GPIO_INT_EDGE_FALLING)
 	);
 	if (err) {
 		LOG_ERR(
@@ -655,7 +655,7 @@ int ps2_gpio_configure_scl_pin(struct ps2_gpio_data *data,
 
 	gpio_init_callback(
 		&data->scl_cb_data,
-		ps2_gpio_scl_interrupt_handler,
+		ps2_gpio_scl_interrupt_falling_handler,
 		BIT(config->scl_pin)
 	);
 	err = gpio_add_callback(data->scl_gpio, &data->scl_cb_data);
