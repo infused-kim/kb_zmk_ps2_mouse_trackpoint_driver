@@ -25,6 +25,10 @@ LOG_MODULE_REGISTER(ps2_gpio);
 // timout and request a re-transmission.
 #define PS2_GPIO_TIMEOUT_READ_SCL K_USEC(50)
 
+// Max time we allow the device to send the next clock signal before we
+// timout and abort sending of data.
+#define PS2_GPIO_TIMEOUT_WRITE_SCL K_USEC(50)
+
 #define PS2_GPIO_POS_START 0
 // 1-8 are the data bits
 #define PS2_GPIO_POS_PARITY 9
@@ -295,9 +299,13 @@ void ps2_gpio_process_received_byte(uint8_t byte)
  * Writing PS2 data
  */
 
+int ps2_gpio_write_byte_blocking(uint8_t byte);
 int ps2_gpio_write_byte_async(uint8_t byte);
 void ps2_gpio_scl_interrupt_handler_write_send_bit();
 void ps2_gpio_scl_interrupt_handler_write_check_ack();
+void ps2_gpio_finish_write(bool successful);
+void ps2_gpio_write_scl_timeout(struct k_work *item);
+uint8_t ps2_gpio_get_byte_from_write_buffer();
 bool ps2_gpio_get_byte_parity(uint8_t byte);
 
 int ps2_gpio_write_byte_blocking(uint8_t byte)
@@ -349,7 +357,6 @@ int ps2_gpio_write_byte_async(uint8_t byte) {
 	// Take semaphore so that when `ps2_gpio_write_byte_blocking` attempts
 	// taking it, the process gets blocked.
 	// It is released in `ps2_gpio_scl_interrupt_handler_write_check_ack`.
-	LOG_INF("Taking semaphore in ps2_gpio_write_byte_async");
 	err = k_sem_take(&data->write_lock, K_NO_WAIT);
     if (err != 0 && err != -EBUSY) {
 		LOG_ERR("ps2_gpio_write_byte_async could not take semaphore: %d", err);
@@ -396,6 +403,7 @@ int ps2_gpio_write_byte_async(uint8_t byte) {
 	);
 	if (err) {
 		LOG_ERR("failed to configure SCL GPIO pin to output (err %d)", err);
+		ps2_gpio_finish_write(false);
 		return err;
 	}
 
@@ -419,11 +427,9 @@ int ps2_gpio_write_byte_async(uint8_t byte) {
 	);
 	if (err) {
 		LOG_ERR("failed to configure SDA GPIO pin to output (err %d)", err);
+		ps2_gpio_finish_write(false);
 		return err;
 	}
-
-	// The start bit was sent through `GPIO_OUTPUT_LOW`
-	data->cur_write_pos += 1;
 
 	// Release the clock line and configure it as input
 	// This let's the device take control of the clock again
@@ -435,8 +441,14 @@ int ps2_gpio_write_byte_async(uint8_t byte) {
 	);
 	if (err) {
 		LOG_ERR("failed to configure SCL GPIO pin to input (err %d)", err);
+		ps2_gpio_finish_write(false);
 		return err;
 	}
+
+	// The start bit was sent through setting sda to `GPIO_OUTPUT_LOW`
+	data->cur_write_pos += 1;
+
+	k_work_schedule(&data->write_scl_timout, PS2_GPIO_TIMEOUT_WRITE_SCL);
 
 	// From here on the device takes over the control of the clock again
 	// Every time it is ready for the next bit to be trasmitted, it will...
@@ -458,6 +470,8 @@ void ps2_gpio_scl_interrupt_handler_write()
 	struct ps2_gpio_data *data = &ps2_gpio_data;
 	const struct ps2_gpio_config *config = &ps2_gpio_config;
 
+	k_work_cancel_delayable(&data->write_scl_timout);
+
 	if(data->cur_write_pos == PS2_GPIO_POS_START)
 	{
 		// PS2_GPIO_POS_START is sent in ps2_gpio_write_byte_async
@@ -473,6 +487,7 @@ void ps2_gpio_scl_interrupt_handler_write()
 		ps2_gpio_scl_interrupt_handler_write_send_bit();
 
 		// Give control over data pin back to device after sending stop bit
+		// so that we can receive the ack bit from the device
 		int err;
 		err = gpio_pin_configure(
 			data->sda_gpio,
@@ -488,12 +503,14 @@ void ps2_gpio_scl_interrupt_handler_write()
 	} else if(data->cur_write_pos == PS2_GPIO_POS_ACK)
 	{
 		ps2_gpio_scl_interrupt_handler_write_check_ack();
+		return;
 	} else {
 		// All the data bits.
 		ps2_gpio_scl_interrupt_handler_write_send_bit();
 	}
 
 	data->cur_write_pos += 1;
+	k_work_schedule(&data->write_scl_timout, PS2_GPIO_TIMEOUT_WRITE_SCL);
 }
 
 void ps2_gpio_scl_interrupt_handler_write_send_bit()
@@ -517,25 +534,91 @@ void ps2_gpio_scl_interrupt_handler_write_check_ack()
 	// This function is called by `ps2_gpio_scl_interrupt_handler_write`
 	// when the device pulls the clock line low after we send the stop bit
 	// during a write.
-	struct ps2_gpio_data *data = &ps2_gpio_data;
 
 	int ack_val = ps2_gpio_get_sda();
 	LOG_INF("ps2_gpio_scl_interrupt_handler_write_check_ack ack_val: %d", ack_val);
 
 	if(ack_val == 0) {
 		LOG_INF("Write was successful");
-		data->cur_write_status = PS2_GPIO_WRITE_STATUS_SUCCESS;
+		ps2_gpio_finish_write(true);
 	} else {
 		LOG_INF("Write failed with ack: %d", ack_val);
-		data->cur_write_status = PS2_GPIO_WRITE_STATUS_FAILURE;
+		ps2_gpio_finish_write(false);
+	}
+}
+
+void ps2_gpio_finish_write(bool successful)
+{
+	struct ps2_gpio_data *data = &ps2_gpio_data;
+	const struct ps2_gpio_config *config = &ps2_gpio_config;
+
+	k_work_cancel_delayable(&data->write_scl_timout);
+
+	uint8_t write_val = ps2_gpio_get_byte_from_write_buffer();
+
+	if(successful) {
+		data->cur_write_status = PS2_GPIO_WRITE_STATUS_SUCCESS;
+	} else {
+		LOG_INF(
+			"Aborting write of value 0x%x at pos=%d",
+			write_val, data->cur_write_pos
+		);
+	 	data->cur_write_status = PS2_GPIO_WRITE_STATUS_FAILURE;
 	}
 
-	// Reset write buffer and position
 	data->mode = PS2_GPIO_MODE_READ;
-	data->write_buffer = 0x0;
+	data->cur_read_pos = PS2_GPIO_POS_START;
 	data->cur_write_pos = PS2_GPIO_POS_START;
+	data->write_buffer = 0x0;
+
+	// Give control over data pin back to device after sending stop bit
+	int err;
+	err = gpio_pin_configure(
+		data->sda_gpio,
+		config->sda_pin,
+		(GPIO_INPUT)
+	);
+	if (err) {
+		LOG_ERR(
+			"failed to configure SDA GPIO pin to back to input after "
+			"write (err %d)", err
+		);
+	}
 
 	k_sem_give(&data->write_lock);
+}
+
+void ps2_gpio_write_scl_timeout(struct k_work *item)
+{
+	// Called if the device doesn't set clock to low to request the next bit.
+	struct ps2_gpio_data *data = CONTAINER_OF(
+		item,
+		struct ps2_gpio_data,
+		write_scl_timout
+	);
+
+	LOG_ERR("Write SCL timout triggered on pos=%d", data->cur_write_pos);
+	ps2_gpio_finish_write(false);
+}
+
+uint8_t ps2_gpio_get_byte_from_write_buffer()
+{
+	struct ps2_gpio_data *data = &ps2_gpio_data;
+	uint8_t write_val = 0x0;
+
+	// The write buffer includes the start bit at the beginning and parity as
+	// well as stop bit at the end.
+	// So we get the bits between 1 to 8
+	for(int i = 0; i < 8; i++) {
+
+		PS2_GPIO_SET_BIT(
+			write_val,
+			PS2_GPIO_GET_BIT(data->write_buffer, (1+i)),
+			i
+		);
+	}
+
+	return write_val;
 }
 
 bool ps2_gpio_get_byte_parity(uint8_t byte)
@@ -764,7 +847,10 @@ static int ps2_gpio_init(const struct device *dev)
 	// Init semaphore for blocking writes
 	k_sem_init(&data->write_lock, 0, 1);
 
+	// Timeouts for clock pulses during read and write
     k_work_init_delayable(&data->read_scl_timout, ps2_gpio_read_scl_timeout);
+    k_work_init_delayable(&data->write_scl_timout, ps2_gpio_write_scl_timeout);
+
 	return 0;
 }
 
