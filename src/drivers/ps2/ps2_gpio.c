@@ -18,8 +18,15 @@
 #define LOG_LEVEL CONFIG_PS2_LOG_LEVEL
 LOG_MODULE_REGISTER(ps2_gpio);
 
+// Timeout for blocking read using the zephyr PS2 ps2_read() function
 #define PS2_GPIO_TIMEOUT_READ K_SECONDS(2)
+
+// Max time we allow the device to send the next clock signal before we
+// timout and request a re-transmission.
+#define PS2_GPIO_TIMEOUT_READ_SCL K_USEC(50)
+
 #define PS2_GPIO_POS_START 0
+// 1-8 are the data bits
 #define PS2_GPIO_POS_PARITY 9
 #define PS2_GPIO_POS_STOP 10
 #define PS2_GPIO_POS_ACK 11  // Write mode only
@@ -68,6 +75,7 @@ struct ps2_gpio_data {
 
 	uint8_t cur_read_byte;
 	int cur_read_pos;
+	struct k_work_delayable read_scl_timout;
 
 	uint16_t write_buffer;
 	int cur_write_pos;
@@ -147,6 +155,7 @@ void ps2_gpio_set_sda(int state)
 void ps2_gpio_send_cmd_resend()
 {
 	uint8_t cmd = 0xfe;
+	LOG_INF("Requesting resend of data with command: 0x%x", cmd);
 	ps2_gpio_write_byte_async(cmd);
 }
 
@@ -163,7 +172,7 @@ void ps2_gpio_empty_data_queue()
  */
 
 bool ps2_gpio_check_parity(uint8_t byte, int parity_bit_val);
-void ps2_gpio_abort_read();
+void ps2_gpio_abort_read(bool should_resend);
 void ps2_gpio_process_received_byte(uint8_t byte);
 
 // Reading doesn't need to be initiated. It happens automatically whenever
@@ -173,6 +182,9 @@ void ps2_gpio_process_received_byte(uint8_t byte);
 void ps2_gpio_scl_interrupt_handler_read()
 {
 	struct ps2_gpio_data *data = &ps2_gpio_data;
+
+	k_work_cancel_delayable(&data->read_scl_timout);
+
 	int scl_val = ps2_gpio_get_scl();
 	int sda_val = ps2_gpio_get_sda();
 
@@ -187,19 +199,19 @@ void ps2_gpio_scl_interrupt_handler_read()
 		// So we abort the transmission and start from scratch.
 		if(sda_val != 0) {
 			LOG_ERR("Restarting receiving due to invalid start bit.");
-			ps2_gpio_abort_read();
+			ps2_gpio_abort_read(true);
 			return;
 		}
 	} else if(data->cur_read_pos == PS2_GPIO_POS_PARITY) {
 		if(ps2_gpio_check_parity(data->cur_read_byte, sda_val) != true) {
 			LOG_ERR("Restarting receiving due to invalid parity bit.");
-			ps2_gpio_abort_read();
+			ps2_gpio_abort_read(true);
 			return;
 		}
 	} else if(data->cur_read_pos == PS2_GPIO_POS_STOP) {
 		if(sda_val != 1) {
 			LOG_ERR("Restarting receiving due to invalid stop bit.");
-			ps2_gpio_abort_read();
+			ps2_gpio_abort_read(true);
 			return;
 		}
 
@@ -216,8 +228,36 @@ void ps2_gpio_scl_interrupt_handler_read()
 	}
 
  	data->cur_read_pos += 1;
+	k_work_schedule(&data->read_scl_timout, PS2_GPIO_TIMEOUT_READ_SCL);
 }
 
+void ps2_gpio_read_scl_timeout(struct k_work *item)
+{
+	struct ps2_gpio_data *data = CONTAINER_OF(
+		item,
+		struct ps2_gpio_data,
+		read_scl_timout
+	);
+
+	LOG_ERR("Read SCL timout triggered on pos=%d", data->cur_read_pos);
+	ps2_gpio_abort_read(true);
+}
+
+void ps2_gpio_abort_read(bool should_resend)
+{
+	struct ps2_gpio_data *data = &ps2_gpio_data;
+
+	LOG_ERR("Aborting read on pos=%d", data->cur_read_pos);
+
+	data->cur_read_pos = PS2_GPIO_POS_START;
+	data->cur_read_byte = 0x0;
+
+	k_work_cancel_delayable(&data->read_scl_timout);
+
+	if(should_resend == true) {
+		ps2_gpio_send_cmd_resend();
+	}
+}
 
 bool ps2_gpio_check_parity(uint8_t byte, int parity_bit_val)
 {
@@ -232,14 +272,6 @@ bool ps2_gpio_check_parity(uint8_t byte, int parity_bit_val)
 	return 1;  // Match
 }
 
-void ps2_gpio_abort_read()
-{
-	struct ps2_gpio_data *data = &ps2_gpio_data;
-
-	ps2_gpio_send_cmd_resend();
-	data->cur_read_pos = PS2_GPIO_POS_START;
-	data->cur_read_byte = 0x0;
-}
 
 void ps2_gpio_process_received_byte(uint8_t byte)
 {
@@ -372,8 +404,11 @@ int ps2_gpio_write_byte_async(uint8_t byte) {
 	// Initiating a send aborts any in-progress reads, so we
 	// reset the current read byte
 	data->cur_write_status = PS2_GPIO_WRITE_STATUS_ACTIVE;
-	data->cur_read_byte = 0x0;
-	data->cur_read_pos = PS2_GPIO_POS_START;
+	if(data->cur_read_pos != PS2_GPIO_POS_START ||
+	   data->cur_read_byte != 0x0)
+	{
+		ps2_gpio_abort_read(false);
+	}
 
 	// Configure data for output and send the start bit
 	// The start bit is 0 and is sent through `GPIO_OUTPUT_LOW`
@@ -729,6 +764,7 @@ static int ps2_gpio_init(const struct device *dev)
 	// Init semaphore for blocking writes
 	k_sem_init(&data->write_lock, 0, 1);
 
+    k_work_init_delayable(&data->read_scl_timout, ps2_gpio_read_scl_timeout);
 	return 0;
 }
 
