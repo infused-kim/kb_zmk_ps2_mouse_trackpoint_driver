@@ -145,7 +145,7 @@ void ps2_gpio_set_scl(int state)
 	const struct ps2_gpio_data *data = &ps2_gpio_data;
 	const struct ps2_gpio_config *config = &ps2_gpio_config;
 
-	LOG_INF("Setting scl to %d", state);
+	// LOG_INF("Setting scl to %d", state);
 	gpio_pin_set(data->sda_gpio, config->sda_pin, state);
 }
 
@@ -154,7 +154,7 @@ void ps2_gpio_set_sda(int state)
 	const struct ps2_gpio_data *data = &ps2_gpio_data;
 	const struct ps2_gpio_config *config = &ps2_gpio_config;
 
-	LOG_INF("Seting sda to %d", state);
+	// LOG_INF("Seting sda to %d", state);
 	gpio_pin_set(data->scl_gpio, config->scl_pin, state);
 }
 
@@ -467,7 +467,7 @@ int ps2_gpio_write_byte_async(uint8_t byte) {
 	ps2_gpio_configure_pin_sda_output();
 
 	// Inhibit the line by setting clock low and data high
-	LOG_INF("Pulling clock line low to start write process.");
+	// LOG_INF("Pulling clock line low to start write process.");
 	ps2_gpio_set_sda(1);
 	ps2_gpio_set_scl(0);
 
@@ -491,7 +491,7 @@ int ps2_gpio_write_byte_async(uint8_t byte) {
 	ps2_gpio_set_scl(1);
 	ps2_gpio_configure_pin_scl_input();
 
-	LOG_INF("Setting clock line high to start writing bits.");
+	// LOG_INF("Setting clock line high to start writing bits.");
 
 	// The start bit was sent through setting sda to `GPIO_OUTPUT_LOW`
 	data->cur_write_pos += 1;
@@ -522,10 +522,10 @@ void ps2_gpio_scl_interrupt_handler_write()
 	if(data->cur_write_pos == PS2_GPIO_POS_START)
 	{
 		// PS2_GPIO_POS_START is sent in ps2_gpio_write_byte_async
-		LOG_ERR(
-			"ps2_gpio_scl_interrupt_handler_write: Ignoring pos=%d",
-			data->cur_write_pos
-		);
+		// LOG_ERR(
+		// 	"ps2_gpio_scl_interrupt_handler_write: Ignoring pos=%d",
+		// 	data->cur_write_pos
+		// );
 
 		return;
 	} else if(data->cur_write_pos == PS2_GPIO_POS_STOP)
@@ -592,6 +592,10 @@ void ps2_gpio_finish_write(bool successful)
 	uint8_t write_val = ps2_gpio_get_byte_from_write_buffer();
 
 	if(successful) {
+		LOG_INF(
+			"Write was successful for value 0x%x",
+			write_val
+		);
 		data->cur_write_status = PS2_GPIO_WRITE_STATUS_SUCCESS;
 	} else {
 		LOG_INF(
@@ -607,14 +611,14 @@ void ps2_gpio_finish_write(bool successful)
 	data->write_buffer = 0x0;
 
 	// Give control over data pin back to device after sending stop bit
-	ps2_gpio_set_sda(1);
-	ps2_gpio_configure_pin_sda_input();
+	// ps2_gpio_set_sda(1);
+	// ps2_gpio_configure_pin_sda_input();
 
 	// Release the clock line and configure it as input
 	// This let's the device take control of the clock again
 	// TODO: Add a check if it's actually in read mode
-	ps2_gpio_set_scl(1);
-	ps2_gpio_configure_pin_scl_input();
+	// ps2_gpio_set_scl(1);
+	// ps2_gpio_configure_pin_scl_input();
 
 	k_sem_give(&data->write_lock);
 }
