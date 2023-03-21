@@ -18,6 +18,10 @@
 #define LOG_LEVEL CONFIG_PS2_LOG_LEVEL
 LOG_MODULE_REGISTER(ps2_gpio);
 
+// Settings
+#define PS2_GPIO_ENABLE_POST_WRITE_LOG false
+
+
 // Timeout for blocking read using the zephyr PS2 ps2_read() function
 #define PS2_GPIO_TIMEOUT_READ K_SECONDS(2)
 
@@ -88,6 +92,9 @@ struct ps2_gpio_data {
 	ps2_gpio_write_status cur_write_status;
 	struct k_sem write_lock;
 	struct k_work_delayable write_scl_timout;
+
+	bool dbg_post_write_log;
+	int dbg_post_write_pos;
 };
 
 
@@ -115,6 +122,9 @@ static struct ps2_gpio_data ps2_gpio_data = {
 	.write_buffer = 0x0,
 	.cur_write_pos = 0,
 	.cur_write_status = PS2_GPIO_WRITE_STATUS_INACTIVE,
+
+	.dbg_post_write_log = false,
+	.dbg_post_write_pos = 0,
 };
 
 
@@ -557,6 +567,13 @@ void ps2_gpio_scl_interrupt_handler_write()
 	// each falling edge.
 	struct ps2_gpio_data *data = &ps2_gpio_data;
 
+	int scl_val = ps2_gpio_get_scl();
+	int sda_val = ps2_gpio_get_sda();
+	LOG_INF(
+		"ps2_gpio_scl_interrupt_handler_write called with position=%d; scl=%d; sda=%d",
+		data->cur_write_pos, scl_val, sda_val
+	);
+
 	if(data->cur_write_pos == PS2_GPIO_POS_START)
 	{
 		// PS2_GPIO_POS_START is sent in ps2_gpio_write_byte_async
@@ -618,10 +635,9 @@ void ps2_gpio_scl_interrupt_handler_write_check_ack()
 	// during a write.
 
 	int ack_val = ps2_gpio_get_sda();
-	LOG_INF("ps2_gpio_scl_interrupt_handler_write_check_ack ack_val: %d", ack_val);
 
 	if(ack_val == 0) {
-		LOG_INF("Write was successful");
+		LOG_INF("Write was successful with ack: %d", ack_val);
 		ps2_gpio_finish_write(true);
 	} else {
 		LOG_INF("Write failed with ack: %d", ack_val);
@@ -634,6 +650,11 @@ void ps2_gpio_finish_write(bool successful)
 	struct ps2_gpio_data *data = &ps2_gpio_data;
 
 	k_work_cancel_delayable(&data->write_scl_timout);
+
+	if(PS2_GPIO_ENABLE_POST_WRITE_LOG == true) {
+		data->dbg_post_write_log = true;
+		data->dbg_post_write_pos = 0;
+	}
 
 	uint8_t write_val = ps2_gpio_get_byte_from_write_buffer();
 
@@ -715,6 +736,21 @@ bool ps2_gpio_get_byte_parity(uint8_t byte)
  * Interrupt Handler
  */
 
+void ps2_gpio_scl_interrupt_handler_log()
+{
+	struct ps2_gpio_data *data = &ps2_gpio_data;
+
+	int scl_val = ps2_gpio_get_scl();
+	int sda_val = ps2_gpio_get_sda();
+
+	LOG_INF(
+		"ps2_gpio_scl_interrupt_handler_log called with position=%d; scl=%d; sda=%d",
+		data->dbg_post_write_pos, scl_val, sda_val
+	);
+
+	data->dbg_post_write_pos += 1;
+}
+
 void ps2_gpio_scl_interrupt_handler(const struct device *dev,
 						   struct gpio_callback *cb,
 						   uint32_t pins)
@@ -723,7 +759,9 @@ void ps2_gpio_scl_interrupt_handler(const struct device *dev,
 
 	// LOG_INF("ps2_gpio_scl_interrupt_handler called with mode=%d",data->mode);
 
-	if(data->mode == PS2_GPIO_MODE_READ) {
+	if(data->dbg_post_write_log == true) {
+		ps2_gpio_scl_interrupt_handler_log();
+	} else if(data->mode == PS2_GPIO_MODE_READ) {
 		ps2_gpio_scl_interrupt_handler_read();
 	} else {
 		ps2_gpio_scl_interrupt_handler_write();
