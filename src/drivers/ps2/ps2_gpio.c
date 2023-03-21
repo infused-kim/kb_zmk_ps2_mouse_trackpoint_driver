@@ -236,8 +236,15 @@ void ps2_gpio_send_cmd_resend()
 void ps2_gpio_empty_data_queue()
 {
 	struct ps2_gpio_data *data = &ps2_gpio_data;
-	while(k_fifo_get(&data->data_queue, K_NO_WAIT) != NULL) {
-		// Do nothing except call k_fifo_get() until it's empty.
+
+	while(true) {
+		uint8_t *queue_byte;
+		queue_byte = k_fifo_get(&data->data_queue, K_NO_WAIT);
+		if(queue_byte != NULL) {
+			k_free(queue_byte);
+		} else {
+			break;
+		}
 	}
 }
 
@@ -355,12 +362,18 @@ void ps2_gpio_process_received_byte(uint8_t byte)
 
 	// If no callback is set, we add the data to a fifo queue
 	// that can be read later with the read using `ps2_read`
-
 	if(data->callback_isr != NULL && data->callback_enabled) {
 
 		data->callback_isr(NULL, byte);
 	} else {
-		k_fifo_put(&data->data_queue, &byte);
+		uint8_t *byte_heap = (uint8_t *) k_malloc(sizeof(byte));
+		if(byte_heap == NULL) {
+			LOG_ERR("Could not allocate heap space to add byte to fifo");
+			return;
+		}
+
+		*byte_heap = byte;
+		k_fifo_alloc_put(&data->data_queue, byte_heap);
 	}
 }
 
@@ -724,6 +737,8 @@ int ps2_gpio_read(const struct device *dev, uint8_t *value)
 
 	LOG_DBG("ps2_gpio_read: Returning 0x%x", *queue_byte);
 	*value =  *queue_byte;
+
+	k_free(queue_byte);
 
 	return 0;
 }
