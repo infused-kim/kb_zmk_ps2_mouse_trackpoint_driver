@@ -29,7 +29,7 @@ LOG_MODULE_REGISTER(ps2_gpio);
 // timout and abort sending of data.
 #define PS2_GPIO_TIMEOUT_WRITE_SCL K_USEC(2000)
 
-#define PS2_GPIO_WRITE_INIT_SCL_HOLD K_USEC(100)
+#define PS2_GPIO_WRITE_INIT_SCL_HOLD K_USEC(110)
 
 #define PS2_GPIO_POS_START 0
 // 1-8 are the data bits
@@ -266,13 +266,13 @@ void ps2_gpio_scl_interrupt_handler_read()
 
 	k_work_cancel_delayable(&data->read_scl_timout);
 
-	int scl_val = ps2_gpio_get_scl();
+	// int scl_val = ps2_gpio_get_scl();
 	int sda_val = ps2_gpio_get_sda();
 
-	LOG_INF(
-		"ps2_gpio_scl_interrupt_handler_read called with position=%d; scl=%d; sda=%d",
-		data->cur_read_pos, scl_val, sda_val
-	);
+	// LOG_INF(
+	// 	"ps2_gpio_scl_interrupt_handler_read called with position=%d; scl=%d; sda=%d",
+	// 	data->cur_read_pos, scl_val, sda_val
+	// );
 
 	if(data->cur_read_pos == PS2_GPIO_POS_START) {
 		// The first bit of every transmission should be 0.
@@ -414,7 +414,7 @@ int ps2_gpio_write_byte_blocking(uint8_t byte)
 	}
 
 	if(data->cur_write_status == PS2_GPIO_WRITE_STATUS_SUCCESS) {
-		LOG_INF("Blocking write finished successfully for byte 0x%x", byte);
+		// LOG_INF("Blocking write finished successfully for byte 0x%x", byte);
 		err = 0;
 	} else {
 		LOG_ERR(
@@ -475,6 +475,15 @@ int ps2_gpio_write_byte_async(uint8_t byte) {
 	data->mode = PS2_GPIO_MODE_WRITE;
 	data->cur_write_pos = PS2_GPIO_POS_START;
 
+	// Initiating a send aborts any in-progress reads, so we
+	// reset the current read byte
+	data->cur_write_status = PS2_GPIO_WRITE_STATUS_ACTIVE;
+	if(data->cur_read_pos != PS2_GPIO_POS_START ||
+	   data->cur_read_byte != 0x0)
+	{
+		ps2_gpio_abort_read(false);
+	}
+
 	// Configure data and clock lines for output
 	ps2_gpio_configure_pin_scl_output();
 	ps2_gpio_configure_pin_sda_output();
@@ -494,14 +503,7 @@ int ps2_gpio_write_byte_async(uint8_t byte) {
 	// Keep the line inhibited for at least 100 microseconds
 	k_sleep(PS2_GPIO_WRITE_INIT_SCL_HOLD);
 
-	// Initiating a send aborts any in-progress reads, so we
-	// reset the current read byte
-	data->cur_write_status = PS2_GPIO_WRITE_STATUS_ACTIVE;
-	if(data->cur_read_pos != PS2_GPIO_POS_START ||
-	   data->cur_read_byte != 0x0)
-	{
-		ps2_gpio_abort_read(false);
-	}
+
 
 	// Set data to value of start bit
 	ps2_gpio_set_sda(0);
@@ -542,11 +544,6 @@ void ps2_gpio_scl_interrupt_handler_write()
 	if(data->cur_write_pos == PS2_GPIO_POS_START)
 	{
 		// PS2_GPIO_POS_START is sent in ps2_gpio_write_byte_async
-		// LOG_ERR(
-		// 	"ps2_gpio_scl_interrupt_handler_write: Ignoring pos=%d",
-		// 	data->cur_write_pos
-		// );
-
 		return;
 	} else if(data->cur_write_pos == PS2_GPIO_POS_STOP)
 	{
@@ -556,6 +553,9 @@ void ps2_gpio_scl_interrupt_handler_write()
 		// Give control over data pin back to device after sending stop bit
 		// so that we can receive the ack bit from the device
 		ps2_gpio_configure_pin_sda_input();
+
+		// // Ignore ack bit and assume tranfer was successful
+		// ps2_gpio_finish_write(true);
 	} else if(data->cur_write_pos == PS2_GPIO_POS_ACK)
 	{
 		ps2_gpio_scl_interrupt_handler_write_check_ack();
@@ -580,7 +580,7 @@ void ps2_gpio_scl_interrupt_handler_write_send_bit()
 
 	int data_bit = PS2_GPIO_GET_BIT(data->write_buffer, data->cur_write_pos);
 
-	LOG_INF("ps2_gpio_scl_interrupt_handler_write_send_bit called with pos=%d; bit=%d", data->cur_write_pos, data_bit);
+	// LOG_INF("ps2_gpio_scl_interrupt_handler_write_send_bit called with pos=%d; bit=%d", data->cur_write_pos, data_bit);
 
 	ps2_gpio_set_sda(data_bit);
 }
@@ -612,10 +612,10 @@ void ps2_gpio_finish_write(bool successful)
 	uint8_t write_val = ps2_gpio_get_byte_from_write_buffer();
 
 	if(successful) {
-		LOG_INF(
-			"Write was successful for value 0x%x",
-			write_val
-		);
+		// LOG_INF(
+		// 	"Write was successful for value 0x%x",
+		// 	write_val
+		// );
 		data->cur_write_status = PS2_GPIO_WRITE_STATUS_SUCCESS;
 	} else {
 		LOG_INF(
