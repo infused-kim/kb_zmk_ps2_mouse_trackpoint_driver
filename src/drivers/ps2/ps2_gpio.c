@@ -27,9 +27,9 @@ LOG_MODULE_REGISTER(ps2_gpio);
 
 // Max time we allow the device to send the next clock signal before we
 // timout and abort sending of data.
-#define PS2_GPIO_TIMEOUT_WRITE_SCL K_USEC(100)
+#define PS2_GPIO_TIMEOUT_WRITE_SCL K_USEC(800)
 
-#define PS2_GPIO_WRITE_INIT_SCL_HOLD K_USEC(110)
+#define PS2_GPIO_WRITE_INIT_SCL_HOLD K_USEC(180)
 
 #define PS2_GPIO_POS_START 0
 // 1-8 are the data bits
@@ -396,7 +396,7 @@ int ps2_gpio_write_byte_blocking(uint8_t byte)
 	struct ps2_gpio_data *data = &ps2_gpio_data;
 	int err;
 
-	LOG_INF("ps2_gpio_write_byte_blocking called with byte=0x%x",byte);
+	LOG_INF("ps2_gpio_write_byte_blocking called with byte=0x%x", byte);
 
 	err = ps2_gpio_write_byte_async(byte);
     if (err) {
@@ -414,12 +414,12 @@ int ps2_gpio_write_byte_blocking(uint8_t byte)
 	}
 
 	if(data->cur_write_status == PS2_GPIO_WRITE_STATUS_SUCCESS) {
-		LOG_INF("Blocking write finished successfully for byte 0x%d", byte);
+		LOG_INF("Blocking write finished successfully for byte 0x%x", byte);
 		err = 0;
 	} else {
 		LOG_ERR(
-			"Blocking write finished with failure status: %d",
-			data->cur_write_status
+			"Blocking write finished with failure for byte 0x%x status: %d",
+			byte, data->cur_write_status
 		);
 		err = -data->cur_write_status;
 	}
@@ -479,9 +479,15 @@ int ps2_gpio_write_byte_async(uint8_t byte) {
 	ps2_gpio_configure_pin_scl_output();
 	ps2_gpio_configure_pin_sda_output();
 
+	// Set line idle
+	ps2_gpio_set_sda(1);
+	ps2_gpio_set_scl(1);
+	// With this break it SOMETIMES works, but most of the time the process crashes.
+	// k_sleep(K_USEC(20));
+
+
 	// Inhibit the line by setting clock low and data high
 	// LOG_INF("Pulling clock line low to start write process.");
-	ps2_gpio_set_sda(1);
 	ps2_gpio_set_scl(0);
 
 	// Keep the line inhibited for at least 100 microseconds
