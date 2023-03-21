@@ -335,9 +335,9 @@ void ps2_gpio_abort_read(bool should_resend)
 
 	k_work_cancel_delayable(&data->read_scl_timout);
 
-	if(should_resend == true) {
-		ps2_gpio_send_cmd_resend();
-	}
+	// if(should_resend == true) {
+	// 	ps2_gpio_send_cmd_resend();
+	// }
 }
 
 bool ps2_gpio_check_parity(uint8_t byte, int parity_bit_val)
