@@ -651,6 +651,13 @@ void ps2_gpio_finish_write(bool successful)
 
 	k_work_cancel_delayable(&data->write_scl_timout);
 
+	int finish_pos = data->cur_write_pos;
+
+	data->mode = PS2_GPIO_MODE_READ;
+	data->cur_read_pos = PS2_GPIO_POS_START;
+	data->cur_write_pos = PS2_GPIO_POS_START;
+	data->write_buffer = 0x0;
+
 	if(PS2_GPIO_ENABLE_POST_WRITE_LOG == true) {
 		data->dbg_post_write_log = true;
 		data->dbg_post_write_pos = 0;
@@ -667,24 +674,14 @@ void ps2_gpio_finish_write(bool successful)
 	} else {
 		LOG_INF(
 			"Aborting write of value 0x%x at pos=%d",
-			write_val, data->cur_write_pos
+			write_val, finish_pos
 		);
 	 	data->cur_write_status = PS2_GPIO_WRITE_STATUS_FAILURE;
 	}
 
-	data->mode = PS2_GPIO_MODE_READ;
-	data->cur_read_pos = PS2_GPIO_POS_START;
-	data->cur_write_pos = PS2_GPIO_POS_START;
-	data->write_buffer = 0x0;
-
-	// Give control over data pin back to device after sending stop bit
-	// ps2_gpio_set_sda(1);
+	// Give back control over data and clock line if we still hold on to it
+	// This shouldn't be happening in successful writes though
 	ps2_gpio_configure_pin_sda_input();
-
-	// Release the clock line and configure it as input
-	// This let's the device take control of the clock again
-	// TODO: Add a check if it's actually in read mode
-	// ps2_gpio_set_scl(1);
 	ps2_gpio_configure_pin_scl_input();
 
 	k_sem_give(&data->write_lock);
