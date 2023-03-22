@@ -31,7 +31,7 @@ LOG_MODULE_REGISTER(ps2_gpio);
 
 // Max time we allow the device to send the next clock signal before we
 // timout and abort sending of data.
-#define PS2_GPIO_TIMEOUT_WRITE_SCL K_USEC(2000)
+#define PS2_GPIO_TIMEOUT_WRITE_SCL K_USEC(100)
 
 #define PS2_GPIO_WRITE_INIT_SCL_HOLD K_USEC(200)
 
@@ -91,6 +91,7 @@ struct ps2_gpio_data {
 	int cur_write_pos;
 	ps2_gpio_write_status cur_write_status;
 	struct k_sem write_lock;
+	struct k_work_delayable write_inhibition_wait;
 	struct k_work_delayable write_scl_timout;
 
 	bool dbg_post_write_log;
@@ -396,6 +397,7 @@ void ps2_gpio_process_received_byte(uint8_t byte)
 
 int ps2_gpio_write_byte_blocking(uint8_t byte);
 int ps2_gpio_write_byte_async(uint8_t byte);
+void ps2_gpio_write_inhibition_wait(struct k_work *item);
 void ps2_gpio_scl_interrupt_handler_write_send_bit();
 void ps2_gpio_scl_interrupt_handler_write_check_ack();
 void ps2_gpio_finish_write(bool successful);
@@ -523,8 +525,26 @@ int ps2_gpio_write_byte_async(uint8_t byte) {
 	ps2_gpio_set_scl(0);
 
 	// Keep the line inhibited for at least 100 microseconds
-	k_sleep(PS2_GPIO_WRITE_INIT_SCL_HOLD);
+	k_work_schedule(
+		&data->write_inhibition_wait,
+		PS2_GPIO_WRITE_INIT_SCL_HOLD
+	);
 
+	// LOG_INF("Finished in ps2_gpio_write_byte_async");
+
+	// The code continues in ps2_gpio_write_inhibition_wait
+	return 0;
+}
+
+void ps2_gpio_write_inhibition_wait(struct k_work *item)
+{
+	// LOG_INF("In ps2_gpio_write_inhibition_wait");
+
+	struct ps2_gpio_data *data = CONTAINER_OF(
+		item,
+		struct ps2_gpio_data,
+		write_inhibition_wait
+	);
 
 	// LOG_INF("Pulling clock low");
 
@@ -561,8 +581,6 @@ int ps2_gpio_write_byte_async(uint8_t byte) {
 	//  - Which will send the correct bit
 	//  - After all bits are sent `scl_interrupt_handler_write_check_ack` is
 	//    called, which verifies if the transaction was successful
-
-	return 0;
 }
 
 void ps2_gpio_scl_interrupt_handler_write()
@@ -574,10 +592,10 @@ void ps2_gpio_scl_interrupt_handler_write()
 
 	int scl_val = ps2_gpio_get_scl();
 	int sda_val = ps2_gpio_get_sda();
-	LOG_INF(
-		"ps2_gpio_scl_interrupt_handler_write called with position=%d; scl=%d; sda=%d",
-		data->cur_write_pos, scl_val, sda_val
-	);
+	// LOG_INF(
+	// 	"ps2_gpio_scl_interrupt_handler_write called with position=%d; scl=%d; sda=%d",
+	// 	data->cur_write_pos, scl_val, sda_val
+	// );
 
 	if(data->cur_write_pos == PS2_GPIO_POS_START)
 	{
@@ -966,6 +984,7 @@ static int ps2_gpio_init(const struct device *dev)
 	// Timeouts for clock pulses during read and write
     k_work_init_delayable(&data->read_scl_timout, ps2_gpio_read_scl_timeout);
     k_work_init_delayable(&data->write_scl_timout, ps2_gpio_write_scl_timeout);
+    k_work_init_delayable(&data->write_inhibition_wait, ps2_gpio_write_inhibition_wait);
 
 	return 0;
 }
