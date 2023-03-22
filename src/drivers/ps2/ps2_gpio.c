@@ -93,6 +93,7 @@ struct ps2_gpio_data {
 	struct k_sem write_lock;
 	struct k_work_delayable write_inhibition_wait;
 	struct k_work_delayable write_scl_timout;
+	int64_t write_finish_time;
 
 	bool dbg_post_write_log;
 	int dbg_post_write_pos;
@@ -124,6 +125,7 @@ static struct ps2_gpio_data ps2_gpio_data = {
 	.write_buffer = 0x0,
 	.cur_write_pos = 0,
 	.cur_write_status = PS2_GPIO_WRITE_STATUS_INACTIVE,
+	.write_finish_time = 0,
 
 	.dbg_post_write_log = false,
 	.dbg_post_write_pos = 0,
@@ -286,6 +288,15 @@ void ps2_gpio_scl_interrupt_handler_read()
 		"ps2_gpio_scl_interrupt_handler_read called with position=%d; scl=%d; sda=%d",
 		data->cur_read_pos, scl_val, sda_val
 	);
+
+	// Sometimes after a write we miss a clock cycle (the start bit).
+	// This tries to compensate for it.
+	if(data->cur_read_pos == PS2_GPIO_POS_START &&
+	   k_cyc_to_us_ceil64(k_uptime_ticks() - data->write_finish_time) < 5 &&
+	   sda_val != 0) {
+		LOG_ERR("Skipping start bit, because last write was within 5us.");
+		data->cur_read_pos += 1;
+	}
 
 	if(data->cur_read_pos == PS2_GPIO_POS_START) {
 		// The first bit of every transmission should be 0.
@@ -671,6 +682,8 @@ void ps2_gpio_scl_interrupt_handler_write_check_ack()
 void ps2_gpio_finish_write(bool successful)
 {
 	struct ps2_gpio_data *data = &ps2_gpio_data;
+
+	data->write_finish_time = k_uptime_ticks();
 
 	k_work_cancel_delayable(&data->write_scl_timout);
 
