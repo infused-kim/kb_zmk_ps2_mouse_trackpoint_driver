@@ -33,7 +33,7 @@ LOG_MODULE_REGISTER(ps2_gpio);
 // timout and abort sending of data.
 #define PS2_GPIO_TIMEOUT_WRITE_SCL K_USEC(2000)
 
-#define PS2_GPIO_WRITE_INIT_SCL_HOLD K_USEC(120)
+#define PS2_GPIO_WRITE_INIT_SCL_HOLD K_USEC(200)
 
 #define PS2_GPIO_POS_START 0
 // 1-8 are the data bits
@@ -537,6 +537,9 @@ int ps2_gpio_write_byte_async(uint8_t byte) {
 
 	// Set data to value of start bit
 	ps2_gpio_set_sda(0);
+
+	// Waiting after setting data low did not yield improvement.
+	// k_sleep(K_USEC(30));
 
 	// Release the clock line and configure it as input
 	// This let's the device take control of the clock again
