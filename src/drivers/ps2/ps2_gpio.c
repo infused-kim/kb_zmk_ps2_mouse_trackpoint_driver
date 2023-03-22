@@ -95,6 +95,7 @@ struct ps2_gpio_data {
 
 	bool dbg_post_write_log;
 	int dbg_post_write_pos;
+	int64_t dbg_last_clock_ticks;
 };
 
 
@@ -125,6 +126,7 @@ static struct ps2_gpio_data ps2_gpio_data = {
 
 	.dbg_post_write_log = false,
 	.dbg_post_write_pos = 0,
+	.dbg_last_clock_ticks = 0,
 };
 
 
@@ -755,9 +757,20 @@ void ps2_gpio_scl_interrupt_handler(const struct device *dev,
 						   struct gpio_callback *cb,
 						   uint32_t pins)
 {
-	const struct ps2_gpio_data *data = &ps2_gpio_data;
+	struct ps2_gpio_data *data = &ps2_gpio_data;
 
-	// LOG_INF("ps2_gpio_scl_interrupt_handler called with mode=%d",data->mode);
+	if(PS2_GPIO_ENABLE_POST_WRITE_LOG == true) {
+
+		uint64_t irq_time = k_uptime_ticks();
+		// LOG_INF(
+		// 	"ps2_gpio_scl_interrupt_handler called with mode=%d; "
+		// 	"time_delta=%" PRIu64,
+		// 	data->mode,
+		// 	irq_time - data->dbg_last_clock_ticks
+		// );
+
+		data->dbg_last_clock_ticks = irq_time;
+	}
 
 	if(data->dbg_post_write_log == true) {
 		ps2_gpio_scl_interrupt_handler_log();
