@@ -162,7 +162,7 @@ void ps2_gpio_set_scl(int state)
 	const struct ps2_gpio_config *config = &ps2_gpio_config;
 
 	// LOG_INF("Setting scl to %d", state);
-	gpio_pin_set(data->sda_gpio, config->sda_pin, state);
+	gpio_pin_set(data->scl_gpio, config->scl_pin, state);
 }
 
 void ps2_gpio_set_sda(int state)
@@ -171,7 +171,7 @@ void ps2_gpio_set_sda(int state)
 	const struct ps2_gpio_config *config = &ps2_gpio_config;
 
 	// LOG_INF("Seting sda to %d", state);
-	gpio_pin_set(data->scl_gpio, config->scl_pin, state);
+	gpio_pin_set(data->sda_gpio, config->sda_pin, state);
 }
 
 int ps2_gpio_configure_pin_scl(gpio_flags_t flags, char *descr)
