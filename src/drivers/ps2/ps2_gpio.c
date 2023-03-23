@@ -297,6 +297,62 @@ void ps2_gpio_empty_data_queue()
 
 
 /*
+ * Logging Helpers
+ */
+
+char *ps2_gpio_get_mode_str() {
+	struct ps2_gpio_data *data = &ps2_gpio_data;
+
+	if(data->mode == PS2_GPIO_MODE_READ) {
+		return "r";
+	} else {
+		return "w";
+	}
+}
+
+char *ps2_gpio_get_pos_str() {
+	struct ps2_gpio_data *data = &ps2_gpio_data;
+
+	int pos;
+	if(data->mode == PS2_GPIO_MODE_READ) {
+		pos = data->cur_read_pos;
+	} else {
+		pos = data->cur_write_pos;
+	}
+
+	char *pos_names[] = {
+		"start",
+		"data_1",
+		"data_2",
+		"data_3",
+		"data_4",
+		"data_5",
+		"data_6",
+		"data_7",
+		"data_8",
+		"parity",
+		"stop",
+		"ack",
+	};
+
+	if(pos >= (sizeof(pos_names) / sizeof(pos_names[0]))) {
+		return "unk";
+	} else {
+		return pos_names[pos];
+	}
+}
+
+#define PS2_FORMAT_START	"%7" PRIu64 ": "
+#define PS2_ARGS_START		k_uptime_ticks()
+#define PS2_FORMAT_END 		" (mode=%s; pos=%-6s; scl=%d; sda=%d)"
+#define PS2_ARGS_END		ps2_gpio_get_mode_str(), ps2_gpio_get_pos_str(), ps2_gpio_get_scl(), ps2_gpio_get_sda()
+
+#define LOG_DBG_PS2(format,...)   LOG_DBG(PS2_FORMAT_START format PS2_FORMAT_END, PS2_ARGS_START, __VA_ARGS__ __VA_OPT__(,) PS2_ARGS_END)
+#define LOG_INF_PS2(format,...)   LOG_INF(PS2_FORMAT_START format PS2_FORMAT_END, PS2_ARGS_START, __VA_ARGS__ __VA_OPT__(,) PS2_ARGS_END)
+#define LOG_WRN_PS2(format,...)   LOG_WRN(PS2_FORMAT_START format PS2_FORMAT_END, PS2_ARGS_START, __VA_ARGS__ __VA_OPT__(,) PS2_ARGS_END)
+#define LOG_ERR_PS2(format,...)   LOG_ERR(PS2_FORMAT_START format PS2_FORMAT_END, PS2_ARGS_START, __VA_ARGS__ __VA_OPT__(,) PS2_ARGS_END)
+
+/*
  * Reading PS/2 data
  */
 
