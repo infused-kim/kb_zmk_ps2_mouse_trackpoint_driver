@@ -647,12 +647,6 @@ int ps2_gpio_write_byte_async(uint8_t byte) {
 	ps2_gpio_configure_pin_scl_output();
 	ps2_gpio_configure_pin_sda_output();
 
-	// // Set line idle
-	// ps2_gpio_set_sda(1);
-	// ps2_gpio_set_scl(1);
-	// // With this break it SOMETIMES works, but most of the time the process crashes.
-	// k_sleep(K_USEC(100));
-
 	// Disable interrupt so that we don't trigger it when we
 	// pull the clock low to inhibit the line
 	ps2_gpio_set_scl_callback_enabled(false);
@@ -687,22 +681,13 @@ void ps2_gpio_write_inhibition_wait(struct k_work *item)
 		write_inhibition_wait
 	);
 
-	// LOG_INF("Pulling clock low");
-
-	// The start bit is sent through setting sda to 0.
-	// Increase position so that next clock can send the
-	// first data bit.
-	// Despite being counter intuitive, it's important that the pos
-	// is increased here and not after setting sda low.
-	// Otherwise we miss a clock cycle and can't read the next
-	// value after the transmission.
-	data->cur_write_pos += 1;
-
 	// Set data to value of start bit
 	ps2_gpio_set_sda(0);
 
-	// Waiting after setting data low did not yield improvement.
-	// k_sleep(K_USEC(30));
+	// The start bit was sent by setting sda to low
+	// So the next scl interrupt will be for the first
+	// data bit.
+	data->cur_write_pos += 1;
 
 	// Release the clock line and configure it as input
 	// This let's the device take control of the clock again
