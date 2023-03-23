@@ -177,6 +177,33 @@ void ps2_gpio_set_sda(int state)
 	gpio_pin_set(data->sda_gpio, config->sda_pin, state);
 }
 
+int ps2_gpio_set_scl_callback_enabled(bool enabled)
+{
+	struct ps2_gpio_data *data = &ps2_gpio_data;
+	int err;
+
+	if(enabled) {
+		err = gpio_add_callback(data->scl_gpio, &data->scl_cb_data);
+		if (err) {
+			LOG_ERR(
+				"failed to enable interrupt callback on "
+				"SCL GPIO pin (err %d)", err
+			);
+		}
+	} else {
+		err = gpio_remove_callback(data->scl_gpio, &data->scl_cb_data);
+		if (err) {
+			LOG_ERR(
+				"failed to disable interrupt callback on "
+				"SCL GPIO pin (err %d)", err
+			);
+		}
+	}
+
+	return err;
+}
+
+
 int ps2_gpio_configure_pin_scl(gpio_flags_t flags, char *descr)
 {
 	struct ps2_gpio_data *data = &ps2_gpio_data;
@@ -547,11 +574,17 @@ int ps2_gpio_write_byte_async(uint8_t byte) {
 	// // With this break it SOMETIMES works, but most of the time the process crashes.
 	// k_sleep(K_USEC(100));
 
+	// Disable interrupt so that we don't trigger it when we
+	// pull the clock low to inhibit the line
+	ps2_gpio_set_scl_callback_enabled(false);
 
 	// Inhibit the line by setting clock low and data high
 	// LOG_INF("Pulling clock line low to start write process.");
 	ps2_gpio_set_sda(1);
 	ps2_gpio_set_scl(0);
+
+	// Enable the scl interrupt again
+	ps2_gpio_set_scl_callback_enabled(true);
 
 	// Keep the line inhibited for at least 100 microseconds
 	k_work_schedule(
@@ -908,11 +941,17 @@ void ps2_gpio_interrupt_log_write_start(uint8_t byte)
 	ps2_gpio_configure_pin_scl_output();
 	ps2_gpio_configure_pin_sda_output();
 
+	// Disable scl interrupt so that we don't trigger it when we
+	// pull the clock low to inhibit the line
+	ps2_gpio_set_scl_callback_enabled(false);
 
 	// Inhibit the line by setting clock low and data high
 	// LOG_INF("Pulling clock line low to start write process.");
 	ps2_gpio_set_sda(1);
 	ps2_gpio_set_scl(0);
+
+	// Enable the scl interrupt again
+	ps2_gpio_set_scl_callback_enabled(true);
 
 	ps2_gpio_interrupt_log_add("inhibit line");
 
@@ -1195,14 +1234,8 @@ int ps2_gpio_configure_scl_pin(struct ps2_gpio_data *data,
 		ps2_gpio_scl_interrupt_handler,
 		BIT(config->scl_pin)
 	);
-	err = gpio_add_callback(data->scl_gpio, &data->scl_cb_data);
-	if (err) {
-		LOG_ERR(
-			"failed to configure interrupt callback on "
-			"SCL GPIO pin (err %d)", err
-		);
-		return err;
-	}
+
+	ps2_gpio_set_scl_callback_enabled(true);
 
 	return 0;
 }
