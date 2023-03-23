@@ -29,13 +29,13 @@ LOG_MODULE_REGISTER(ps2_gpio);
 // Timeout for blocking write using the zephyr PS2 ps2_write() function
 #define PS2_GPIO_TIMEOUT_WRITE K_MSEC(1000)
 
-// Max time we allow the device to send the next clock signal before we
-// timout and request a re-transmission.
-#define PS2_GPIO_TIMEOUT_READ_SCL K_USEC(50)
-
-// Max time we allow the device to send the next clock signal before we
-// timout and abort sending of data.
-#define PS2_GPIO_TIMEOUT_WRITE_SCL K_USEC(100)
+// Max time we allow the device to send the next clock signal during reads
+// and writes.
+//
+// PS2 uses a frequency between 10 kHz and 16.7 kHz. So clocks should arrive
+// within 60-100us.
+#define PS2_GPIO_TIMEOUT_READ_SCL K_USEC(105)
+#define PS2_GPIO_TIMEOUT_WRITE_SCL K_USEC(105)
 
 #define PS2_GPIO_WRITE_INHIBIT_SLC_DURATION K_USEC(300)
 
@@ -98,7 +98,6 @@ struct ps2_gpio_data {
 	struct k_sem write_lock;
 	struct k_work_delayable write_inhibition_wait;
 	struct k_work_delayable write_scl_timout;
-	int64_t write_finish_time;
 
 	bool dbg_post_write_log;
 	int dbg_post_write_pos;
@@ -130,7 +129,6 @@ static struct ps2_gpio_data ps2_gpio_data = {
 	.write_buffer = 0x0,
 	.cur_write_pos = 0,
 	.cur_write_status = PS2_GPIO_WRITE_STATUS_INACTIVE,
-	.write_finish_time = 0,
 
 	.dbg_post_write_log = false,
 	.dbg_post_write_pos = 0,
@@ -297,6 +295,7 @@ void ps2_gpio_empty_data_queue()
 	}
 }
 
+
 /*
  * Reading PS/2 data
  */
@@ -325,33 +324,37 @@ void ps2_gpio_scl_interrupt_handler_read()
 		data->cur_read_pos, scl_val, sda_val
 	);
 
-	// Sometimes after a write we miss a clock cycle (the start bit).
-	// This tries to compensate for it.
-	if(data->cur_read_pos == PS2_GPIO_POS_START &&
-	   k_cyc_to_us_ceil64(k_uptime_ticks() - data->write_finish_time) < 5 &&
-	   sda_val != 0) {
-		LOG_ERR("Skipping start bit, because last write was within 5us.");
-		data->cur_read_pos += 1;
-	}
-
 	if(data->cur_read_pos == PS2_GPIO_POS_START) {
 		// The first bit of every transmission should be 0.
 		// If it is not, it means we are out of sync with the device.
 		// So we abort the transmission and start from scratch.
 		if(sda_val != 0) {
-			LOG_ERR("Restarting receiving due to invalid start bit.");
-			ps2_gpio_abort_read(true);
+			LOG_ERR("Ignoring read interrupt due to invalid start bit.");
+
+			// We don't request a resend here, because sometimes after writes
+			// devices send some unintended interrupts. If this is a "real
+			// transmission" and we are out of sync, we will catch it with the
+			// parity and stop bits and then request a resend.
+			ps2_gpio_abort_read(false);
 			return;
 		}
 	} else if(data->cur_read_pos == PS2_GPIO_POS_PARITY) {
 		if(ps2_gpio_check_parity(data->cur_read_byte, sda_val) != true) {
-			LOG_ERR("Restarting receiving due to invalid parity bit.");
+			LOG_ERR("Requesting re-send due to invalid parity bit.");
+
+			// If we got to the parity bit and it's incorrect then we
+			// are definitly in a transmission and out of sync. So we
+			// request a resend.
 			ps2_gpio_abort_read(true);
 			return;
 		}
 	} else if(data->cur_read_pos == PS2_GPIO_POS_STOP) {
 		if(sda_val != 1) {
-			LOG_ERR("Restarting receiving due to invalid stop bit.");
+			LOG_ERR("Requesting re-send due to invalid stop bit.");
+
+			// If we got to the stop bit and it's incorrect then we
+			// are definitly in a transmission and out of sync. So we
+			// request a resend.
 			ps2_gpio_abort_read(true);
 			return;
 		}
@@ -374,6 +377,10 @@ void ps2_gpio_scl_interrupt_handler_read()
 
 void ps2_gpio_read_scl_timeout(struct k_work *item)
 {
+	// Once we are receiving a transmission we expect the device to
+	// to send a new clock/interrupt within 100us.
+	// If we don't receive the next interrupt within that timeframe,
+	// we abort the read.
 	struct ps2_gpio_data *data = CONTAINER_OF(
 		item,
 		struct ps2_gpio_data,
@@ -382,7 +389,20 @@ void ps2_gpio_read_scl_timeout(struct k_work *item)
 
 	ps2_gpio_interrupt_log_add("Read SCL timeout");
 	LOG_ERR("Read SCL timout triggered on pos=%d", data->cur_read_pos);
-	ps2_gpio_abort_read(true);
+
+	// We don't request a resend if the timeout happens in the early
+	// stage of the transmission.
+	//
+	// Because, sometimes after writes devices send some unintended
+	// interrupts and start the "real response" after one or two cycles.
+	//
+	// If we are really out of sync the parity and stop bits should catch
+	// it and request a re-transmission.
+	if(data->cur_read_pos <= 3) {
+		ps2_gpio_abort_read(false);
+	} else {
+		ps2_gpio_abort_read(true);
+	}
 }
 
 void ps2_gpio_abort_read(bool should_resend)
@@ -398,7 +418,7 @@ void ps2_gpio_abort_read(bool should_resend)
 	k_work_cancel_delayable(&data->read_scl_timout);
 
 	if(should_resend == true) {
-		// ps2_gpio_send_cmd_resend();
+		ps2_gpio_send_cmd_resend();
 	}
 }
 
@@ -736,8 +756,6 @@ void ps2_gpio_scl_interrupt_handler_write_check_ack()
 void ps2_gpio_finish_write(bool successful)
 {
 	struct ps2_gpio_data *data = &ps2_gpio_data;
-
-	data->write_finish_time = k_uptime_ticks();
 
 	k_work_cancel_delayable(&data->write_scl_timout);
 
