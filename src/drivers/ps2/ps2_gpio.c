@@ -26,6 +26,9 @@ LOG_MODULE_REGISTER(ps2_gpio);
 // Timeout for blocking read using the zephyr PS2 ps2_read() function
 #define PS2_GPIO_TIMEOUT_READ K_SECONDS(2)
 
+// Timeout for blocking write using the zephyr PS2 ps2_write() function
+#define PS2_GPIO_TIMEOUT_WRITE K_MSEC(1000)
+
 // Max time we allow the device to send the next clock signal before we
 // timout and request a re-transmission.
 #define PS2_GPIO_TIMEOUT_READ_SCL K_USEC(50)
@@ -34,7 +37,7 @@ LOG_MODULE_REGISTER(ps2_gpio);
 // timout and abort sending of data.
 #define PS2_GPIO_TIMEOUT_WRITE_SCL K_USEC(100)
 
-#define PS2_GPIO_WRITE_INIT_SCL_HOLD K_USEC(200)
+#define PS2_GPIO_WRITE_INHIBIT_SLC_DURATION K_USEC(300)
 
 #define PS2_GPIO_POS_START 0
 // 1-8 are the data bits
@@ -471,7 +474,7 @@ int ps2_gpio_write_byte_blocking(uint8_t byte)
 	// The async `write_byte_async` function takes the only available semaphor.
 	// This causes the `k_sem_take` call below to block until
 	// `ps2_gpio_scl_interrupt_handler_write_check_ack` gives it back.
-	err = k_sem_take(&data->write_lock, K_MSEC(500));
+	err = k_sem_take(&data->write_lock, PS2_GPIO_TIMEOUT_WRITE);
     if (err) {
 		LOG_ERR("Blocking write failed due to semaphore timeout: %d", err);
 		return err;
@@ -589,7 +592,7 @@ int ps2_gpio_write_byte_async(uint8_t byte) {
 	// Keep the line inhibited for at least 100 microseconds
 	k_work_schedule(
 		&data->write_inhibition_wait,
-		PS2_GPIO_WRITE_INIT_SCL_HOLD
+		PS2_GPIO_WRITE_INHIBIT_SLC_DURATION
 	);
 
 	// LOG_INF("Finished in ps2_gpio_write_byte_async");
@@ -958,7 +961,7 @@ void ps2_gpio_interrupt_log_write_start(uint8_t byte)
 	// Keep the line inhibited for at least 100 microseconds
 	k_work_schedule(
 		&interrupt_log_write_inhibition_wait,
-		PS2_GPIO_WRITE_INIT_SCL_HOLD
+		PS2_GPIO_WRITE_INHIBIT_SLC_DURATION
 	);
 }
 
