@@ -34,8 +34,8 @@ LOG_MODULE_REGISTER(ps2_gpio);
 //
 // PS2 uses a frequency between 10 kHz and 16.7 kHz. So clocks should arrive
 // within 60-100us.
-#define PS2_GPIO_TIMEOUT_READ_SCL K_USEC(105)
-#define PS2_GPIO_TIMEOUT_WRITE_SCL K_USEC(205)
+#define PS2_GPIO_TIMEOUT_READ_SCL K_USEC(100)
+#define PS2_GPIO_TIMEOUT_WRITE_SCL K_USEC(300)
 
 #define PS2_GPIO_WRITE_INHIBIT_SLC_DURATION K_USEC(300)
 
