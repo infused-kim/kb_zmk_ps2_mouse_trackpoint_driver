@@ -283,19 +283,62 @@ void ps2_gpio_send_cmd_resend()
 	ps2_gpio_write_byte_async(cmd);
 }
 
-void ps2_gpio_empty_data_queue()
+uint8_t ps2_gpio_data_queue_get_next(uint8_t *dst_byte, k_timeout_t timeout)
 {
 	struct ps2_gpio_data *data = &ps2_gpio_data;
 
+	uint8_t *queue_byte = k_fifo_get(&data->data_queue, timeout);
+	if(queue_byte == NULL) {
+		return -ETIMEDOUT;
+	}
+
+	*dst_byte =  *queue_byte;
+
+	k_free(queue_byte);
+
+	return 0;
+}
+
+void ps2_gpio_data_queue_empty()
+{
 	while(true) {
-		uint8_t *queue_byte;
-		queue_byte = k_fifo_get(&data->data_queue, K_NO_WAIT);
-		if(queue_byte != NULL) {
-			k_free(queue_byte);
-		} else {
+		uint8_t byte;
+		int err = ps2_gpio_data_queue_get_next(&byte, K_NO_WAIT);
+		if(err) {  // No more items in queue
 			break;
 		}
 	}
+}
+
+void ps2_gpio_data_queue_add(uint8_t byte)
+{
+	struct ps2_gpio_data *data = &ps2_gpio_data;
+
+	uint8_t *byte_heap = (uint8_t *) k_malloc(sizeof(byte));
+	if(byte_heap == NULL) {
+		LOG_WRN(
+			"Could not allocate heap space to add byte to fifo. "
+			"Clearing fifo."
+		);
+
+		// TODO: Define max amount for read data queue instead of emptying it
+		// when memory runs out.
+		// But unfortunately it seems like there is no official way to query
+		// how many items are currently in the fifo.
+		ps2_gpio_data_queue_empty();
+
+		byte_heap = (uint8_t *) k_malloc(sizeof(byte));
+		if(byte_heap == NULL) {
+			LOG_ERR(
+				"Could not allocate heap space after clearing fifo. "
+				"Losing received byte 0x%x", byte
+			);
+			return;
+		}
+	}
+
+	*byte_heap = byte;
+	k_fifo_alloc_put(&data->data_queue, byte_heap);
 }
 
 
@@ -486,14 +529,7 @@ void ps2_gpio_process_received_byte(uint8_t byte)
 
 		data->callback_isr(NULL, byte);
 	} else {
-		uint8_t *byte_heap = (uint8_t *) k_malloc(sizeof(byte));
-		if(byte_heap == NULL) {
-			LOG_ERR("Could not allocate heap space to add byte to fifo");
-			return;
-		}
-
-		*byte_heap = byte;
-		k_fifo_alloc_put(&data->data_queue, byte_heap);
+		ps2_gpio_data_queue_add(byte);
 	}
 }
 
@@ -1126,20 +1162,16 @@ int ps2_gpio_read(const struct device *dev, uint8_t *value)
 	// Maybe only bytes that were received within past 10 seconds.
 	LOG_INF("In ps2_gpio_read...");
 
-	struct ps2_gpio_data *data = dev->data;
-
-	uint8_t *queue_byte;
-	queue_byte = k_fifo_get(&data->data_queue, PS2_GPIO_TIMEOUT_READ);
-	if(queue_byte == NULL) {
+	uint8_t queue_byte;
+	int err = ps2_gpio_data_queue_get_next(&queue_byte, PS2_GPIO_TIMEOUT_READ);
+	if(err) {  // Timeout due to no data to read in data queue
 		LOG_ERR("ps2_gpio_read: Fifo timed out...");
 
 		return -ETIMEDOUT;
 	}
 
-	LOG_DBG("ps2_gpio_read: Returning 0x%x", *queue_byte);
-	*value =  *queue_byte;
-
-	k_free(queue_byte);
+	LOG_DBG("ps2_gpio_read: Returning 0x%x", queue_byte);
+	*value =  queue_byte;
 
 	return 0;
 }
@@ -1155,7 +1187,7 @@ static int ps2_gpio_disable_callback(const struct device *dev)
 
 	// Make sure there are no stale items in the data queue
 	// from before the callback was disabled.
-	ps2_gpio_empty_data_queue();
+	ps2_gpio_data_queue_empty();
 
 	data->callback_enabled = false;
 
@@ -1171,7 +1203,7 @@ static int ps2_gpio_enable_callback(const struct device *dev)
 
 	LOG_INF("Enabled PS2 callback.");
 
-	ps2_gpio_empty_data_queue();
+	ps2_gpio_data_queue_empty();
 
 	return 0;
 }
