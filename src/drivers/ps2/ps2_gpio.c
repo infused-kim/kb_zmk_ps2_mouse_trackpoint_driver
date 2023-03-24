@@ -356,9 +356,11 @@ char *ps2_gpio_get_pos_str() {
  * Reading PS/2 data
  */
 
-bool ps2_gpio_check_parity(uint8_t byte, int parity_bit_val);
+void ps2_gpio_read_scl_timeout(struct k_work *item);
 void ps2_gpio_abort_read(bool should_resend);
 void ps2_gpio_process_received_byte(uint8_t byte);
+void ps2_gpio_read_finish();
+bool ps2_gpio_check_parity(uint8_t byte, int parity_bit_val);
 
 // Reading doesn't need to be initiated. It happens automatically whenever
 // the device sends data.
@@ -370,22 +372,16 @@ void ps2_gpio_scl_interrupt_handler_read()
 
 	k_work_cancel_delayable(&data->read_scl_timout);
 
-	ps2_gpio_interrupt_log_add("interrupt read");
+	LOG_INF_PS2("Read interrupt");
 
-	int scl_val = ps2_gpio_get_scl();
 	int sda_val = ps2_gpio_get_sda();
-
-	LOG_INF(
-		"ps2_gpio_scl_interrupt_handler_read called with position=%d; scl=%d; sda=%d",
-		data->cur_read_pos, scl_val, sda_val
-	);
 
 	if(data->cur_read_pos == PS2_GPIO_POS_START) {
 		// The first bit of every transmission should be 0.
 		// If it is not, it means we are out of sync with the device.
 		// So we abort the transmission and start from scratch.
 		if(sda_val != 0) {
-			LOG_ERR("Ignoring read interrupt due to invalid start bit.");
+			LOG_WRN("Ignoring read interrupt due to invalid start bit.");
 
 			// We don't request a resend here, because sometimes after writes
 			// devices send some unintended interrupts. If this is a "real
@@ -416,8 +412,6 @@ void ps2_gpio_scl_interrupt_handler_read()
 		}
 
 		ps2_gpio_process_received_byte(data->cur_read_byte);
-		data->cur_read_pos = PS2_GPIO_POS_START;
-		data->cur_read_byte = 0x0;
 
 		return;
 	} else { // Data Bits
@@ -443,8 +437,7 @@ void ps2_gpio_read_scl_timeout(struct k_work *item)
 		read_scl_timout
 	);
 
-	ps2_gpio_interrupt_log_add("Read SCL timeout");
-	LOG_ERR("Read SCL timout triggered on pos=%d", data->cur_read_pos);
+	LOG_ERR_PS2("Read SCL timeout");
 
 	// We don't request a resend if the timeout happens in the early
 	// stage of the transmission.
@@ -465,11 +458,13 @@ void ps2_gpio_abort_read(bool should_resend)
 {
 	struct ps2_gpio_data *data = &ps2_gpio_data;
 
-	LOG_ERR("Aborting read on pos=%d", data->cur_read_pos);
-	ps2_gpio_interrupt_log_add("Aborting read");
+	if(should_resend == true) {
+		LOG_ERR_PS2("Aborting read with resend request.");
+	} else {
+		LOG_WRN_PS2("Aborting read without resend request.");
+	}
 
-	data->cur_read_pos = PS2_GPIO_POS_START;
-	data->cur_read_byte = 0x0;
+	ps2_gpio_read_finish();
 
 	k_work_cancel_delayable(&data->read_scl_timout);
 
@@ -478,26 +473,13 @@ void ps2_gpio_abort_read(bool should_resend)
 	}
 }
 
-bool ps2_gpio_check_parity(uint8_t byte, int parity_bit_val)
-{
-	int byte_parity = __builtin_parity(byte);
-
-	// gcc parity returns 1 if there is an odd number of bits in byte
-	// But the PS2 protocol sets the parity bit to 0 if there is an odd number
-	if(byte_parity == parity_bit_val) {
-		return 0;  // Do not match
-	}
-
-	return 1;  // Match
-}
-
-
 void ps2_gpio_process_received_byte(uint8_t byte)
 {
 	struct ps2_gpio_data *data = &ps2_gpio_data;
 
-	ps2_gpio_interrupt_log_add("Successfully received value: 0x%x", byte);
-	LOG_INF("Successfully received value: 0x%x", byte);
+	LOG_INF_PS2("Successfully received value: 0x%x", byte);
+
+	ps2_gpio_read_finish();
 
 	// If no callback is set, we add the data to a fifo queue
 	// that can be read later with the read using `ps2_read`
@@ -514,6 +496,29 @@ void ps2_gpio_process_received_byte(uint8_t byte)
 		*byte_heap = byte;
 		k_fifo_alloc_put(&data->data_queue, byte_heap);
 	}
+}
+
+void ps2_gpio_read_finish()
+{
+	struct ps2_gpio_data *data = &ps2_gpio_data;
+
+	data->cur_read_pos = PS2_GPIO_POS_START;
+	data->cur_read_byte = 0x0;
+
+	k_work_cancel_delayable(&data->read_scl_timout);
+}
+
+bool ps2_gpio_check_parity(uint8_t byte, int parity_bit_val)
+{
+	int byte_parity = __builtin_parity(byte);
+
+	// gcc parity returns 1 if there is an odd number of bits in byte
+	// But the PS2 protocol sets the parity bit to 0 if there is an odd number
+	if(byte_parity == parity_bit_val) {
+		return 0;  // Do not match
+	}
+
+	return 1;  // Match
 }
 
 
