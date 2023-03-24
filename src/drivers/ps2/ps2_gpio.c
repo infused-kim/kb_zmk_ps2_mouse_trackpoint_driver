@@ -22,7 +22,6 @@ LOG_MODULE_REGISTER(ps2_gpio);
 #define PS2_GPIO_ENABLE_POST_WRITE_LOG false
 #define PS2_GPIO_INTERRUPT_LOG_WRITE_ENABLE false
 
-
 // Timeout for blocking read using the zephyr PS2 ps2_read() function
 #define PS2_GPIO_TIMEOUT_READ K_SECONDS(2)
 
@@ -35,7 +34,11 @@ LOG_MODULE_REGISTER(ps2_gpio);
 // PS2 uses a frequency between 10 kHz and 16.7 kHz. So clocks should arrive
 // within 60-100us.
 #define PS2_GPIO_TIMEOUT_READ_SCL K_USEC(100)
-#define PS2_GPIO_TIMEOUT_WRITE_SCL K_USEC(300)
+#define PS2_GPIO_TIMEOUT_WRITE_SCL K_USEC(100)
+
+// But after inhibiting the clock line, sometimes clocks take a little longer
+// to start. So we allow a bit more time for the first write clock.
+#define PS2_GPIO_TIMEOUT_WRITE_SCL_START K_USEC(1000)
 
 #define PS2_GPIO_WRITE_INHIBIT_SLC_DURATION K_USEC(300)
 
@@ -671,7 +674,7 @@ void ps2_gpio_write_inhibition_wait(struct k_work *item)
 
 	ps2_gpio_interrupt_log_add("Released clock");
 
-	k_work_schedule(&data->write_scl_timout, PS2_GPIO_TIMEOUT_WRITE_SCL);
+	k_work_schedule(&data->write_scl_timout, PS2_GPIO_TIMEOUT_WRITE_SCL_START);
 
 	// From here on the device takes over the control of the clock again
 	// Every time it is ready for the next bit to be trasmitted, it will...
