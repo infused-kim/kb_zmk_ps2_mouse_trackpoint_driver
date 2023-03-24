@@ -342,16 +342,6 @@ char *ps2_gpio_get_pos_str() {
 	}
 }
 
-#define PS2_FORMAT_START	"%7" PRIu64 ": "
-#define PS2_ARGS_START		k_uptime_ticks()
-#define PS2_FORMAT_END 		" (mode=%s; pos=%-6s; scl=%d; sda=%d)"
-#define PS2_ARGS_END		ps2_gpio_get_mode_str(), ps2_gpio_get_pos_str(), ps2_gpio_get_scl(), ps2_gpio_get_sda()
-
-#define LOG_DBG_PS2(format,...)   LOG_DBG(PS2_FORMAT_START format PS2_FORMAT_END, PS2_ARGS_START, __VA_ARGS__ __VA_OPT__(,) PS2_ARGS_END)
-#define LOG_INF_PS2(format,...)   LOG_INF(PS2_FORMAT_START format PS2_FORMAT_END, PS2_ARGS_START, __VA_ARGS__ __VA_OPT__(,) PS2_ARGS_END)
-#define LOG_WRN_PS2(format,...)   LOG_WRN(PS2_FORMAT_START format PS2_FORMAT_END, PS2_ARGS_START, __VA_ARGS__ __VA_OPT__(,) PS2_ARGS_END)
-#define LOG_ERR_PS2(format,...)   LOG_ERR(PS2_FORMAT_START format PS2_FORMAT_END, PS2_ARGS_START, __VA_ARGS__ __VA_OPT__(,) PS2_ARGS_END)
-
 /*
  * Reading PS/2 data
  */
@@ -372,7 +362,7 @@ void ps2_gpio_scl_interrupt_handler_read()
 
 	k_work_cancel_delayable(&data->read_scl_timout);
 
-	LOG_DBG_PS2("Read interrupt");
+	// LOG_DBG("Read interrupt");
 
 	int sda_val = ps2_gpio_get_sda();
 
@@ -437,7 +427,7 @@ void ps2_gpio_read_scl_timeout(struct k_work *item)
 		read_scl_timout
 	);
 
-	LOG_ERR_PS2("Read SCL timeout");
+	LOG_ERR("Read SCL timeout");
 
 	// We don't request a resend if the timeout happens in the early
 	// stage of the transmission.
@@ -459,9 +449,9 @@ void ps2_gpio_abort_read(bool should_resend)
 	struct ps2_gpio_data *data = &ps2_gpio_data;
 
 	if(should_resend == true) {
-		LOG_ERR_PS2("Aborting read with resend request.");
+		LOG_ERR("Aborting read with resend request.");
 	} else {
-		LOG_WRN_PS2("Aborting read without resend request.");
+		LOG_WRN("Aborting read without resend request.");
 	}
 
 	ps2_gpio_read_finish();
@@ -477,7 +467,7 @@ void ps2_gpio_process_received_byte(uint8_t byte)
 {
 	struct ps2_gpio_data *data = &ps2_gpio_data;
 
-	LOG_INF_PS2("Successfully received value: 0x%x", byte);
+	LOG_INF("Successfully received value: 0x%x", byte);
 
 	ps2_gpio_read_finish();
 
@@ -622,7 +612,7 @@ int ps2_gpio_write_byte_async(uint8_t byte) {
 	ps2_gpio_configure_pin_scl_output();
 	ps2_gpio_configure_pin_sda_output();
 
-	LOG_DBG_PS2("Starting write of byte 0x%x", byte);
+	// LOG_DBG("Starting write of byte 0x%x", byte);
 
 	// Disable interrupt so that we don't trigger it when we
 	// pull the clock low to inhibit the line
@@ -633,7 +623,7 @@ int ps2_gpio_write_byte_async(uint8_t byte) {
 	ps2_gpio_set_scl(0);
 	ps2_gpio_set_sda(1);
 
-	LOG_DBG_PS2("Inhibited clock line");
+	// LOG_DBG("Inhibited clock line");
 
 	// Keep the line inhibited for at least 100 microseconds
 	k_work_schedule(
@@ -647,7 +637,7 @@ int ps2_gpio_write_byte_async(uint8_t byte) {
 
 void ps2_gpio_write_inhibition_wait(struct k_work *item)
 {
-	LOG_DBG_PS2("Inhibition timer finished");
+	// LOG_DBG("Inhibition timer finished");
 
 	struct ps2_gpio_data *data = CONTAINER_OF(
 		item,
@@ -661,7 +651,7 @@ void ps2_gpio_write_inhibition_wait(struct k_work *item)
 	// Set data to value of start bit
 	ps2_gpio_set_sda(0);
 
-	LOG_DBG_PS2("Set sda to start bit");
+	// LOG_DBG("Set sda to start bit");
 
 	// The start bit was sent by setting sda to low
 	// So the next scl interrupt will be for the first
@@ -673,7 +663,7 @@ void ps2_gpio_write_inhibition_wait(struct k_work *item)
 	ps2_gpio_set_scl(1);
 	ps2_gpio_configure_pin_scl_input();
 
-	LOG_DBG_PS2("Released clock");
+	// LOG_DBG("Released clock");
 
 	k_work_schedule(&data->write_scl_timout, PS2_GPIO_TIMEOUT_WRITE_SCL);
 
@@ -697,7 +687,7 @@ void ps2_gpio_scl_interrupt_handler_write()
 	{
 		// This should not be happening, because the PS2_GPIO_POS_START bit
 		// is sent in ps2_gpio_write_byte_async during inhibition
-		LOG_WRN_PS2("Write interrupt");
+		LOG_WRN("Write interrupt");
 		return;
 	}
 
@@ -726,27 +716,27 @@ void ps2_gpio_scl_interrupt_handler_write()
 		ps2_gpio_configure_pin_sda_input();
 	} else if(data->cur_write_pos == PS2_GPIO_POS_ACK)
 	{
-		LOG_DBG_PS2("Write interrupt");
+		// LOG_DBG("Write interrupt");
 		int ack_val = ps2_gpio_get_sda();
 
 		if(ack_val == 0) {
-			LOG_DBG_PS2("Write was successful with ack: %d", ack_val);
+			// LOG_DBG("Write was successful with ack: %d", ack_val);
 			ps2_gpio_finish_write(true);
 		} else {
-			LOG_DBG_PS2("Write failed with ack: %d", ack_val);
+			// LOG_DBG("Write failed with ack: %d", ack_val);
 			ps2_gpio_finish_write(false);
 		}
 
 		return;
 	} else {
-		LOG_ERR_PS2(
+		LOG_ERR(
 			"Invalid write clock triggered with pos=%d", data->cur_write_pos
 		);
 
 		return;
 	}
 
-	LOG_DBG_PS2("Write interrupt");
+	// LOG_DBG("Write interrupt");
 
 	data->cur_write_pos += 1;
 	k_work_schedule(&data->write_scl_timout, PS2_GPIO_TIMEOUT_WRITE_SCL);
@@ -754,7 +744,7 @@ void ps2_gpio_scl_interrupt_handler_write()
 
 void ps2_gpio_write_scl_timeout(struct k_work *item)
 {
-	LOG_ERR_PS2("Write SCL timeout");
+	LOG_ERR("Write SCL timeout");
 	ps2_gpio_finish_write(false);
 }
 
@@ -765,13 +755,13 @@ void ps2_gpio_finish_write(bool successful)
 	k_work_cancel_delayable(&data->write_scl_timout);
 
 	if(successful) {
-		LOG_INF_PS2(
+		LOG_INF(
 			"Write was successful for value 0x%x",
 			data->cur_write_byte
 		);
 		data->cur_write_status = PS2_GPIO_WRITE_STATUS_SUCCESS;
 	} else {
-		LOG_INF_PS2(
+		LOG_INF(
 			"Aborting write of value 0x%x at pos=%d",
 			data->cur_write_byte, data->cur_write_pos
 		);
