@@ -500,6 +500,7 @@ void ps2_gpio_abort_read(bool should_resend)
 	struct ps2_gpio_data *data = &ps2_gpio_data;
 
 	if(should_resend == true) {
+		LOG_ERR("Aborting read with resend request.");
 		ps2_gpio_interrupt_log_add("Aborting read with resend request.");
 	} else {
 		ps2_gpio_interrupt_log_add("Aborting read without resend request.");
@@ -518,6 +519,7 @@ void ps2_gpio_process_received_byte(uint8_t byte)
 {
 	struct ps2_gpio_data *data = &ps2_gpio_data;
 
+	LOG_INF("Successfully received value: 0x%x", byte);
 	ps2_gpio_interrupt_log_add("Successfully received value: 0x%x", byte);
 
 	ps2_gpio_read_finish();
@@ -564,7 +566,6 @@ int ps2_gpio_write_byte_blocking(uint8_t byte);
 int ps2_gpio_write_byte_async(uint8_t byte);
 void ps2_gpio_write_inhibition_wait(struct k_work *item);
 void ps2_gpio_scl_interrupt_handler_write_send_bit();
-void ps2_gpio_scl_interrupt_handler_write_check_ack();
 void ps2_gpio_finish_write(bool successful);
 void ps2_gpio_write_scl_timeout(struct k_work *item);
 bool ps2_gpio_get_byte_parity(uint8_t byte);
@@ -577,7 +578,7 @@ int ps2_gpio_write_byte_blocking(uint8_t byte)
 	struct ps2_gpio_data *data = &ps2_gpio_data;
 	int err;
 
-	LOG_INF("ps2_gpio_write_byte_blocking called with byte=0x%x", byte);
+	LOG_DBG("ps2_gpio_write_byte_blocking called with byte=0x%x", byte);
 
 	err = ps2_gpio_write_byte_async(byte);
     if (err) {
@@ -587,10 +588,13 @@ int ps2_gpio_write_byte_blocking(uint8_t byte)
 
 	// The async `write_byte_async` function takes the only available semaphor.
 	// This causes the `k_sem_take` call below to block until
-	// `ps2_gpio_scl_interrupt_handler_write_check_ack` gives it back.
+	// `ps2_gpio_finish_write` gives it back.
 	err = k_sem_take(&data->write_lock, PS2_GPIO_TIMEOUT_WRITE);
     if (err) {
-		LOG_ERR("Blocking write failed due to semaphore timeout: %d", err);
+		LOG_ERR(
+			"Blocking write failed due to semaphore timeout for byte "
+			"0x%x: %d", byte, err
+		);
 		return err;
 	}
 
@@ -614,7 +618,7 @@ int ps2_gpio_write_byte_async(uint8_t byte) {
 	struct ps2_gpio_data *data = &ps2_gpio_data;
 	int err;
 
-	LOG_INF("ps2_gpio_write_byte_async called with byte=0x%x", byte);
+	LOG_DBG("ps2_gpio_write_byte_async called with byte=0x%x", byte);
 
 	if(data->mode == PS2_GPIO_MODE_WRITE) {
 		LOG_ERR(
@@ -628,7 +632,7 @@ int ps2_gpio_write_byte_async(uint8_t byte) {
 
 	// Take semaphore so that when `ps2_gpio_write_byte_blocking` attempts
 	// taking it, the process gets blocked.
-	// It is released in `ps2_gpio_scl_interrupt_handler_write_check_ack`.
+	// It is released in `ps2_gpio_finish_write`.
 	err = k_sem_take(&data->write_lock, K_NO_WAIT);
     if (err != 0 && err != -EBUSY) {
 		LOG_ERR("ps2_gpio_write_byte_async could not take semaphore: %d", err);
@@ -799,14 +803,22 @@ void ps2_gpio_finish_write(bool successful)
 	k_work_cancel_delayable(&data->write_scl_timout);
 
 	if(successful) {
+		LOG_INF(
+			"Successfully wrote value 0x%x",
+			data->cur_write_byte
+		);
 		ps2_gpio_interrupt_log_add(
-			"Write was successful for value 0x%x",
+			"Successfully wrote value 0x%x",
 			data->cur_write_byte
 		);
 		data->cur_write_status = PS2_GPIO_WRITE_STATUS_SUCCESS;
 	} else {
+		LOG_ERR(
+			"Failed to write value 0x%x at pos=%d",
+			data->cur_write_byte, data->cur_write_pos
+		);
 		ps2_gpio_interrupt_log_add(
-			"Aborting write of value 0x%x at pos=%d",
+			"Failed to write value 0x%x at pos=%d",
 			data->cur_write_byte, data->cur_write_pos
 		);
 	 	data->cur_write_status = PS2_GPIO_WRITE_STATUS_FAILURE;
@@ -946,14 +958,14 @@ void ps2_gpio_interrupt_log_print()
 		return;
 	}
 
-	LOG_INF("===== Interrupt Log =====");
+	LOG_DBG("===== Interrupt Log =====");
 	for(int i = 0; i < interrupt_log_idx; i++) {
 		struct interrupt_log *l = &interrupt_log[i];
 		char pos_str[50];
 
 		ps2_gpio_interrupt_log_get_pos_str(l->pos, pos_str, sizeof(pos_str));
 
-		LOG_INF(
+		LOG_DBG(
 			"%d - %" PRIu64 ": %s "
 			"(mode=%s, pos=%s, scl=%d, sda=%d)" ,
 			interrupt_log_offset + i + 1, l->uptime_ticks, l->msg,
@@ -961,7 +973,7 @@ void ps2_gpio_interrupt_log_print()
 		);
 		k_sleep(K_MSEC(10));
 	}
-	LOG_INF("======== End Log ========");
+	LOG_DBG("======== End Log ========");
 }
 
 
