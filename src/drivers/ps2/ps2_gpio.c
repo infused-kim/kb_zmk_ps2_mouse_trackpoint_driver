@@ -19,8 +19,7 @@
 LOG_MODULE_REGISTER(ps2_gpio);
 
 // Settings
-#define PS2_GPIO_ENABLE_POST_WRITE_LOG false
-#define PS2_GPIO_INTERRUPT_LOG_WRITE_ENABLE false
+#define PS2_GPIO_INTERRUPT_LOG_ENABLED false
 
 // Timeout for blocking read using the zephyr PS2 ps2_read() function
 #define PS2_GPIO_TIMEOUT_READ K_SECONDS(2)
@@ -862,6 +861,10 @@ void ps2_gpio_interrupt_log_clear();
 
 void ps2_gpio_interrupt_log_add(char *format, ...)
 {
+	if(PS2_GPIO_INTERRUPT_LOG_ENABLED == false) {
+		return;
+	}
+
 	struct ps2_gpio_data *data = &ps2_gpio_data;
 	struct interrupt_log l;
 
@@ -939,6 +942,9 @@ char *ps2_gpio_interrupt_log_get_mode_str() {
 
 void ps2_gpio_interrupt_log_print()
 {
+	if(PS2_GPIO_INTERRUPT_LOG_ENABLED == false) {
+		return;
+	}
 
 	LOG_INF("===== Interrupt Log =====");
 	for(int i = 0; i < interrupt_log_idx; i++) {
