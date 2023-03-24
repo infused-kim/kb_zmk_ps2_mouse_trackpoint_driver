@@ -795,8 +795,8 @@ bool ps2_gpio_get_byte_parity(uint8_t byte)
  * Interrupt logging
  */
 
-#define PS2_GPIO_INTERRUPT_LOG_SCL_TIMEOUT K_SECONDS(2)
-#define PS2_GPIO_INTERRUPT_LOG_MAX_ITEMS 500
+#define PS2_GPIO_INTERRUPT_LOG_SCL_TIMEOUT K_SECONDS(1)
+#define PS2_GPIO_INTERRUPT_LOG_MAX_ITEMS 1000
 
 struct interrupt_log {
 	int64_t uptime_ticks;
@@ -1056,11 +1056,18 @@ void ps2_gpio_scl_interrupt_handler(const struct device *dev,
 {
 	struct ps2_gpio_data *data = &ps2_gpio_data;
 
+	k_work_cancel_delayable(&interrupt_log_write_scl_timout);
+
 	if(data->mode == PS2_GPIO_MODE_READ) {
 		ps2_gpio_scl_interrupt_handler_read();
 	} else {
 		ps2_gpio_scl_interrupt_handler_write();
 	}
+
+	k_work_schedule(
+		&interrupt_log_write_scl_timout,
+		PS2_GPIO_INTERRUPT_LOG_SCL_TIMEOUT
+	);
 }
 
 
