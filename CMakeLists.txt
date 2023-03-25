@@ -98,7 +98,7 @@ target_sources_ifdef(CONFIG_ZMK_BACKLIGHT app PRIVATE src/backlight.c)
 target_sources_ifdef(CONFIG_ZMK_LOW_PRIORITY_WORK_QUEUE app PRIVATE src/workqueue.c)
 target_sources(app PRIVATE src/main.c)
 
-target_sources_ifdef(CONFIG_ZMK_PS2_MOUSE app PRIVATE src/ps2_mouse.c)
+target_sources_ifdef(CONFIG_ZMK_MOUSE_PS2 app PRIVATE src/ps2_mouse.c)
 
 add_subdirectory(src/display/)
 add_subdirectory_ifdef(CONFIG_SETTINGS src/settings/)

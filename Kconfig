@@ -335,9 +335,6 @@ config ZMK_RGB_UNDERGLOW_AUTO_OFF_USB
 #ZMK_RGB_UNDERGLOW
 endif
 
-menuconfig ZMK_PS2_MOUSE
-	bool "PS/2 Mouse Support"
-
 menuconfig ZMK_BACKLIGHT
     bool "LED backlight"
     select LED
