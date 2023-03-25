@@ -78,6 +78,7 @@ struct ps2_gpio_config {
 };
 
 struct ps2_gpio_data {
+	const struct device *dev;
 	const struct device *scl_gpio;	/* GPIO used for PS2 SCL line */
 	const struct device *sda_gpio;	/* GPIO used for PS2 SDA line */
 
@@ -518,7 +519,7 @@ void ps2_gpio_process_received_byte(uint8_t byte)
 	// that can be read later with the read using `ps2_read`
 	if(data->callback_isr != NULL && data->callback_enabled) {
 
-		data->callback_isr(NULL, byte);
+		data->callback_isr(data->dev, byte);
 	} else {
 		ps2_gpio_data_queue_add(byte);
 	}
@@ -1149,6 +1150,10 @@ static int ps2_gpio_init(const struct device *dev)
 	struct ps2_gpio_data *data = dev->data;
 	const struct ps2_gpio_config *config = dev->config;
 	int err;
+
+	// Set the ps2 device so we can retrieve it later for
+	// the ps2 callback
+	data->dev = dev;
 
 	err = ps2_gpio_configure_scl_pin(data, config);
 	if (err) {
