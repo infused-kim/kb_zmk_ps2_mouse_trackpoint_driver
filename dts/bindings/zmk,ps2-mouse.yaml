@@ -1,0 +1,14 @@
+description: PS2 mouse configuration
+
+compatible: "zmk,ps2-mouse"
+
+properties:
+  label:
+    type: string
+    required: true
+
+  ps2-device:
+    type: phandle
+    required: true
+    description: |
+      The ps2 device the mouse should use.
