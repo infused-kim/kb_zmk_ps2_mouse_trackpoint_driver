@@ -12,6 +12,7 @@
 #include <sys/util.h>
 #include <zmk/hid.h>
 #include <zmk/endpoints.h>
+#include <dt-bindings/zmk/mouse.h>
 
 // #if DT_HAS_COMPAT_STATUS_OKAY(DT_DRV_COMPAT)
 
@@ -53,11 +54,11 @@ static struct zmk_ps2_mouse_data zmk_ps2_mouse_data = {
  * Mouse Movement
  */
 
-void zmk_ps2_mouse_movement_process_cmd(uint8_t cmd_state,
+void zmk_ps2_mouse_activity_process_cmd(uint8_t cmd_state,
                                         uint8_t cmd_x,
                                         uint8_t cmd_y);
-void zmk_ps2_mouse_movement_reset_cmd_buffer();
-void zmk_ps2_mouse_movement_parse_cmd_buffer(uint8_t cmd_state,
+void zmk_ps2_mouse_activity_reset_cmd_buffer();
+void zmk_ps2_mouse_activity_parse_cmd_buffer(uint8_t cmd_state,
                                              uint8_t cmd_x,
                                              uint8_t cmd_y,
                                              int16_t *mov_x,
@@ -68,7 +69,7 @@ void zmk_ps2_mouse_movement_parse_cmd_buffer(uint8_t cmd_state,
                                              bool *button_m,
                                              bool *button_r);
 
-void zmk_ps2_mouse_movement_callback(const struct device *ps2_device,
+void zmk_ps2_mouse_activity_callback(const struct device *ps2_device,
                                      uint8_t byte)
 {
     struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
@@ -98,12 +99,12 @@ void zmk_ps2_mouse_movement_callback(const struct device *ps2_device,
         // Do nothing
     } else if(data->cmd_idx == 2) {
 
-        zmk_ps2_mouse_movement_process_cmd(
+        zmk_ps2_mouse_activity_process_cmd(
             data->cmd_buffer[0],
             data->cmd_buffer[1],
             data->cmd_buffer[2]
         );
-        zmk_ps2_mouse_movement_reset_cmd_buffer();
+        zmk_ps2_mouse_activity_reset_cmd_buffer();
         return;
     }
 
@@ -112,34 +113,34 @@ void zmk_ps2_mouse_movement_callback(const struct device *ps2_device,
 	k_work_schedule(&data->cmd_buffer_timeout, PS2_MOUSE_TIMEOUT_CMD_BUFFER);
 }
 
-void zmk_ps2_mouse_movement_cmd_timout(struct k_work *item)
+void zmk_ps2_mouse_activity_cmd_timout(struct k_work *item)
 {
     // Called if no new bit arrives within
     // PS2_MOUSE_TIMEOUT_CMD_BUFFER
     struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
 
     LOG_DBG("Mouse movement cmd timed out on idx=%d", data->cmd_idx);
-    zmk_ps2_mouse_movement_reset_cmd_buffer();
+    zmk_ps2_mouse_activity_reset_cmd_buffer();
 }
 
 
-void zmk_ps2_mouse_movement_process_cmd(uint8_t cmd_state,
+void zmk_ps2_mouse_activity_process_cmd(uint8_t cmd_state,
                                         uint8_t cmd_x,
                                         uint8_t cmd_y)
 {
     int16_t mov_x, mov_y;
     bool overflow_x, overflow_y, button_l, button_m, button_r;
 
-    LOG_DBG("zmk_ps2_mouse_movement_process_cmd Got state=0x%x x=0x%d, y=0x%d", cmd_state, cmd_x, cmd_y);
+    LOG_DBG("zmk_ps2_mouse_activity_process_cmd Got state=0x%x x=0x%d, y=0x%d", cmd_state, cmd_x, cmd_y);
 
-    zmk_ps2_mouse_movement_parse_cmd_buffer(
+    zmk_ps2_mouse_activity_parse_cmd_buffer(
         cmd_state, cmd_x, cmd_y,
         &mov_x, &mov_y, &overflow_x, &overflow_y,
         &button_l, &button_m, &button_r
     );
 
     LOG_INF(
-        "Got mouse movement cmd "
+        "Got mouse activity cmd "
         "(mov_x=%d, mov_y=%d, o_x=%d, o_y=%d, b_l=%d, b_m=%d, b_r=%d)",
         mov_x, mov_y, overflow_x, overflow_y,
         button_l, button_m, button_r
@@ -154,6 +155,7 @@ void zmk_ps2_mouse_movement_process_cmd(uint8_t cmd_state,
     LOG_INF("Inverted mouse movement: %d", mov_y);
 #endif /* IS_ENABLED(ZMK_MOUSE_PS2_INVERT_Y) */
 
+    // Move mouse
     zmk_hid_mouse_movement_set(0, 0);
 
     // zmk mouse hid expects y axis up movement to be negative
@@ -161,7 +163,7 @@ void zmk_ps2_mouse_movement_process_cmd(uint8_t cmd_state,
     zmk_endpoints_send_mouse_report();
 }
 
-void zmk_ps2_mouse_movement_reset_cmd_buffer()
+void zmk_ps2_mouse_activity_reset_cmd_buffer()
 {
     struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
 
@@ -169,7 +171,7 @@ void zmk_ps2_mouse_movement_reset_cmd_buffer()
     memset(data->cmd_buffer, 0x0, sizeof(data->cmd_buffer));
 }
 
-void zmk_ps2_mouse_movement_parse_cmd_buffer(uint8_t cmd_state,
+void zmk_ps2_mouse_activity_parse_cmd_buffer(uint8_t cmd_state,
                                              uint8_t cmd_x,
                                              uint8_t cmd_y,
                                              int16_t *mov_x,
@@ -180,7 +182,7 @@ void zmk_ps2_mouse_movement_parse_cmd_buffer(uint8_t cmd_state,
                                              bool *button_m,
                                              bool *button_r)
 {
-    LOG_DBG("zmk_ps2_mouse_movement_parse_cmd_buffer gsot state=0x%x x=0x%d, y=0x%d", cmd_state, cmd_x, cmd_y);
+    LOG_DBG("zmk_ps2_mouse_activity_parse_cmd_buffer gsot state=0x%x x=0x%d, y=0x%d", cmd_state, cmd_x, cmd_y);
 
     *button_l = PS2_GPIO_GET_BIT(cmd_state, 0);
     *button_r = PS2_GPIO_GET_BIT(cmd_state, 1);
@@ -390,7 +392,7 @@ static void zmk_ps2_mouse_init_thread(int dev_ptr, int unused) {
 
     // Enable read callback
 	LOG_INF("Configuring ps2 callback...");
-    err = ps2_config(config->ps2_device, &zmk_ps2_mouse_movement_callback);
+    err = ps2_config(config->ps2_device, &zmk_ps2_mouse_activity_callback);
     if(err) {
         LOG_ERR("Could not configure ps2 interface: %d", err);
         return ;
@@ -405,7 +407,7 @@ static void zmk_ps2_mouse_init_thread(int dev_ptr, int unused) {
     }
 
     k_work_init_delayable(
-        &data->cmd_buffer_timeout, zmk_ps2_mouse_movement_cmd_timout
+        &data->cmd_buffer_timeout, zmk_ps2_mouse_activity_cmd_timout
     );
 
 	return;
