@@ -10,6 +10,8 @@
 #include <devicetree.h>
 #include <drivers/ps2.h>
 #include <sys/util.h>
+#include <zmk/hid.h>
+#include <zmk/endpoints.h>
 
 // #if DT_HAS_COMPAT_STATUS_OKAY(DT_DRV_COMPAT)
 
@@ -143,6 +145,11 @@ void zmk_ps2_mouse_movement_process_cmd(uint8_t cmd_state,
         button_l, button_m, button_r
     );
 
+    zmk_hid_mouse_movement_set(0, 0);
+
+    // zmk mouse hid expects y axis up movement to be negative
+    zmk_hid_mouse_movement_update(mov_x, -mov_y);
+    zmk_endpoints_send_mouse_report();
 }
 
 void zmk_ps2_mouse_movement_reset_cmd_buffer()
