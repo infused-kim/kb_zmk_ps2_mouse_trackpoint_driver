@@ -145,6 +145,15 @@ void zmk_ps2_mouse_movement_process_cmd(uint8_t cmd_state,
         button_l, button_m, button_r
     );
 
+#if IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_INVERT_X)
+    mov_x = -mov_x;
+#endif /* IS_ENABLED(ZMK_MOUSE_PS2_INVERT_X) */
+
+#if IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_INVERT_Y)
+    mov_y = -mov_y;
+    LOG_INF("Inverted mouse movement: %d", mov_y);
+#endif /* IS_ENABLED(ZMK_MOUSE_PS2_INVERT_Y) */
+
     zmk_hid_mouse_movement_set(0, 0);
 
     // zmk mouse hid expects y axis up movement to be negative
