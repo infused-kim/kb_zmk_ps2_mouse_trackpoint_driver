@@ -20,6 +20,11 @@ LOG_MODULE_DECLARE(zmk, CONFIG_PS2_LOG_LEVEL);
 #define PS2_MOUSE_THREAD_STACK_SIZE 1024
 #define PS2_MOUSE_THREAD_PRIORITY 10
 
+#define PS2_MOUSE_TIMEOUT_CMD_BUFFER K_MSEC(500)
+#define PS2_MOUSE_CMD_RESEND 0xfe
+
+#define PS2_GPIO_GET_BIT(data, bit_pos) ( (data >> bit_pos) & 0x1 )
+
 struct zmk_ps2_mouse_config {
 	const struct device *ps2_device;
 };
@@ -27,6 +32,10 @@ struct zmk_ps2_mouse_config {
 struct zmk_ps2_mouse_data {
     K_THREAD_STACK_MEMBER(thread_stack, PS2_MOUSE_THREAD_STACK_SIZE);
     struct k_thread thread;
+
+    uint8_t cmd_buffer[3];
+    int cmd_idx;
+    struct k_work_delayable cmd_buffer_timeout;
 };
 
 
@@ -34,12 +43,159 @@ static const struct zmk_ps2_mouse_config zmk_ps2_mouse_config = {
     .ps2_device = DEVICE_DT_GET(DT_INST_PHANDLE(0, ps2_device))
 };
 
-static struct zmk_ps2_mouse_data zmk_ps2_mouse_data;
-
+static struct zmk_ps2_mouse_data zmk_ps2_mouse_data = {
+    .cmd_idx = 0
+};
 
 /*
- * Helpers functions
+ * Mouse Movement
  */
+
+void zmk_ps2_mouse_movement_process_cmd(uint8_t cmd_state,
+                                        uint8_t cmd_x,
+                                        uint8_t cmd_y);
+void zmk_ps2_mouse_movement_reset_cmd_buffer();
+void zmk_ps2_mouse_movement_parse_cmd_buffer(uint8_t cmd_state,
+                                             uint8_t cmd_x,
+                                             uint8_t cmd_y,
+                                             int16_t *mov_x,
+                                             int16_t *mov_y,
+                                             bool *overflow_x,
+                                             bool *overflow_y,
+                                             bool *button_l,
+                                             bool *button_m,
+                                             bool *button_r);
+
+void zmk_ps2_mouse_movement_callback(const struct device *ps2_device,
+                                     uint8_t byte)
+{
+    struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
+
+    k_work_cancel_delayable(&data->cmd_buffer_timeout);
+
+    LOG_INF("Received mouse movement data: 0x%x", byte);
+
+    data->cmd_buffer[data->cmd_idx] = byte;
+
+    if(data->cmd_idx == 0) {
+
+        // Bit 3 of the first command byte should always be 1
+        // If it is not, then we are definitely out of alignment.
+        // So we ask the device to resend the entire 3-byte command
+        // again.
+        int alignment_bit = PS2_GPIO_GET_BIT(byte, 3);
+        if(alignment_bit != 1) {
+            LOG_ERR(
+                "PS/2 Mouse cmd buffer is out of aligment. Requesting resend."
+            );
+            // ps2_write(ps2_device, PS2_MOUSE_CMD_RESEND);
+            data->cmd_idx = 0;
+            return;
+        }
+    } else if(data->cmd_idx == 1) {
+        // Do nothing
+    } else if(data->cmd_idx == 2) {
+
+        zmk_ps2_mouse_movement_process_cmd(
+            data->cmd_buffer[0],
+            data->cmd_buffer[1],
+            data->cmd_buffer[2]
+        );
+        zmk_ps2_mouse_movement_reset_cmd_buffer();
+        return;
+    }
+
+    data->cmd_idx += 1;
+
+	k_work_schedule(&data->cmd_buffer_timeout, PS2_MOUSE_TIMEOUT_CMD_BUFFER);
+}
+
+void zmk_ps2_mouse_movement_cmd_timout(struct k_work *item)
+{
+    // Called if no new bit arrives within
+    // PS2_MOUSE_TIMEOUT_CMD_BUFFER
+    struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
+
+    LOG_DBG("Mouse movement cmd timed out on idx=%d", data->cmd_idx);
+    zmk_ps2_mouse_movement_reset_cmd_buffer();
+}
+
+
+void zmk_ps2_mouse_movement_process_cmd(uint8_t cmd_state,
+                                        uint8_t cmd_x,
+                                        uint8_t cmd_y)
+{
+    int16_t mov_x, mov_y;
+    bool overflow_x, overflow_y, button_l, button_m, button_r;
+
+    LOG_DBG("zmk_ps2_mouse_movement_process_cmd Got state=0x%x x=0x%d, y=0x%d", cmd_state, cmd_x, cmd_y);
+
+    zmk_ps2_mouse_movement_parse_cmd_buffer(
+        cmd_state, cmd_x, cmd_y,
+        &mov_x, &mov_y, &overflow_x, &overflow_y,
+        &button_l, &button_m, &button_r
+    );
+
+    LOG_INF(
+        "Got mouse movement cmd "
+        "(mov_x=%d, mov_y=%d, o_x=%d, o_y=%d, b_l=%d, b_m=%d, b_r=%d)",
+        mov_x, mov_y, overflow_x, overflow_y,
+        button_l, button_m, button_r
+    );
+
+}
+
+void zmk_ps2_mouse_movement_reset_cmd_buffer()
+{
+    struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
+
+    data->cmd_idx = 0;
+    memset(data->cmd_buffer, 0x0, sizeof(data->cmd_buffer));
+}
+
+void zmk_ps2_mouse_movement_parse_cmd_buffer(uint8_t cmd_state,
+                                             uint8_t cmd_x,
+                                             uint8_t cmd_y,
+                                             int16_t *mov_x,
+                                             int16_t *mov_y,
+                                             bool *overflow_x,
+                                             bool *overflow_y,
+                                             bool *button_l,
+                                             bool *button_m,
+                                             bool *button_r)
+{
+    LOG_DBG("zmk_ps2_mouse_movement_parse_cmd_buffer gsot state=0x%x x=0x%d, y=0x%d", cmd_state, cmd_x, cmd_y);
+
+    *button_l = PS2_GPIO_GET_BIT(cmd_state, 0);
+    *button_r = PS2_GPIO_GET_BIT(cmd_state, 1);
+    *button_m = PS2_GPIO_GET_BIT(cmd_state, 2);
+    *overflow_x = PS2_GPIO_GET_BIT(cmd_state, 6);
+    *overflow_y = PS2_GPIO_GET_BIT(cmd_state, 7);
+
+    // The coordinates are delivered as a signed 9bit integers.
+    // But a PS/2 packet is only 8 bits, so the most significant
+    // bit with the sign is stored inside the state packet.
+    //
+    // Since we are converting the uint8_t into a int16_t
+    // we must pad the unused most significant bits with
+    // the sign bit.
+    //
+    // Example:
+    //                              ↓ x sign bit
+    //  - State: 0x18 (          0001 1000)
+    //                             ↑ y sign bit
+    //  - X:     0xfd (          1111 1101) / decimal 253
+    //  - New X:      (1111 1111 1111 1101) / decimal -3
+    //
+    //  - Y:     0x02 (          0000 0010) / decimal 2
+    //  - New Y:      (0000 0000 0000 0010) / decimal 2
+    //
+    // The code below creates a signed int and is from...
+    // https://wiki.osdev.org/PS/2_Mouse
+    *mov_x = cmd_x - ((cmd_state << 4) & 0x100);
+    *mov_y = cmd_y - ((cmd_state << 3) & 0x100);
+}
+
 
 /*
  * PS/2 Commands
@@ -152,17 +308,9 @@ int zmk_ps2_reset(const struct device *ps2_device) {
 
     //     return -1;
     // }
+    return 0;
 }
 
-/*
- * Mouse Movement Callback
- */
-
-void zmk_ps2_mouse_read_callback(const struct device *ps2_device,
-                                 uint8_t data)
-{
-    LOG_INF("Received mouse movement data: 0x%x", data);
-}
 
 /*
  * Init
@@ -170,6 +318,7 @@ void zmk_ps2_mouse_read_callback(const struct device *ps2_device,
 
 static void zmk_ps2_mouse_init_thread(int dev_ptr, int unused) {
     const struct device *dev = INT_TO_POINTER(dev_ptr);
+    struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
 	const struct zmk_ps2_mouse_config *config = dev->config;
     int err;
 
@@ -221,21 +370,27 @@ static void zmk_ps2_mouse_init_thread(int dev_ptr, int unused) {
 	LOG_INF("Enabling stream mode reporting...");
     zmk_ps2_stream_mode_enable_reporting(config->ps2_device);
 
-    // // Enable read callback
-	// LOG_INF("Configuring ps2 callback...");
-    // err = ps2_config(config->ps2_device, &zmk_ps2_mouse_read_callback);
-    // if(err) {
-    //     LOG_ERR("Could not configure ps2 interface: %d", err);
-    //     return ;
-    // }
+    k_sleep(K_SECONDS(2));
 
-	// LOG_INF("Enabling ps2 callback...");
-    // err = ps2_enable_callback(config->ps2_device);
-    // if(err) {
-    //     LOG_ERR("Could not activate ps2 callback: %d", err);
-    // } else {
-    //     LOG_INF("Successfully activated ps2 callback");
-    // }
+    // Enable read callback
+	LOG_INF("Configuring ps2 callback...");
+    err = ps2_config(config->ps2_device, &zmk_ps2_mouse_movement_callback);
+    if(err) {
+        LOG_ERR("Could not configure ps2 interface: %d", err);
+        return ;
+    }
+
+	LOG_INF("Enabling ps2 callback...");
+    err = ps2_enable_callback(config->ps2_device);
+    if(err) {
+        LOG_ERR("Could not activate ps2 callback: %d", err);
+    } else {
+        LOG_INF("Successfully activated ps2 callback");
+    }
+
+    k_work_init_delayable(
+        &data->cmd_buffer_timeout, zmk_ps2_mouse_movement_cmd_timout
+    );
 
 	return;
 }
