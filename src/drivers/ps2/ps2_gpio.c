@@ -20,6 +20,8 @@ LOG_MODULE_REGISTER(ps2_gpio);
 
 // Settings
 #define PS2_GPIO_INTERRUPT_LOG_ENABLED true
+#define PS2_GPIO_WRITE_MAX_RETRY 3
+#define PS2_GPIO_READ_MAX_RETRY 3
 
 // Timeout for blocking read using the zephyr PS2 ps2_read() function
 #define PS2_GPIO_TIMEOUT_READ K_SECONDS(2)
@@ -40,7 +42,6 @@ LOG_MODULE_REGISTER(ps2_gpio);
 #define PS2_GPIO_TIMEOUT_WRITE_SCL_START K_USEC(1000)
 
 #define PS2_GPIO_WRITE_INHIBIT_SLC_DURATION K_USEC(300)
-#define PS2_GPIO_WRITE_MAX_RETRY 3
 
 #define PS2_GPIO_POS_START 0
 // 1-8 are the data bits
@@ -98,6 +99,7 @@ struct ps2_gpio_data {
 
 	uint8_t cur_read_byte;
 	int cur_read_pos;
+	int cur_read_try;
 	struct k_work_delayable read_scl_timout;
 
 	uint8_t cur_write_byte;
@@ -130,6 +132,8 @@ static struct ps2_gpio_data ps2_gpio_data = {
 
 	.cur_read_byte = 0x0,
 	.cur_read_pos = 0,
+	.cur_read_try = 0,
+
 
 	.cur_write_byte = 0x0,
 	.cur_write_pos = 0,
@@ -608,7 +612,19 @@ void ps2_gpio_abort_read(bool should_resend, char *reason)
 	k_work_cancel_delayable(&data->read_scl_timout);
 
 	if(should_resend == true) {
-		// ps2_gpio_send_cmd_resend();
+		if(data->cur_read_try < PS2_GPIO_READ_MAX_RETRY) {
+
+			data->cur_read_try++;
+			ps2_gpio_send_cmd_resend();
+		} else {
+			LOG_ERR(
+				"Failed to read value %d times. Stopping asking the device "
+				"to resend.",
+				data->cur_read_try
+			);
+
+			data->cur_read_try = 0;
+		}
 	}
 }
 
@@ -619,6 +635,8 @@ void ps2_gpio_process_received_byte(uint8_t byte)
 	LOG_INF("Successfully received value: 0x%x", byte);
 	ps2_gpio_interrupt_log_add("Successfully received value: 0x%x", byte);
 
+	// Since read was successful we reset the read try
+	data->cur_read_try = 0;
 	ps2_gpio_read_finish();
 
 	// If no callback is set, we add the data to a fifo queue
