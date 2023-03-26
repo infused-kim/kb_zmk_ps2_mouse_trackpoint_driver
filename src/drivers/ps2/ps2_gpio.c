@@ -18,30 +18,19 @@
 #define LOG_LEVEL CONFIG_PS2_LOG_LEVEL
 LOG_MODULE_REGISTER(ps2_gpio);
 
-// Settings
+
+/*
+ * Settings
+ */
+
 #define PS2_GPIO_INTERRUPT_LOG_ENABLED false
 #define PS2_GPIO_WRITE_MAX_RETRY 3
 #define PS2_GPIO_READ_MAX_RETRY 3
 
-// Timeout for blocking read using the zephyr PS2 ps2_read() function
-#define PS2_GPIO_TIMEOUT_READ K_SECONDS(2)
 
-// Timeout for blocking write using the zephyr PS2 ps2_write() function
-#define PS2_GPIO_TIMEOUT_WRITE K_MSEC(1000)
-
-// Max time we allow the device to send the next clock signal during reads
-// and writes.
-//
-// PS2 uses a frequency between 10 kHz and 16.7 kHz. So clocks should arrive
-// within 60-100us.
-#define PS2_GPIO_TIMEOUT_READ_SCL K_USEC(100)
-#define PS2_GPIO_TIMEOUT_WRITE_SCL K_USEC(100)
-
-// But after inhibiting the clock line, sometimes clocks take a little longer
-// to start. So we allow a bit more time for the first write clock.
-#define PS2_GPIO_TIMEOUT_WRITE_SCL_START K_USEC(1000)
-
-#define PS2_GPIO_WRITE_INHIBIT_SLC_DURATION K_USEC(300)
+/*
+ * PS/2 Defines
+ */
 
 #define PS2_GPIO_POS_START 0
 // 1-8 are the data bits
@@ -49,10 +38,80 @@ LOG_MODULE_REGISTER(ps2_gpio);
 #define PS2_GPIO_POS_STOP 10
 #define PS2_GPIO_POS_ACK 11  // Write mode only
 
-#define PS2_GPIO_GET_BIT(data, bit_pos) ( (data >> bit_pos) & 0x1 )
-#define PS2_GPIO_SET_BIT(data, bit_val, bit_pos) ( data |= (bit_val) << bit_pos )
+#define PS2_GPIO_RESP_ACK 0xfa
+#define PS2_GPIO_RESP_ERROR 0xfe
 
-int ps2_gpio_write_byte_async(uint8_t byte);
+/*
+ * PS/2 Timings
+ */
+
+// PS2 uses a frequency between 10 kHz and 16.7 kHz. So clocks should arrive
+// within 60-100us.
+#define PS2_GPIO_TIMING_SCL_CYCLE_MIN 60
+#define PS2_GPIO_TIMING_SCL_CYCLE_MAX 100
+
+// The minimum time needed to inhibit clock to start a write
+// is 100us, but we triple it just in case.
+#define PS2_GPIO_TIMING_SCL_INHIBITION_MIN 100
+#define PS2_GPIO_TIMING_SCL_INHIBITION ( \
+	3 * PS2_GPIO_TIMING_SCL_INHIBITION_MIN \
+)
+
+// After inhibiting the clock, the device starts sending the
+// clock. It's supposed to start immediately, but some devices
+// need much longer if you are asking them to interrupt an
+// ongoing read.
+#define PS2_GPIO_TIMING_SCL_INHIBITION_RESP_MAX 1000
+
+// Writes start with us inhibiting the line and then respond
+// with 11 bits (start bit included in inhibition time).
+// To be conservative we give it another 2 cycles to complete
+#define PS2_GPIO_TIMING_WRITE_MAX_TIME ( \
+	PS2_GPIO_TIMING_SCL_INHIBITION \
+	+ PS2_GPIO_TIMING_SCL_INHIBITION_RESP_MAX \
+	+ 11 * PS2_GPIO_TIMING_SCL_CYCLE_MAX \
+	+ 2 * PS2_GPIO_TIMING_SCL_CYCLE_MAX \
+)
+
+// Reads are 11bit and we give it another 2 cycles to start and stop
+#define PS2_GPIO_TIMING_READ_MAX_TIME (\
+	11 * PS2_GPIO_TIMING_SCL_CYCLE_MAX \
+	+ 2 * PS2_GPIO_TIMING_SCL_CYCLE_MAX \
+)
+
+
+/*
+ * Driver Defines
+ */
+
+// Timeout for blocking read using the zephyr PS2 ps2_read() function
+// This is not a matter of PS/2 timings, but a preference of how long we let
+// the user wait until we give up on reading.
+#define PS2_GPIO_TIMEOUT_READ K_SECONDS(2)
+
+// Timeout for write_byte_blocking()
+#define PS2_GPIO_TIMEOUT_WRITE_BLOCKING K_USEC( \
+	PS2_GPIO_WRITE_MAX_RETRY * PS2_GPIO_TIMING_WRITE_MAX_TIME \
+)
+
+// Max time we allow the device to send the next clock signal during reads
+// and writes.
+#define PS2_GPIO_TIMEOUT_READ_SCL K_USEC(PS2_GPIO_TIMING_SCL_CYCLE_MAX)
+#define PS2_GPIO_TIMEOUT_WRITE_SCL K_USEC(PS2_GPIO_TIMING_SCL_CYCLE_MAX)
+
+// But after inhibiting the clock line, sometimes clocks take a little longer
+// to start. So we allow a bit more time for the first write clock.
+#define PS2_GPIO_TIMEOUT_WRITE_SCL_START K_USEC( \
+	PS2_GPIO_TIMING_SCL_INHIBITION_RESP_MAX \
+)
+
+#define PS2_GPIO_WRITE_INHIBIT_SLC_DURATION K_USEC( \
+	PS2_GPIO_TIMING_SCL_INHIBITION \
+)
+
+/*
+ * Global Variables
+ */
 
 typedef enum
 {
@@ -141,10 +200,20 @@ static struct ps2_gpio_data ps2_gpio_data = {
 	.cur_write_status = PS2_GPIO_WRITE_STATUS_INACTIVE,
 };
 
+/*
+ * Function Definitions
+ */
+
+int ps2_gpio_write_byte_async(uint8_t byte);
 
 /*
  * Helpers functions
  */
+
+#define PS2_GPIO_GET_BIT(data, bit_pos) ( (data >> bit_pos) & 0x1 )
+#define PS2_GPIO_SET_BIT(data, bit_val, bit_pos) ( \
+	data |= (bit_val) << bit_pos \
+)
 
 int ps2_gpio_get_scl()
 {
@@ -704,7 +773,7 @@ int ps2_gpio_write_byte_blocking(uint8_t byte)
 	// The async `write_byte_async` function takes the only available semaphor.
 	// This causes the `k_sem_take` call below to block until
 	// `ps2_gpio_finish_write` gives it back.
-	err = k_sem_take(&data->write_lock, PS2_GPIO_TIMEOUT_WRITE);
+	err = k_sem_take(&data->write_lock, PS2_GPIO_TIMEOUT_WRITE_BLOCKING);
     if (err) {
 		LOG_ERR(
 			"Blocking write failed due to semaphore timeout for byte "
