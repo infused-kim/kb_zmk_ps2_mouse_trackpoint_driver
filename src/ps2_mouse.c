@@ -26,6 +26,10 @@ LOG_MODULE_DECLARE(zmk, CONFIG_PS2_LOG_LEVEL);
 #define PS2_MOUSE_TIMEOUT_CMD_BUFFER K_MSEC(500)
 #define PS2_MOUSE_CMD_RESEND 0xfe
 
+#define PS2_MOUSE_BUTTON_L_IDX 0
+#define PS2_MOUSE_BUTTON_R_IDX 1
+#define PS2_MOUSE_BUTTON_M_IDX 3
+
 #define PS2_GPIO_GET_BIT(data, bit_pos) ( (data >> bit_pos) & 0x1 )
 
 struct zmk_ps2_mouse_config {
@@ -39,6 +43,10 @@ struct zmk_ps2_mouse_data {
     uint8_t cmd_buffer[3];
     int cmd_idx;
     struct k_work_delayable cmd_buffer_timeout;
+
+    bool button_l_is_held;
+    bool button_m_is_held;
+    bool button_r_is_held;
 };
 
 
@@ -47,7 +55,11 @@ static const struct zmk_ps2_mouse_config zmk_ps2_mouse_config = {
 };
 
 static struct zmk_ps2_mouse_data zmk_ps2_mouse_data = {
-    .cmd_idx = 0
+    .cmd_idx = 0,
+
+    .button_l_is_held = false,
+    .button_m_is_held = false,
+    .button_r_is_held = false,
 };
 
 /*
@@ -57,6 +69,10 @@ static struct zmk_ps2_mouse_data zmk_ps2_mouse_data = {
 void zmk_ps2_mouse_activity_process_cmd(uint8_t cmd_state,
                                         uint8_t cmd_x,
                                         uint8_t cmd_y);
+void zmk_ps2_mouse_activity_move_mouse(int16_t mov_x, int16_t mov_y);
+void zmk_ps2_mouse_activity_click_buttons(bool button_l,
+                                          bool button_m,
+                                          bool button_r);
 void zmk_ps2_mouse_activity_reset_cmd_buffer();
 void zmk_ps2_mouse_activity_parse_cmd_buffer(uint8_t cmd_state,
                                              uint8_t cmd_x,
@@ -146,21 +162,68 @@ void zmk_ps2_mouse_activity_process_cmd(uint8_t cmd_state,
         button_l, button_m, button_r
     );
 
-#if IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_INVERT_X)
-    mov_x = -mov_x;
-#endif /* IS_ENABLED(ZMK_MOUSE_PS2_INVERT_X) */
+    zmk_ps2_mouse_activity_move_mouse(mov_x, mov_y);
+    zmk_ps2_mouse_activity_click_buttons(button_l, button_m, button_r);
 
-#if IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_INVERT_Y)
-    mov_y = -mov_y;
-    LOG_INF("Inverted mouse movement: %d", mov_y);
-#endif /* IS_ENABLED(ZMK_MOUSE_PS2_INVERT_Y) */
+    zmk_endpoints_send_mouse_report();
+}
 
-    // Move mouse
+void zmk_ps2_mouse_activity_move_mouse(int16_t mov_x, int16_t mov_y)
+{
+    #if IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_INVERT_X)
+        mov_x = -mov_x;
+    #endif /* IS_ENABLED(ZMK_MOUSE_PS2_INVERT_X) */
+
+    #if IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_INVERT_Y)
+        mov_y = -mov_y;
+        LOG_INF("Inverted mouse movement: %d", mov_y);
+    #endif /* IS_ENABLED(ZMK_MOUSE_PS2_INVERT_Y) */
+
     zmk_hid_mouse_movement_set(0, 0);
 
     // zmk mouse hid expects y axis up movement to be negative
     zmk_hid_mouse_movement_update(mov_x, -mov_y);
-    zmk_endpoints_send_mouse_report();
+}
+
+void zmk_ps2_mouse_activity_click_buttons(bool button_l,
+                                          bool button_m,
+                                          bool button_r)
+{
+    struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
+
+    // TODO: Integrate this with the proper button mask instead
+    // of hardcoding the mouse button indeces.
+    // Check hid.c and zmk_hid_mouse_buttons_press() for more info.
+
+    if(button_l == true && data->button_l_is_held == false) {
+        LOG_INF("Pressing button_l");
+        zmk_hid_mouse_button_press(PS2_MOUSE_BUTTON_L_IDX);
+        data->button_l_is_held = true;
+    } else if(button_l == false && data->button_l_is_held == true) {
+        LOG_INF("Releasing button_l");
+        zmk_hid_mouse_button_release(PS2_MOUSE_BUTTON_L_IDX);
+        data->button_l_is_held = false;
+    }
+
+    if(button_m == true && data->button_m_is_held == false) {
+        LOG_INF("Pressing button_m");
+        zmk_hid_mouse_button_press(PS2_MOUSE_BUTTON_M_IDX);
+        data->button_m_is_held = true;
+    } else if(button_m == false && data->button_m_is_held == true) {
+        LOG_INF("Releasing button_m");
+        zmk_hid_mouse_button_release(PS2_MOUSE_BUTTON_M_IDX);
+        data->button_m_is_held = false;
+    }
+
+    if(button_r == true && data->button_r_is_held == false) {
+        LOG_INF("Pressing button_r");
+        zmk_hid_mouse_button_press(PS2_MOUSE_BUTTON_R_IDX);
+        data->button_r_is_held = true;
+    } else if(button_r == false && data->button_r_is_held == true) {
+        LOG_INF("Releasing button_r");
+        zmk_hid_mouse_button_release(PS2_MOUSE_BUTTON_R_IDX);
+        data->button_r_is_held = false;
+    }
 }
 
 void zmk_ps2_mouse_activity_reset_cmd_buffer()
