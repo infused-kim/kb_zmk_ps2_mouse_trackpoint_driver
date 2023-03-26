@@ -137,8 +137,6 @@ static struct ps2_gpio_data ps2_gpio_data = {
  * Helpers functions
  */
 
-void ps2_gpio_interrupt_log_add(char *format, ...);
-
 int ps2_gpio_get_scl()
 {
 	const struct ps2_gpio_data *data = &ps2_gpio_data;
@@ -336,30 +334,85 @@ void ps2_gpio_data_queue_add(uint8_t byte)
 }
 
 
+
 /*
- * Logging Helpers
+ * Interrupt logging
+ *
+ * Zephyr logs don't process fast enough and slow down the interrupts enoug
+ * to make the write process fail.
+ *
+ * This simple logging process allows us to debug the interrupts in detail.
  */
 
-char *ps2_gpio_get_mode_str() {
-	struct ps2_gpio_data *data = &ps2_gpio_data;
+#define PS2_GPIO_INTERRUPT_LOG_SCL_TIMEOUT K_SECONDS(1)
+#define PS2_GPIO_INTERRUPT_LOG_MAX_ITEMS 1000
 
-	if(data->mode == PS2_GPIO_MODE_READ) {
-		return "r";
-	} else {
-		return "w";
+struct interrupt_log {
+	int64_t uptime_ticks;
+	char msg[50];
+	int scl;
+	int sda;
+	ps2_gpio_mode mode;
+	int pos;
+};
+
+int interrupt_log_offset = 0;
+int interrupt_log_idx = 0;
+struct interrupt_log interrupt_log[PS2_GPIO_INTERRUPT_LOG_MAX_ITEMS];
+
+struct k_work_delayable interrupt_log_scl_timout;
+
+void ps2_gpio_interrupt_log_add(char *format, ...);
+void ps2_gpio_interrupt_log_print();
+void ps2_gpio_interrupt_log_clear();
+
+void ps2_gpio_interrupt_log_add(char *format, ...)
+{
+	if(PS2_GPIO_INTERRUPT_LOG_ENABLED == false) {
+		return;
 	}
+
+	struct ps2_gpio_data *data = &ps2_gpio_data;
+	struct interrupt_log l;
+
+	l.uptime_ticks = k_uptime_ticks();
+
+	va_list arglist;
+    va_start(arglist, format);
+    vsnprintf(l.msg, sizeof(l.msg) - 1, format, arglist);
+    va_end(arglist);
+
+	l.scl = ps2_gpio_get_scl();
+	l.sda = ps2_gpio_get_sda();
+	l.mode = data->mode;
+	if(data->mode == PS2_GPIO_MODE_READ) {
+		l.pos = data->cur_read_pos;
+	} else {
+		l.pos = data->cur_write_pos;
+	}
+
+	if(interrupt_log_idx >= (PS2_GPIO_INTERRUPT_LOG_MAX_ITEMS)) {
+		ps2_gpio_interrupt_log_print();
+		ps2_gpio_interrupt_log_clear();
+		return;
+	}
+
+	interrupt_log[interrupt_log_idx] = l;
+
+	interrupt_log_idx += 1;
 }
 
-char *ps2_gpio_get_pos_str() {
-	struct ps2_gpio_data *data = &ps2_gpio_data;
+void ps2_gpio_interrupt_log_clear()
+{
+	memset(&interrupt_log,	0x0, sizeof(interrupt_log));
+	interrupt_log_offset = interrupt_log_idx;
+	interrupt_log_idx = 0;
+}
 
-	int pos;
-	if(data->mode == PS2_GPIO_MODE_READ) {
-		pos = data->cur_read_pos;
-	} else {
-		pos = data->cur_write_pos;
-	}
-
+void ps2_gpio_interrupt_log_get_pos_str(int pos,
+										char *pos_str,
+										int pos_str_size)
+{
 	char *pos_names[] = {
 		"start",
 		"data_1",
@@ -376,11 +429,55 @@ char *ps2_gpio_get_pos_str() {
 	};
 
 	if(pos >= (sizeof(pos_names) / sizeof(pos_names[0]))) {
-		return "unk";
+		snprintf(pos_str, pos_str_size - 1, "%d", pos);
 	} else {
-		return pos_names[pos];
+		strncpy(pos_str, pos_names[pos], pos_str_size - 1);
 	}
 }
+
+char *ps2_gpio_interrupt_log_get_mode_str() {
+	struct ps2_gpio_data *data = &ps2_gpio_data;
+
+	if(data->mode == PS2_GPIO_MODE_READ) {
+		return "r";
+	} else if(data->mode == PS2_GPIO_MODE_WRITE) {
+		return "w";
+	} else {
+		return "?";
+	}
+}
+
+void ps2_gpio_interrupt_log_print()
+{
+	if(PS2_GPIO_INTERRUPT_LOG_ENABLED == false) {
+		return;
+	}
+
+	LOG_DBG("===== Interrupt Log =====");
+	for(int i = 0; i < interrupt_log_idx; i++) {
+		struct interrupt_log *l = &interrupt_log[i];
+		char pos_str[50];
+
+		ps2_gpio_interrupt_log_get_pos_str(l->pos, pos_str, sizeof(pos_str));
+
+		LOG_DBG(
+			"%d - %" PRIu64 ": %s "
+			"(mode=%s, pos=%s, scl=%d, sda=%d)" ,
+			interrupt_log_offset + i + 1, l->uptime_ticks, l->msg,
+			 ps2_gpio_interrupt_log_get_mode_str(), pos_str, l->scl, l->sda
+		);
+		k_sleep(K_MSEC(10));
+	}
+	LOG_DBG("======== End Log ========");
+}
+
+void ps2_gpio_interrupt_log_scl_timeout(struct k_work *item)
+{
+	// Called if there is no interrupt for PS2_GPIO_INTERRUPT_LOG_SCL_TIMEOUT
+	ps2_gpio_interrupt_log_print();
+	ps2_gpio_interrupt_log_clear();
+}
+
 
 /*
  * Reading PS/2 data
@@ -839,145 +936,6 @@ bool ps2_gpio_get_byte_parity(uint8_t byte)
 	// gcc parity returns 1 if there is an odd number of bits in byte
 	// But the PS2 protocol sets the parity bit to 0 if there is an odd number
 	return !byte_parity;
-}
-
-
-/*
- * Interrupt logging
- */
-
-#define PS2_GPIO_INTERRUPT_LOG_SCL_TIMEOUT K_SECONDS(1)
-#define PS2_GPIO_INTERRUPT_LOG_MAX_ITEMS 1000
-
-struct interrupt_log {
-	int64_t uptime_ticks;
-	char msg[50];
-	int scl;
-	int sda;
-	ps2_gpio_mode mode;
-	int pos;
-};
-
-int interrupt_log_offset = 0;
-int interrupt_log_idx = 0;
-struct interrupt_log interrupt_log[PS2_GPIO_INTERRUPT_LOG_MAX_ITEMS];
-
-struct k_work_delayable interrupt_log_scl_timout;
-
-void ps2_gpio_interrupt_log_add(char *format, ...);
-void ps2_gpio_interrupt_log_print();
-void ps2_gpio_interrupt_log_clear();
-
-void ps2_gpio_interrupt_log_add(char *format, ...)
-{
-	if(PS2_GPIO_INTERRUPT_LOG_ENABLED == false) {
-		return;
-	}
-
-	struct ps2_gpio_data *data = &ps2_gpio_data;
-	struct interrupt_log l;
-
-	l.uptime_ticks = k_uptime_ticks();
-
-	va_list arglist;
-    va_start(arglist, format);
-    vsnprintf(l.msg, sizeof(l.msg) - 1, format, arglist);
-    va_end(arglist);
-
-	l.scl = ps2_gpio_get_scl();
-	l.sda = ps2_gpio_get_sda();
-	l.mode = data->mode;
-	if(data->mode == PS2_GPIO_MODE_READ) {
-		l.pos = data->cur_read_pos;
-	} else {
-		l.pos = data->cur_write_pos;
-	}
-
-	if(interrupt_log_idx >= (PS2_GPIO_INTERRUPT_LOG_MAX_ITEMS)) {
-		ps2_gpio_interrupt_log_print();
-		ps2_gpio_interrupt_log_clear();
-		return;
-	}
-
-	interrupt_log[interrupt_log_idx] = l;
-
-	interrupt_log_idx += 1;
-}
-
-void ps2_gpio_interrupt_log_clear()
-{
-	memset(&interrupt_log,	0x0, sizeof(interrupt_log));
-	interrupt_log_offset = interrupt_log_idx;
-	interrupt_log_idx = 0;
-}
-
-void ps2_gpio_interrupt_log_get_pos_str(int pos,
-										char *pos_str,
-										int pos_str_size)
-{
-	char *pos_names[] = {
-		"start",
-		"data_1",
-		"data_2",
-		"data_3",
-		"data_4",
-		"data_5",
-		"data_6",
-		"data_7",
-		"data_8",
-		"parity",
-		"stop",
-		"ack",
-	};
-
-	if(pos >= (sizeof(pos_names) / sizeof(pos_names[0]))) {
-		snprintf(pos_str, pos_str_size - 1, "%d", pos);
-	} else {
-		strncpy(pos_str, pos_names[pos], pos_str_size - 1);
-	}
-}
-
-char *ps2_gpio_interrupt_log_get_mode_str() {
-	struct ps2_gpio_data *data = &ps2_gpio_data;
-
-	if(data->mode == PS2_GPIO_MODE_READ) {
-		return "r";
-	} else if(data->mode == PS2_GPIO_MODE_WRITE) {
-		return "w";
-	} else {
-		return "?";
-	}
-}
-
-void ps2_gpio_interrupt_log_print()
-{
-	if(PS2_GPIO_INTERRUPT_LOG_ENABLED == false) {
-		return;
-	}
-
-	LOG_DBG("===== Interrupt Log =====");
-	for(int i = 0; i < interrupt_log_idx; i++) {
-		struct interrupt_log *l = &interrupt_log[i];
-		char pos_str[50];
-
-		ps2_gpio_interrupt_log_get_pos_str(l->pos, pos_str, sizeof(pos_str));
-
-		LOG_DBG(
-			"%d - %" PRIu64 ": %s "
-			"(mode=%s, pos=%s, scl=%d, sda=%d)" ,
-			interrupt_log_offset + i + 1, l->uptime_ticks, l->msg,
-			 ps2_gpio_interrupt_log_get_mode_str(), pos_str, l->scl, l->sda
-		);
-		k_sleep(K_MSEC(10));
-	}
-	LOG_DBG("======== End Log ========");
-}
-
-void ps2_gpio_interrupt_log_scl_timeout(struct k_work *item)
-{
-	// Called if there is no interrupt for PS2_GPIO_INTERRUPT_LOG_SCL_TIMEOUT
-	ps2_gpio_interrupt_log_print();
-	ps2_gpio_interrupt_log_clear();
 }
 
 
