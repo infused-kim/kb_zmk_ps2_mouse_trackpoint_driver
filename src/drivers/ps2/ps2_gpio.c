@@ -1093,13 +1093,13 @@ void ps2_gpio_finish_write(bool successful)
 		);
 
 		if(data->cur_write_try < PS2_GPIO_WRITE_MAX_RETRY) {
-
-			data->cur_write_status = PS2_GPIO_WRITE_STATUS_RETRY;
-			data->cur_write_try++;
 			LOG_WRN(
 				"Attempting write re-try #%d of %d...",
 				data->cur_write_try + 1, PS2_GPIO_WRITE_MAX_RETRY
 			);
+
+			data->cur_write_status = PS2_GPIO_WRITE_STATUS_RETRY;
+			data->cur_write_try++;
 
 			ps2_gpio_write_byte_async(data->cur_write_byte);
 			return;
