@@ -40,6 +40,7 @@ LOG_MODULE_REGISTER(ps2_gpio);
 #define PS2_GPIO_TIMEOUT_WRITE_SCL_START K_USEC(1000)
 
 #define PS2_GPIO_WRITE_INHIBIT_SLC_DURATION K_USEC(300)
+#define PS2_GPIO_WRITE_MAX_RETRY 3
 
 #define PS2_GPIO_POS_START 0
 // 1-8 are the data bits
@@ -63,6 +64,7 @@ typedef enum
 {
     PS2_GPIO_WRITE_STATUS_INACTIVE,
     PS2_GPIO_WRITE_STATUS_ACTIVE,
+    PS2_GPIO_WRITE_STATUS_RETRY,
 	PS2_GPIO_WRITE_STATUS_SUCCESS,
 	PS2_GPIO_WRITE_STATUS_FAILURE,
 } ps2_gpio_write_status;
@@ -100,6 +102,7 @@ struct ps2_gpio_data {
 
 	uint8_t cur_write_byte;
 	int cur_write_pos;
+	int cur_write_try;
 	struct k_work_delayable write_inhibition_wait;
 	struct k_work_delayable write_scl_timout;
 	ps2_gpio_write_status cur_write_status;
@@ -129,6 +132,7 @@ static struct ps2_gpio_data ps2_gpio_data = {
 	.cur_read_pos = 0,
 
 	.cur_write_pos = 0,
+	.cur_write_try = 0,
 	.cur_write_status = PS2_GPIO_WRITE_STATUS_INACTIVE,
 };
 
@@ -712,7 +716,9 @@ int ps2_gpio_write_byte_async(uint8_t byte) {
 
 	LOG_DBG("ps2_gpio_write_byte_async called with byte=0x%x", byte);
 
-	if(data->mode == PS2_GPIO_MODE_WRITE) {
+	if(data->mode == PS2_GPIO_MODE_WRITE &&
+	   data->cur_write_status != PS2_GPIO_WRITE_STATUS_RETRY)
+	{
 		LOG_ERR(
 			"Preventing write off byte 0x%x: "
 			"Another write in progress for 0x%x",
@@ -904,7 +910,7 @@ void ps2_gpio_finish_write(bool successful)
 			data->cur_write_byte
 		);
 		data->cur_write_status = PS2_GPIO_WRITE_STATUS_SUCCESS;
-	} else {
+	} else {  // Failure
 		LOG_ERR(
 			"Failed to write value 0x%x at pos=%d",
 			data->cur_write_byte, data->cur_write_pos
@@ -913,13 +919,28 @@ void ps2_gpio_finish_write(bool successful)
 			"Failed to write value 0x%x at pos=%d",
 			data->cur_write_byte, data->cur_write_pos
 		);
-	 	data->cur_write_status = PS2_GPIO_WRITE_STATUS_FAILURE;
+
+		if(data->cur_write_try < PS2_GPIO_WRITE_MAX_RETRY) {
+
+			data->cur_write_status = PS2_GPIO_WRITE_STATUS_RETRY;
+			data->cur_write_try++;
+			LOG_WRN(
+				"Attempting write re-try #%d of %d...",
+				data->cur_write_try + 1, PS2_GPIO_WRITE_MAX_RETRY
+			);
+
+			ps2_gpio_write_byte_async(data->cur_write_byte);
+			return;
+		} else {
+	 		data->cur_write_status = PS2_GPIO_WRITE_STATUS_FAILURE;
+		}
 	}
 
 	data->mode = PS2_GPIO_MODE_READ;
 	data->cur_read_pos = PS2_GPIO_POS_START;
 	data->cur_write_pos = PS2_GPIO_POS_START;
 	data->cur_write_byte = 0x0;
+	data->cur_write_try = 0;
 
 	// Give back control over data and clock line if we still hold on to it
 	ps2_gpio_configure_pin_sda_input();
