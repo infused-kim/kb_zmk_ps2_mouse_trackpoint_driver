@@ -82,10 +82,14 @@ struct ps2_gpio_data {
 	const struct device *scl_gpio;	/* GPIO used for PS2 SCL line */
 	const struct device *sda_gpio;	/* GPIO used for PS2 SDA line */
 
+	// Interrupt callback
 	struct gpio_callback scl_cb_data;
 
+	// PS2 driver interface callback
 	ps2_callback_t callback_isr;
 	bool callback_enabled;
+
+	// Queue for ps2_read()
 	struct k_fifo data_queue;
 
 	ps2_gpio_mode mode;
@@ -96,10 +100,10 @@ struct ps2_gpio_data {
 
 	uint8_t cur_write_byte;
 	int cur_write_pos;
-	ps2_gpio_write_status cur_write_status;
-	struct k_sem write_lock;
 	struct k_work_delayable write_inhibition_wait;
 	struct k_work_delayable write_scl_timout;
+	ps2_gpio_write_status cur_write_status;
+	struct k_sem write_lock;
 };
 
 
