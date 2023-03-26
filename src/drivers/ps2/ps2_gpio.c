@@ -19,7 +19,7 @@
 LOG_MODULE_REGISTER(ps2_gpio);
 
 // Settings
-#define PS2_GPIO_INTERRUPT_LOG_ENABLED false
+#define PS2_GPIO_INTERRUPT_LOG_ENABLED true
 
 // Timeout for blocking read using the zephyr PS2 ps2_read() function
 #define PS2_GPIO_TIMEOUT_READ K_SECONDS(2)
@@ -607,7 +607,7 @@ void ps2_gpio_abort_read(bool should_resend, char *reason)
 	k_work_cancel_delayable(&data->read_scl_timout);
 
 	if(should_resend == true) {
-		ps2_gpio_send_cmd_resend();
+		// ps2_gpio_send_cmd_resend();
 	}
 }
 
