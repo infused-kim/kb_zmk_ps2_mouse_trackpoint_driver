@@ -31,6 +31,12 @@ LOG_MODULE_DECLARE(zmk, CONFIG_PS2_LOG_LEVEL);
  */
 
 #define PS2_MOUSE_CMD_RESEND 0xfe
+#define PS2_MOUSE_CMD_RESET 0xff
+#define PS2_MOUSE_CMD_MODE_STREAM 0xea
+#define PS2_MOUSE_CMD_ENABLE_REPORTING 0xf4
+
+#define PS2_MOUSE_RESP_SELF_TEST_PASS 0xaa
+#define PS2_MOUSE_RESP_SELF_TEST_FAIL 0xfc
 
 /*
  * ZMK Defines
@@ -304,80 +310,40 @@ void zmk_ps2_mouse_activity_parse_cmd_buffer(uint8_t cmd_state,
 
 int zmk_ps2_stream_mode_enable(const struct device *ps2_device) {
     int err;
-    int cmd = 0xea;
+
+    uint8_t cmd = PS2_MOUSE_CMD_MODE_STREAM;
     err = ps2_write(ps2_device, cmd);
     if(err) {
         LOG_ERR(
-            "Could not send stream mode enable command (0x%x): %d", cmd, err
+            "Could not enable stream mode: %d", cmd
         );
         return err;
     }
-
-    // uint8_t cmd_res;
-    // err = ps2_read(ps2_device, &cmd_res);
-    // if(err) {
-    //     LOG_ERR("Could not read stream mode enable reporting result: %d", err);
-    //     return err;
-    // }
-
-    // if(cmd_res == 0xfa) {
-    //     LOG_ERR(
-    //         "Successfully enabled stream mode reporting: %d", cmd_res
-    //     );
-
-    //     return 0;
-    // } else {
-    //     LOG_ERR(
-    //         "Could not enable stream mode enable reporting with result: 0x%x",
-    //         cmd_res
-    //     );
-
-    //     return -1;
-    // }
 
     return 0;
 }
 
 int zmk_ps2_stream_mode_enable_reporting(const struct device *ps2_device) {
     int err;
-    err = ps2_write(ps2_device, 0xf4);
+
+    uint8_t cmd = PS2_MOUSE_CMD_ENABLE_REPORTING;
+    err = ps2_write(ps2_device, cmd);
     if(err) {
         LOG_ERR(
-            "Could not send stream mode enable reporting command: %d", err
+            "Could not enable reporting for stream mode."
         );
         return err;
     }
 
-    // uint8_t cmd_res;
-    // err = ps2_read(ps2_device, &cmd_res);
-    // if(err) {
-    //     LOG_ERR("Could not read stream mode enable reporting result: %d", err);
-    //     return err;
-    // }
-
-    // if(cmd_res == 0xfa) {
-    //     LOG_ERR(
-    //         "Successfully enabled stream mode reporting: %d", cmd_res
-    //     );
-
-    //     return 0;
-    // } else {
-    //     LOG_ERR(
-    //         "Could not enable stream mode enable reporting with result: 0x%x",
-    //         cmd_res
-    //     );
-
-    //     return -1;
-    // }
-
     return 0;
 }
 
-int zmk_ps2_reset(const struct device *ps2_device) {
+
+int zmk_ps2_send_cmd_reset(const struct device *ps2_device) {
     int err;
 
-    uint8_t cmd = 0xff;
-    LOG_INF("Sendin reset command: 0x%x", cmd);
+    uint8_t cmd = PS2_MOUSE_CMD_RESET;
+    LOG_INF("Sending reset command: 0x%x", cmd);
     err = ps2_write(ps2_device, cmd);
     if(err) {
         LOG_ERR(
@@ -388,27 +354,6 @@ int zmk_ps2_reset(const struct device *ps2_device) {
         LOG_INF("Sent command succesfully: 0x%x", cmd);
     }
 
-    // uint8_t cmd_res;
-    // err = ps2_read(ps2_device, &cmd_res);
-    // if(err) {
-    //     LOG_ERR("Could not read reset result: %d", err);
-    //     return err;
-    // }
-
-    // if(cmd_res == 0xfa) {
-    //     LOG_ERR(
-    //         "Successfully reset: %d", cmd_res
-    //     );
-
-    //     return 0;
-    // } else {
-    //     LOG_ERR(
-    //         "Could not reset with result: 0x%x",
-    //         cmd_res
-    //     );
-
-    //     return -1;
-    // }
     return 0;
 }
 
@@ -417,50 +362,70 @@ int zmk_ps2_reset(const struct device *ps2_device) {
  * Init
  */
 
+void zmk_ps2_init_wait_for_mouse(const struct device *dev)
+{
+	const struct zmk_ps2_mouse_config *config = dev->config;
+    int err;
+
+    // Read self test result
+    uint8_t read_val;
+
+    for(int i=0; true; i++) {
+
+        // PS/2 Devices do a self-test and send the result when they power up.
+
+	    LOG_INF("Reading PS/2 self-test...");
+
+        err = ps2_read(config->ps2_device, &read_val);
+        if(err == 0) {
+            if(read_val != PS2_MOUSE_RESP_SELF_TEST_PASS) {
+                LOG_INF("Got invalid PS/2 self-test result: 0x%x", read_val);
+                continue;
+            }
+
+            LOG_INF("PS/2 Device passed self-test: 0x%x", read_val);
+
+            // Read device id
+            LOG_INF("Reading PS/2 device id...");
+            err = ps2_read(config->ps2_device, &read_val);
+            if(err) {
+                LOG_ERR("Could not read PS/2 device id: %d", err);
+            } else {
+                if(read_val == 0) {
+                    LOG_INF("Connected PS/2 device is a mouse...");
+                    break;
+                } else {
+                    LOG_INF("PS/2 device is not a mouse: 0x%x", read_val);
+                }
+            }
+        } else {
+            LOG_ERR(
+                "Could not read PS/2 device self-test result: %d. ", err
+            );
+        }
+
+        // But when a zmk device is reset, it doesn't cut the power to external
+        // devices. So the device acts as if it was never disconnected.
+        // So we try sending the reset command.
+        if(i == 0) {
+            LOG_INF("Trying to reset device...");
+            zmk_ps2_send_cmd_reset(config->ps2_device);
+            continue;
+        } else if(i == 4) {
+            i = 0;
+        }
+
+        k_sleep(K_SECONDS(5));
+    }
+}
 static void zmk_ps2_mouse_init_thread(int dev_ptr, int unused) {
     const struct device *dev = INT_TO_POINTER(dev_ptr);
     struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
 	const struct zmk_ps2_mouse_config *config = dev->config;
     int err;
 
-	LOG_INF("Inside zmk_ps2_mouse_init_thread");
-
-    // Read self test result
-    uint8_t read_val;
-
-    while(true) {
-	    LOG_INF("Reading PS/2 self-test...");
-        err = ps2_read(config->ps2_device, &read_val);
-        if(err) {
-            LOG_ERR(
-                "Could not read PS/2 device self-test result: %d. ", err
-            );
-            k_sleep(K_SECONDS(5));
-        } else {
-            LOG_INF("Got PS/2 device self-test result: 0x%x", read_val);
-            break;
-        }
-    }
-	// LOG_INF("Reading PS/2 self-test...");
-    // err = ps2_read(config->ps2_device, &read_val);
-    // if(err) {
-    //     LOG_ERR("Could not read PS/2 device self-test result: %d", err);
-    //     LOG_ERR("Sending reset command");
-    //     zmk_ps2_reset(config->ps2_device);
-    // } else {
-    //     LOG_INF("Got PS/2 device self-test result: 0x%x", read_val);
-    // }
-
-    // Read device id
-	LOG_INF("Reading PS/2 device id...");
-    err = ps2_read(config->ps2_device, &read_val);
-    if(err) {
-        LOG_ERR("Could not read PS/2 device id: %d", err);
-    } else {
-        LOG_INF("Got PS/2 device id: 0x%x", read_val);
-    }
-
-    // zmk_ps2_reset(config->ps2_device);
+	LOG_INF("Waiting for mouse to connect...");
+    zmk_ps2_init_wait_for_mouse(dev);
 
 	LOG_INF("Enabling stream mode reporting...");
     zmk_ps2_stream_mode_enable(config->ps2_device);
