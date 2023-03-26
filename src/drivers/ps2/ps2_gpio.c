@@ -94,6 +94,17 @@ LOG_MODULE_REGISTER(ps2_gpio);
 	PS2_GPIO_WRITE_MAX_RETRY * PS2_GPIO_TIMING_WRITE_MAX_TIME \
 )
 
+// Timeout for write_byte_await_response()
+// Takes into account that the response reading might fail and needs to
+// be re-tried by sending the 0xfe resend command.
+#define PS2_GPIO_TIMEOUT_WRITE_AWAIT_RESPONSE K_USEC( \
+	PS2_GPIO_READ_MAX_RETRY * (\
+		PS2_GPIO_TIMING_READ_MAX_TIME \
+		+ PS2_GPIO_TIMING_WRITE_MAX_TIME \
+		+ PS2_GPIO_TIMING_READ_MAX_TIME \
+	) \
+)
+
 // Max time we allow the device to send the next clock signal during reads
 // and writes.
 #define PS2_GPIO_TIMEOUT_READ_SCL K_USEC(PS2_GPIO_TIMING_SCL_CYCLE_MAX)
@@ -161,13 +172,17 @@ struct ps2_gpio_data {
 	int cur_read_try;
 	struct k_work_delayable read_scl_timout;
 
+	ps2_gpio_write_status cur_write_status;
 	uint8_t cur_write_byte;
 	int cur_write_pos;
 	int cur_write_try;
 	struct k_work_delayable write_inhibition_wait;
 	struct k_work_delayable write_scl_timout;
-	ps2_gpio_write_status cur_write_status;
 	struct k_sem write_lock;
+
+	bool write_awaits_resp;
+	uint8_t write_awaits_resp_byte;
+	struct k_sem write_awaits_resp_sem;
 };
 
 
@@ -193,11 +208,13 @@ static struct ps2_gpio_data ps2_gpio_data = {
 	.cur_read_pos = 0,
 	.cur_read_try = 0,
 
-
 	.cur_write_byte = 0x0,
 	.cur_write_pos = 0,
 	.cur_write_try = 0,
 	.cur_write_status = PS2_GPIO_WRITE_STATUS_INACTIVE,
+
+	.write_awaits_resp = false,
+	.write_awaits_resp_byte = 0x0,
 };
 
 /*
@@ -708,6 +725,22 @@ void ps2_gpio_process_received_byte(uint8_t byte)
 	data->cur_read_try = 0;
 	ps2_gpio_read_finish();
 
+	// If write_byte_await_response() is waiting, we notify
+	// the blocked write process of whether it was a success or not.
+	if(data->write_awaits_resp) {
+		data->write_awaits_resp_byte = byte;
+		data->write_awaits_resp = false;
+		k_sem_give(&data->write_awaits_resp_sem);
+
+		// Don't send ack and err responses to the callback and read
+		// data queue.
+		// If it's an ack, the write process will return success.
+		// If it's an error, the write process will return failure.
+		if(byte == PS2_GPIO_RESP_ACK || byte == PS2_GPIO_RESP_ERROR) {
+			return;
+		}
+	}
+
 	// If no callback is set, we add the data to a fifo queue
 	// that can be read later with the read using `ps2_read`
 	if(data->callback_isr != NULL && data->callback_enabled) {
@@ -756,6 +789,57 @@ bool ps2_gpio_get_byte_parity(uint8_t byte);
 
 void ps2_gpio_interrupt_log_write_start(uint8_t byte);
 
+// Writes the byte and blocks execution until we read the
+// response byte.
+// Returns failure if the write fails or the response is 0xfe (error)
+// Returns success if the response is 0xfa (ack) or any value except of
+// 0xfe.
+// 0xfe and 0xfa are not passed on to the read data queue or callback.
+int ps2_gpio_write_byte_await_response(uint8_t byte)
+{
+	struct ps2_gpio_data *data = &ps2_gpio_data;
+	int err;
+
+	err = ps2_gpio_write_byte_blocking(byte);
+	if(err) {
+		return err;
+	}
+
+	data->write_awaits_resp = true;
+
+	err = k_sem_take(
+		&data->write_awaits_resp_sem, PS2_GPIO_TIMEOUT_WRITE_AWAIT_RESPONSE
+	);
+
+	uint8_t resp_byte = data->write_awaits_resp_byte;
+	data->write_awaits_resp_byte = 0x0;
+	data->write_awaits_resp = false;
+
+    if (err) {
+		LOG_WRN(
+			"Write response didn't arrive in time for byte "
+			"0x%x. Considering send a success.", byte
+		);
+
+		return 0;
+	}
+
+	LOG_DBG(
+		"Write for byte 0x%x received response: 0x%x",
+		byte, resp_byte
+	);
+
+	if(resp_byte == PS2_GPIO_RESP_ERROR) {
+
+		// We fail the write since we got an error response
+		return 1;
+	}
+
+	// Most of the time when a write was successful the device
+	// responds with an 0xfa (ack), but for some commands it doesn't.
+	// So we consider all non-0xfe (err) responses as successful.
+	return 0;
+}
 
 int ps2_gpio_write_byte_blocking(uint8_t byte)
 {
@@ -1116,7 +1200,7 @@ int ps2_gpio_read(const struct device *dev, uint8_t *value)
 
 static int ps2_gpio_write(const struct device *dev, uint8_t value)
 {
-	return ps2_gpio_write_byte_blocking(value);
+	return ps2_gpio_write_byte_await_response(value);
 }
 
 static int ps2_gpio_disable_callback(const struct device *dev)
@@ -1247,6 +1331,9 @@ static int ps2_gpio_init(const struct device *dev)
 
 	// Init semaphore for blocking writes
 	k_sem_init(&data->write_lock, 0, 1);
+
+	// Init semaphore that waits for read after write
+	k_sem_init(&data->write_awaits_resp_sem, 0, 1);
 
 	// Timeouts for clock pulses during read and write
     k_work_init_delayable(&data->read_scl_timout, ps2_gpio_read_scl_timeout);
