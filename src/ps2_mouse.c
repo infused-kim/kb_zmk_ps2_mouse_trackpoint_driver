@@ -20,17 +20,31 @@
 
 LOG_MODULE_DECLARE(zmk, CONFIG_PS2_LOG_LEVEL);
 
-#define PS2_MOUSE_THREAD_STACK_SIZE 1024
-#define PS2_MOUSE_THREAD_PRIORITY 10
+/*
+ * Settings
+ */
 
 #define PS2_MOUSE_TIMEOUT_CMD_BUFFER K_MSEC(500)
+
+/*
+ * PS/2 Defines
+ */
+
 #define PS2_MOUSE_CMD_RESEND 0xfe
 
+/*
+ * ZMK Defines
+ */
 #define PS2_MOUSE_BUTTON_L_IDX 0
 #define PS2_MOUSE_BUTTON_R_IDX 1
 #define PS2_MOUSE_BUTTON_M_IDX 3
 
-#define PS2_GPIO_GET_BIT(data, bit_pos) ( (data >> bit_pos) & 0x1 )
+#define PS2_MOUSE_THREAD_STACK_SIZE 1024
+#define PS2_MOUSE_THREAD_PRIORITY 10
+
+/*
+ * Global Variables
+ */
 
 struct zmk_ps2_mouse_config {
 	const struct device *ps2_device;
@@ -61,6 +75,12 @@ static struct zmk_ps2_mouse_data zmk_ps2_mouse_data = {
     .button_m_is_held = false,
     .button_r_is_held = false,
 };
+
+/*
+ * Helpers
+ */
+
+#define PS2_GPIO_GET_BIT(data, bit_pos) ( (data >> bit_pos) & 0x1 )
 
 /*
  * Mouse Movement
