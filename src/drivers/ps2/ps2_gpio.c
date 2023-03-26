@@ -488,7 +488,7 @@ void ps2_gpio_interrupt_log_scl_timeout(struct k_work *item)
  */
 
 void ps2_gpio_read_scl_timeout(struct k_work *item);
-void ps2_gpio_abort_read(bool should_resend);
+void ps2_gpio_abort_read(bool should_resend, char *reason);
 void ps2_gpio_process_received_byte(uint8_t byte);
 void ps2_gpio_read_finish();
 bool ps2_gpio_check_parity(uint8_t byte, int parity_bit_val);
@@ -520,7 +520,7 @@ void ps2_gpio_scl_interrupt_handler_read()
 			// devices send some unintended interrupts. If this is a "real
 			// transmission" and we are out of sync, we will catch it with the
 			// parity and stop bits and then request a resend.
-			ps2_gpio_abort_read(false);
+			ps2_gpio_abort_read(false, "invalid start bit");
 			return;
 		}
 	} else if(data->cur_read_pos == PS2_GPIO_POS_PARITY) {
@@ -532,7 +532,7 @@ void ps2_gpio_scl_interrupt_handler_read()
 			// If we got to the parity bit and it's incorrect then we
 			// are definitly in a transmission and out of sync. So we
 			// request a resend.
-			ps2_gpio_abort_read(true);
+			ps2_gpio_abort_read(true, "invalid parity bit");
 			return;
 		}
 	} else if(data->cur_read_pos == PS2_GPIO_POS_STOP) {
@@ -544,7 +544,7 @@ void ps2_gpio_scl_interrupt_handler_read()
 			// If we got to the stop bit and it's incorrect then we
 			// are definitly in a transmission and out of sync. So we
 			// request a resend.
-			ps2_gpio_abort_read(true);
+			ps2_gpio_abort_read(true, "invalid stop bit");
 			return;
 		}
 
@@ -585,18 +585,18 @@ void ps2_gpio_read_scl_timeout(struct k_work *item)
 	// If we are really out of sync the parity and stop bits should catch
 	// it and request a re-transmission.
 	if(data->cur_read_pos <= 3) {
-		ps2_gpio_abort_read(false);
+		ps2_gpio_abort_read(false, "scl timeout");
 	} else {
-		ps2_gpio_abort_read(true);
+		ps2_gpio_abort_read(true, "scl timeout");
 	}
 }
 
-void ps2_gpio_abort_read(bool should_resend)
+void ps2_gpio_abort_read(bool should_resend, char *reason)
 {
 	struct ps2_gpio_data *data = &ps2_gpio_data;
 
 	if(should_resend == true) {
-		LOG_ERR("Aborting read with resend request.");
+		LOG_ERR("Aborting read with resend request: %s", reason);
 		ps2_gpio_interrupt_log_add("Aborting read with resend request.");
 	} else {
 		ps2_gpio_interrupt_log_add("Aborting read without resend request.");
@@ -751,7 +751,7 @@ int ps2_gpio_write_byte_async(uint8_t byte) {
 	   data->cur_read_byte != 0x0)
 	{
 		LOG_WRN("Aborting in-progress read due to write of byte 0x%x", byte);
-		ps2_gpio_abort_read(false);
+		ps2_gpio_abort_read(false, "starting write");
 	}
 
 	// Configure data and clock lines for output
