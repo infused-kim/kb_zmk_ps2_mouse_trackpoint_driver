@@ -131,6 +131,7 @@ static struct ps2_gpio_data ps2_gpio_data = {
 	.cur_read_byte = 0x0,
 	.cur_read_pos = 0,
 
+	.cur_write_byte = 0x0,
 	.cur_write_pos = 0,
 	.cur_write_try = 0,
 	.cur_write_status = PS2_GPIO_WRITE_STATUS_INACTIVE,
