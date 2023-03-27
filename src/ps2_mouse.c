@@ -34,6 +34,8 @@ LOG_MODULE_DECLARE(zmk, CONFIG_PS2_LOG_LEVEL);
 #define PS2_MOUSE_CMD_RESET 0xff
 #define PS2_MOUSE_CMD_MODE_STREAM 0xea
 #define PS2_MOUSE_CMD_ENABLE_REPORTING 0xf4
+#define PS2_MOUSE_CMD_DISABLE_REPORTING 0xf5
+#define PS2_MOUSE_CMD_SET_SAMPLING_RATE 0xf3
 
 #define PS2_MOUSE_RESP_SELF_TEST_PASS 0xaa
 #define PS2_MOUSE_RESP_SELF_TEST_FAIL 0xfc
@@ -41,6 +43,7 @@ LOG_MODULE_DECLARE(zmk, CONFIG_PS2_LOG_LEVEL);
 /*
  * ZMK Defines
  */
+
 #define PS2_MOUSE_BUTTON_L_IDX 0
 #define PS2_MOUSE_BUTTON_R_IDX 1
 #define PS2_MOUSE_BUTTON_M_IDX 3
@@ -67,6 +70,8 @@ struct zmk_ps2_mouse_data {
     bool button_l_is_held;
     bool button_m_is_held;
     bool button_r_is_held;
+
+    bool activity_reporting_on;
 };
 
 
@@ -80,6 +85,9 @@ static struct zmk_ps2_mouse_data zmk_ps2_mouse_data = {
     .button_l_is_held = false,
     .button_m_is_held = false,
     .button_r_is_held = false,
+
+    // Data reporting is disabled on init
+    .activity_reporting_on = false,
 };
 
 /*
@@ -306,38 +314,9 @@ void zmk_ps2_mouse_activity_parse_cmd_buffer(uint8_t cmd_state,
 
 /*
  * PS/2 Commands
+ *
+ * These functions only send the commands without any additional logic.
  */
-
-int zmk_ps2_stream_mode_enable(const struct device *ps2_device) {
-    int err;
-
-    uint8_t cmd = PS2_MOUSE_CMD_MODE_STREAM;
-    err = ps2_write(ps2_device, cmd);
-    if(err) {
-        LOG_ERR(
-            "Could not enable stream mode: %d", cmd
-        );
-        return err;
-    }
-
-    return 0;
-}
-
-int zmk_ps2_stream_mode_enable_reporting(const struct device *ps2_device) {
-    int err;
-
-    uint8_t cmd = PS2_MOUSE_CMD_ENABLE_REPORTING;
-    err = ps2_write(ps2_device, cmd);
-    if(err) {
-        LOG_ERR(
-            "Could not enable reporting for stream mode."
-        );
-        return err;
-    }
-
-    return 0;
-}
-
 
 int zmk_ps2_send_cmd_reset(const struct device *ps2_device) {
     int err;
@@ -357,7 +336,139 @@ int zmk_ps2_send_cmd_reset(const struct device *ps2_device) {
     return 0;
 }
 
+int zmk_ps2_send_cmd_data_reporting_on(const struct device *ps2_device) {
+    int err;
 
+    uint8_t cmd = PS2_MOUSE_CMD_ENABLE_REPORTING;
+    err = ps2_write(ps2_device, cmd);
+    if(err) {
+        LOG_ERR(
+            "Could not enable reporting for stream mode."
+        );
+        return err;
+    }
+
+    return 0;
+}
+
+int zmk_ps2_send_cmd_data_reporting_off(const struct device *ps2_device) {
+    int err;
+
+    uint8_t cmd = PS2_MOUSE_CMD_DISABLE_REPORTING;
+    err = ps2_write(ps2_device, cmd);
+    if(err) {
+        LOG_ERR(
+            "Could not disable reporting for stream mode."
+        );
+        return err;
+    }
+
+    return 0;
+}
+
+int zmk_ps2_send_cmd_set_sampling_rate(const struct device *ps2_device,
+                                       uint8_t sampling_rate) {
+    int err;
+
+    uint8_t cmd = PS2_MOUSE_CMD_SET_SAMPLING_RATE;
+    err = ps2_write(ps2_device, cmd);
+    if(err) {
+        LOG_ERR(
+            "Could not send set sampling rate command: %d", err
+        );
+        return err;
+    }
+    err = ps2_write(ps2_device, sampling_rate);
+    if(err) {
+        LOG_ERR(
+            "Could not send sampling rate value: %d", err
+        );
+        return err;
+    }
+
+    return 0;
+}
+
+/*
+ * Helper functions
+ *
+ * These functions send commands and do necessary checks like disabling
+ * data reporting and callbacks before sending the commands.
+ */
+
+int zmk_ps2_activity_reporting_enable(const struct device *ps2_device)
+{
+    struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
+
+    if(data->activity_reporting_on == true) {
+        return 0;
+    }
+
+    LOG_DBG("Enabling mouse activity reporting...");
+
+    int err = zmk_ps2_send_cmd_data_reporting_on(ps2_device);
+    if(err) {
+        LOG_ERR("Could not enable data reporting: %d", err);
+        return err;
+    }
+
+    err = ps2_enable_callback(ps2_device);
+    if(err) {
+        LOG_ERR("Could not enable ps2 callback: %d", err);
+        return err;
+    }
+
+    data->activity_reporting_on = true;
+
+    return 0;
+}
+
+int zmk_ps2_activity_reporting_disable(const struct device *ps2_device)
+{
+    struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
+
+    if(data->activity_reporting_on == false) {
+        return 0;
+    }
+
+    LOG_DBG("Disabling mouse activity reporting...");
+
+    int err = zmk_ps2_send_cmd_data_reporting_off(ps2_device);
+    if(err) {
+        LOG_ERR("Could not disable data reporting: %d", err);
+        return err;
+    }
+
+    err = ps2_disable_callback(ps2_device);
+    if(err) {
+        LOG_ERR("Could not disable ps2 callback: %d", err);
+        return err;
+    }
+
+    data->activity_reporting_on = false;
+
+    return 0;
+}
+
+
+int zmk_ps2_set_sampling_rate(const struct device *ps2_device,
+                              uint8_t sampling_rate)
+{
+    struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
+
+    bool prev_activity_reporting_on = data->activity_reporting_on;
+    zmk_ps2_activity_reporting_disable(ps2_device);
+
+    int err = zmk_ps2_send_cmd_set_sampling_rate(
+        ps2_device, sampling_rate
+    );
+
+    if(prev_activity_reporting_on == true) {
+        zmk_ps2_activity_reporting_enable(ps2_device);
+    }
+
+    return err;
+}
 /*
  * Init
  */
@@ -429,13 +540,11 @@ static void zmk_ps2_mouse_init_thread(int dev_ptr, int unused) {
 
     k_sleep(K_SECONDS(1));
 
-    // Enable stream mode reporting
-	LOG_INF("Enabling stream mode reporting...");
-    zmk_ps2_stream_mode_enable_reporting(config->ps2_device);
-
+	LOG_INF("Setting sample rate...");
+    zmk_ps2_set_sampling_rate(config->ps2_device, 20);
     k_sleep(K_SECONDS(2));
 
-    // Enable read callback
+    // Configure read callback
 	LOG_INF("Configuring ps2 callback...");
     err = ps2_config(config->ps2_device, &zmk_ps2_mouse_activity_callback);
     if(err) {
@@ -443,8 +552,8 @@ static void zmk_ps2_mouse_init_thread(int dev_ptr, int unused) {
         return ;
     }
 
-	LOG_INF("Enabling ps2 callback...");
-    err = ps2_enable_callback(config->ps2_device);
+	LOG_INF("Enabling data reporting and ps2 callback...");
+    err = zmk_ps2_activity_reporting_enable(config->ps2_device);
     if(err) {
         LOG_ERR("Could not activate ps2 callback: %d", err);
     } else {
