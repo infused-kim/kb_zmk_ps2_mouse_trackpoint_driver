@@ -23,7 +23,7 @@ LOG_MODULE_REGISTER(ps2_gpio);
  * Settings
  */
 
-#define PS2_GPIO_INTERRUPT_LOG_ENABLED false
+#define PS2_GPIO_INTERRUPT_LOG_ENABLED true
 #define PS2_GPIO_WRITE_MAX_RETRY 3
 #define PS2_GPIO_READ_MAX_RETRY 3
 
@@ -366,7 +366,7 @@ int ps2_gpio_configure_pin_sda_output()
 void ps2_gpio_send_cmd_resend()
 {
 	uint8_t cmd = 0xfe;
-	LOG_INF("Requesting resend of data with command: 0x%x", cmd);
+	LOG_DBG("Requesting resend of data with command: 0x%x", cmd);
 	ps2_gpio_write_byte_async(cmd);
 }
 
@@ -548,14 +548,14 @@ void ps2_gpio_interrupt_log_print()
 		return;
 	}
 
-	LOG_DBG("===== Interrupt Log =====");
+	LOG_INF("===== Interrupt Log =====");
 	for(int i = 0; i < interrupt_log_idx; i++) {
 		struct interrupt_log *l = &interrupt_log[i];
 		char pos_str[50];
 
 		ps2_gpio_interrupt_log_get_pos_str(l->pos, pos_str, sizeof(pos_str));
 
-		LOG_DBG(
+		LOG_INF(
 			"%d - %" PRIu64 ": %s "
 			"(mode=%s, pos=%s, scl=%d, sda=%d)" ,
 			interrupt_log_offset + i + 1, l->uptime_ticks, l->msg,
@@ -563,7 +563,7 @@ void ps2_gpio_interrupt_log_print()
 		);
 		k_sleep(K_MSEC(10));
 	}
-	LOG_DBG("======== End Log ========");
+	LOG_INF("======== End Log ========");
 }
 
 void ps2_gpio_interrupt_log_scl_timeout(struct k_work *item)
@@ -701,7 +701,7 @@ void ps2_gpio_abort_read(bool should_resend, char *reason)
 		if(data->cur_read_try < PS2_GPIO_READ_MAX_RETRY) {
 
 			data->cur_read_try++;
-			ps2_gpio_send_cmd_resend();
+			// ps2_gpio_send_cmd_resend();
 		} else {
 			LOG_ERR(
 				"Failed to read value %d times. Stopping asking the device "
@@ -867,7 +867,7 @@ int ps2_gpio_write_byte_blocking(uint8_t byte)
 	}
 
 	if(data->cur_write_status == PS2_GPIO_WRITE_STATUS_SUCCESS) {
-		LOG_INF("Blocking write finished successfully for byte 0x%x", byte);
+		LOG_DBG("Blocking write finished successfully for byte 0x%x", byte);
 		err = 0;
 	} else {
 		LOG_ERR(
@@ -1182,8 +1182,6 @@ int ps2_gpio_read(const struct device *dev, uint8_t *value)
 {
 	// TODO: Add a way to not return old queue items
 	// Maybe only bytes that were received within past 10 seconds.
-	LOG_INF("In ps2_gpio_read...");
-
 	uint8_t queue_byte;
 	int err = ps2_gpio_data_queue_get_next(&queue_byte, PS2_GPIO_TIMEOUT_READ);
 	if(err) {  // Timeout due to no data to read in data queue
@@ -1213,7 +1211,7 @@ static int ps2_gpio_disable_callback(const struct device *dev)
 
 	data->callback_enabled = false;
 
-	LOG_INF("Disabled PS2 callback.");
+	LOG_DBG("Disabled PS2 callback.");
 
 	return 0;
 }
@@ -1223,7 +1221,7 @@ static int ps2_gpio_enable_callback(const struct device *dev)
 	struct ps2_gpio_data *data = dev->data;
 	data->callback_enabled = true;
 
-	LOG_INF("Enabled PS2 callback.");
+	LOG_DBG("Enabled PS2 callback.");
 
 	ps2_gpio_data_queue_empty();
 
@@ -1300,7 +1298,7 @@ int ps2_gpio_configure_sda_pin(struct ps2_gpio_data *data,
 
 static int ps2_gpio_init(const struct device *dev)
 {
-	LOG_INF("Inside ps2_gpio_init");
+	LOG_DBG("Inside ps2_gpio_init");
 
 	struct ps2_gpio_data *data = dev->data;
 	const struct ps2_gpio_config *config = dev->config;
@@ -1323,8 +1321,6 @@ static int ps2_gpio_init(const struct device *dev)
 	// TODO: Figure out why this is requiered.
 	ps2_gpio_set_sda(1);
 	ps2_gpio_set_scl(1);
-
-	LOG_INF("Finished configuring ps2_gpio.");
 
 	// Init fifo for synchronous read operations
 	k_fifo_init(&data->data_queue);
