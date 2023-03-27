@@ -427,9 +427,6 @@ static void zmk_ps2_mouse_init_thread(int dev_ptr, int unused) {
 	LOG_INF("Waiting for mouse to connect...");
     zmk_ps2_init_wait_for_mouse(dev);
 
-	LOG_INF("Enabling stream mode reporting...");
-    zmk_ps2_stream_mode_enable(config->ps2_device);
-
     k_sleep(K_SECONDS(1));
 
     // Enable stream mode reporting
