@@ -821,7 +821,7 @@ int ps2_gpio_write_byte_await_response(uint8_t byte)
 			"0x%x. Considering send a success.", byte
 		);
 
-		return 0;
+		return -1;
 	}
 
 	LOG_DBG(
@@ -832,7 +832,7 @@ int ps2_gpio_write_byte_await_response(uint8_t byte)
 	if(resp_byte == PS2_GPIO_RESP_ERROR) {
 
 		// We fail the write since we got an error response
-		return 1;
+		return -2;
 	}
 
 	// Most of the time when a write was successful the device
