@@ -412,7 +412,7 @@ void zmk_ps2_init_wait_for_mouse(const struct device *dev)
             zmk_ps2_send_cmd_reset(config->ps2_device);
             continue;
         } else if(i == 4) {
-            i = 0;
+            i = -1;
         }
 
         k_sleep(K_SECONDS(5));
