@@ -13,6 +13,7 @@
 #include <zmk/hid.h>
 #include <zmk/endpoints.h>
 #include <dt-bindings/zmk/mouse.h>
+#include <zmk/events/mouse_move_state_changed.h>
 
 // #if DT_HAS_COMPAT_STATUS_OKAY(DT_DRV_COMPAT)
 
@@ -199,7 +200,7 @@ void zmk_ps2_mouse_activity_process_cmd(uint8_t cmd_state,
     zmk_ps2_mouse_activity_move_mouse(mov_x, mov_y);
     zmk_ps2_mouse_activity_click_buttons(button_l, button_m, button_r);
 
-    zmk_endpoints_send_mouse_report();
+    // zmk_endpoints_send_mouse_report();
 }
 
 void zmk_ps2_mouse_activity_move_mouse(int16_t mov_x, int16_t mov_y)
@@ -213,10 +214,23 @@ void zmk_ps2_mouse_activity_move_mouse(int16_t mov_x, int16_t mov_y)
         LOG_INF("Inverted mouse movement: %d", mov_y);
     #endif /* IS_ENABLED(ZMK_MOUSE_PS2_INVERT_Y) */
 
-    zmk_hid_mouse_movement_set(0, 0);
+    // zmk_hid_mouse_movement_set(0, 0);
 
     // zmk mouse hid expects y axis up movement to be negative
-    zmk_hid_mouse_movement_update(mov_x, -mov_y);
+    // zmk_hid_mouse_movement_update(mov_x, -mov_y);
+
+    struct zmk_mouse_move_state_changed mouse_move_event;
+    mouse_move_event.max_speed.x = mov_x;
+    mouse_move_event.max_speed.y = mov_y;
+    mouse_move_event.config.delay_ms = 0;
+    mouse_move_event.config.time_to_max_speed_ms = 1500;
+    mouse_move_event.config.acceleration_exponent = 0;
+    mouse_move_event.state = true;
+    mouse_move_event.timestamp = k_uptime_get();
+
+    ZMK_EVENT_RAISE(
+        &mouse_move_event
+    );
 }
 
 void zmk_ps2_mouse_activity_click_buttons(bool button_l,
