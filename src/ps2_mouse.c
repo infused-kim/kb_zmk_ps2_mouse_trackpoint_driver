@@ -23,7 +23,7 @@
 
 #include <logging/log.h>
 
-LOG_MODULE_DECLARE(zmk, CONFIG_PS2_LOG_LEVEL);
+LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
 /*
  * Settings
@@ -239,7 +239,7 @@ void zmk_ps2_mouse_activity_move_mouse(int16_t mov_x, int16_t mov_y)
 void zmk_ps2_mouse_tick_timer_cb(struct k_timer *dummy) {
     struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
 
-    LOG_DBG("Submitting mouse work to queue");
+    // LOG_DBG("Submitting mouse work to queue");
     k_work_submit_to_queue(zmk_mouse_work_q(), &data->mouse_tick);
 }
 
@@ -247,10 +247,10 @@ static void zmk_ps2_mouse_tick_timer_handler(struct k_work *work)
 {
     struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
 
-    LOG_DBG("Raising mouse tick event");
+    // LOG_DBG("Raising mouse tick event");
 
     if(data->move_speed.x == 0 && data->move_speed.y == 0) {
-        LOG_DBG("Not raising mouse tick event as the mouse hasn't moved.");
+        // LOG_DBG("Not raising mouse tick event as the mouse hasn't moved.");
         return;
     }
 
