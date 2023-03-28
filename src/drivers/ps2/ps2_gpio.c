@@ -143,11 +143,9 @@ typedef enum
 struct ps2_gpio_config {
 	const char *scl_gpio_name;
 	gpio_pin_t scl_pin;
-	gpio_dt_flags_t scl_flags;
 
 	const char *sda_gpio_name;
 	gpio_pin_t sda_pin;
-	gpio_dt_flags_t sda_flags;
 };
 
 struct ps2_gpio_data {
@@ -190,11 +188,9 @@ struct ps2_gpio_data {
 static const struct ps2_gpio_config ps2_gpio_config = {
     .scl_gpio_name = DT_INST_GPIO_LABEL(0, scl_gpios),
     .scl_pin = DT_INST_GPIO_PIN(0, scl_gpios),
-    .scl_flags = DT_INST_GPIO_FLAGS(0, scl_gpios),
 
     .sda_gpio_name = DT_INST_GPIO_LABEL(0, sda_gpios),
     .sda_pin = DT_INST_GPIO_PIN(0, sda_gpios),
-    .sda_flags = DT_INST_GPIO_FLAGS(0, sda_gpios),
 };
 
 static struct ps2_gpio_data ps2_gpio_data = {
