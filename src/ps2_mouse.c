@@ -153,7 +153,8 @@ void zmk_ps2_mouse_activity_callback(const struct device *ps2_device,
             LOG_ERR(
                 "PS/2 Mouse cmd buffer is out of aligment. Requesting resend."
             );
-            // ps2_write(ps2_device, PS2_MOUSE_CMD_RESEND);
+
+            ps2_write(ps2_device, PS2_MOUSE_CMD_RESEND);
             data->cmd_idx = 0;
             return;
         }
