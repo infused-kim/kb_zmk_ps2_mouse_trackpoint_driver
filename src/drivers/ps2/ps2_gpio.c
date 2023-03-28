@@ -159,6 +159,8 @@ struct ps2_gpio_data {
 	struct gpio_callback scl_cb_data;
 
 	// PS2 driver interface callback
+	struct k_work callback_work;
+	uint8_t callback_byte;
 	ps2_callback_t callback_isr;
 	bool callback_enabled;
 
@@ -199,6 +201,7 @@ static struct ps2_gpio_data ps2_gpio_data = {
 	.scl_gpio = NULL,
 	.sda_gpio = NULL,
 
+	.callback_byte = 0x0,
     .callback_isr = NULL,
 	.callback_enabled = false,
 	.mode = PS2_GPIO_MODE_READ,
@@ -767,10 +770,22 @@ void ps2_gpio_read_process_received_byte(uint8_t byte)
 	// that can be read later with the read using `ps2_read`
 	if(data->callback_isr != NULL && data->callback_enabled) {
 
-		data->callback_isr(data->dev, byte);
+		// Call callback from a worker to make sure the callback
+		// doesn't block the interrupt.
+		// Will call ps2_gpio_read_callback_work_handler
+		data->callback_byte = byte;
+    	k_work_submit(&data->callback_work);
 	} else {
 		ps2_gpio_data_queue_add(byte);
 	}
+}
+
+void ps2_gpio_read_callback_work_handler(struct k_work *work)
+{
+	struct ps2_gpio_data *data = &ps2_gpio_data;
+
+	data->callback_isr(data->dev, data->callback_byte);
+	data->callback_byte = 0x0;
 }
 
 void ps2_gpio_read_finish()
@@ -1374,6 +1389,8 @@ static int ps2_gpio_init(const struct device *dev)
     k_work_init_delayable(&data->write_inhibition_wait, ps2_gpio_write_inhibition_wait);
 
     k_work_init_delayable(&interrupt_log_scl_timout, ps2_gpio_interrupt_log_scl_timeout);
+
+	k_work_init(&data->callback_work, ps2_gpio_read_callback_work_handler);
 
 	return 0;
 }
