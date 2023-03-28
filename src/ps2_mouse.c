@@ -72,6 +72,11 @@ struct zmk_ps2_mouse_data {
     int cmd_idx;
     struct k_work_delayable cmd_buffer_timeout;
 
+    // Stores the x and y coordinates between reporting to the os
+    struct vector2d move_speed;
+    struct k_timer mouse_timer;
+    struct k_work mouse_tick;
+
     bool button_l_is_held;
     bool button_m_is_held;
     bool button_r_is_held;
@@ -91,6 +96,8 @@ static struct zmk_ps2_mouse_data zmk_ps2_mouse_data = {
     .button_m_is_held = false,
     .button_r_is_held = false,
 
+    .move_speed = {0},
+
     // Data reporting is disabled on init
     .activity_reporting_on = false,
 };
@@ -102,7 +109,7 @@ static struct zmk_ps2_mouse_data zmk_ps2_mouse_data = {
 #define PS2_GPIO_GET_BIT(data, bit_pos) ( (data >> bit_pos) & 0x1 )
 
 /*
- * Mouse Movement
+ * Mouse Activity
  */
 
 void zmk_ps2_mouse_activity_process_cmd(uint8_t cmd_state,
@@ -178,8 +185,6 @@ void zmk_ps2_mouse_activity_cmd_timout(struct k_work *item)
     zmk_ps2_mouse_activity_reset_cmd_buffer();
 }
 
-void zmk_ps2_mouse_activity_move_mouse_new(int16_t mov_x, int16_t mov_y);
-
 void zmk_ps2_mouse_activity_process_cmd(uint8_t cmd_state,
                                         uint8_t cmd_x,
                                         uint8_t cmd_y)
@@ -202,14 +207,14 @@ void zmk_ps2_mouse_activity_process_cmd(uint8_t cmd_state,
         button_l, button_m, button_r
     );
 
-    zmk_ps2_mouse_activity_move_mouse_new(mov_x, mov_y);
-    // zmk_ps2_mouse_activity_click_buttons(button_l, button_m, button_r);
-
-    // zmk_endpoints_send_mouse_report();
+    zmk_ps2_mouse_activity_move_mouse(mov_x, mov_y);
+    zmk_ps2_mouse_activity_click_buttons(button_l, button_m, button_r);
 }
 
 void zmk_ps2_mouse_activity_move_mouse(int16_t mov_x, int16_t mov_y)
 {
+    struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
+
     #if IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_INVERT_X)
         mov_x = -mov_x;
     #endif /* IS_ENABLED(ZMK_MOUSE_PS2_INVERT_X) */
@@ -219,60 +224,42 @@ void zmk_ps2_mouse_activity_move_mouse(int16_t mov_x, int16_t mov_y)
         LOG_DBG("Inverted mouse movement: %d", mov_y);
     #endif /* IS_ENABLED(ZMK_MOUSE_PS2_INVERT_Y) */
 
-    zmk_hid_mouse_movement_set(0, 0);
+    // Update the move coordinates.
+    // They will actually be sent at a regular interval in
+    // mouse_tick_timer_handler, because PS2 sends mouse data
+    // faster than zmk can send it over BT to the host.
+    data->move_speed.x += mov_x;
 
-    // zmk mouse hid expects y axis up movement to be negative
-    zmk_hid_mouse_movement_update(mov_x, -mov_y);
+    // zmk expects y coordinates to be negative for up.
+    data->move_speed.y += -mov_y;
 }
 
-void zmk_ps2_mouse_activity_move_mouse_new(int16_t mov_x, int16_t mov_y)
+// Called using k_timer data->mouse_timer every x ms as configured with
+// CONFIG_ZMK_MOUSE_TICK_DURATION
+void zmk_ps2_mouse_tick_timer_cb(struct k_timer *dummy) {
+    struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
+
+    LOG_DBG("Submitting mouse work to queue");
+    k_work_submit_to_queue(zmk_mouse_work_q(), &data->mouse_tick);
+}
+
+static void zmk_ps2_mouse_tick_timer_handler(struct k_work *work)
 {
-    #if IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_INVERT_X)
-        mov_x = -mov_x;
-    #endif /* IS_ENABLED(ZMK_MOUSE_PS2_INVERT_X) */
+    struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
 
-    #if IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_INVERT_Y)
-        mov_y = -mov_y;
-        LOG_DBG("Inverted mouse movement: %d", mov_y);
-    #endif /* IS_ENABLED(ZMK_MOUSE_PS2_INVERT_Y) */
+    LOG_DBG("Raising mouse tick event");
 
-    ZMK_EVENT_RAISE(
-        zmk_mouse_move_state_changed_from_coordinates(mov_x, mov_y)
-    );
+    if(data->move_speed.x == 0 && data->move_speed.y == 0) {
+        LOG_DBG("Not raising mouse tick event as the mouse hasn't moved.");
+        return;
+    }
 
-    // struct zmk_mouse_move_state_changed mouse_move_event;
-    // mouse_move_event.max_speed.x = mov_x;
-    // mouse_move_event.max_speed.y = mov_y;
-    // mouse_move_event.config.delay_ms = 0;
-    // mouse_move_event.config.time_to_max_speed_ms = 1500;
-    // mouse_move_event.config.acceleration_exponent = 0;
-    // mouse_move_event.state = true;
-    // mouse_move_event.timestamp = k_uptime_get();
+    zmk_hid_mouse_movement_set(0, 0);
+    zmk_hid_mouse_movement_update(data->move_speed.x, data->move_speed.y);
+    zmk_endpoints_send_mouse_report();
 
-    // ZMK_EVENT_RAISE(
-    //     &mouse_move_event
-    // );
-
-    // struct zmk_behavior_binding binding = {
-    //     .behavior_dev = "MOUSE_MOVE",
-    //     .param1 = MOVE_VERT(-1250),
-    // };
-
-    // zmk_behavior_queue_add(1, binding, true, 0);
-    // zmk_behavior_queue_add(1, binding, false, 1000);
-
-    // struct zmk_mouse_tick tick;
-    // tick.max_move.x = mov_x;
-    // tick.max_move.y = mov_y;
-    // tick.max_scroll.x = 0;
-    // tick.max_scroll.y = 0;
-    // tick.move_config.delay_ms = 0;
-    // tick.move_config.time_to_max_speed_ms = 1500;
-    // tick.move_config.acceleration_exponent = 0;
-    // tick.scroll_config.delay_ms = 0;
-    // tick.scroll_config.time_to_max_speed_ms = 1500;
-    // tick.scroll_config.acceleration_exponent = 0;
-
+    data->move_speed.x = 0;
+    data->move_speed.y = 0;
 }
 
 void zmk_ps2_mouse_activity_click_buttons(bool button_l,
@@ -280,6 +267,7 @@ void zmk_ps2_mouse_activity_click_buttons(bool button_l,
                                           bool button_r)
 {
     struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
+    bool should_send_report = false;
 
     // TODO: Integrate this with the proper button mask instead
     // of hardcoding the mouse button indeces.
@@ -289,30 +277,40 @@ void zmk_ps2_mouse_activity_click_buttons(bool button_l,
         LOG_DBG("Pressing button_l");
         zmk_hid_mouse_button_press(PS2_MOUSE_BUTTON_L_IDX);
         data->button_l_is_held = true;
+        should_send_report = true;
     } else if(button_l == false && data->button_l_is_held == true) {
         LOG_DBG("Releasing button_l");
         zmk_hid_mouse_button_release(PS2_MOUSE_BUTTON_L_IDX);
         data->button_l_is_held = false;
+        should_send_report = true;
     }
 
     if(button_m == true && data->button_m_is_held == false) {
         LOG_DBG("Pressing button_m");
         zmk_hid_mouse_button_press(PS2_MOUSE_BUTTON_M_IDX);
         data->button_m_is_held = true;
+        should_send_report = true;
     } else if(button_m == false && data->button_m_is_held == true) {
         LOG_DBG("Releasing button_m");
         zmk_hid_mouse_button_release(PS2_MOUSE_BUTTON_M_IDX);
         data->button_m_is_held = false;
+        should_send_report = true;
     }
 
     if(button_r == true && data->button_r_is_held == false) {
         LOG_DBG("Pressing button_r");
         zmk_hid_mouse_button_press(PS2_MOUSE_BUTTON_R_IDX);
         data->button_r_is_held = true;
+        should_send_report = true;
     } else if(button_r == false && data->button_r_is_held == true) {
         LOG_DBG("Releasing button_r");
         zmk_hid_mouse_button_release(PS2_MOUSE_BUTTON_R_IDX);
         data->button_r_is_held = false;
+        should_send_report = true;
+    }
+
+    if(should_send_report) {
+        zmk_endpoints_send_mouse_report();
     }
 }
 
@@ -597,7 +595,7 @@ static void zmk_ps2_mouse_init_thread(int dev_ptr, int unused) {
     k_sleep(K_SECONDS(2));
 
 	LOG_INF("Setting sample rate...");
-    zmk_ps2_set_sampling_rate(config->ps2_device, 20);
+    zmk_ps2_set_sampling_rate(config->ps2_device, 200);
     k_sleep(K_SECONDS(2));
 
     // Configure read callback
@@ -615,6 +613,13 @@ static void zmk_ps2_mouse_init_thread(int dev_ptr, int unused) {
     } else {
         LOG_DBG("Successfully activated ps2 callback");
     }
+
+    k_timer_init(&data->mouse_timer, zmk_ps2_mouse_tick_timer_cb, NULL);
+    k_timer_start(
+        &data->mouse_timer, K_NO_WAIT, K_MSEC(CONFIG_ZMK_MOUSE_TICK_DURATION)
+    );
+    k_work_init(&data->mouse_tick, zmk_ps2_mouse_tick_timer_handler);
+
 
     k_work_init_delayable(
         &data->cmd_buffer_timeout, zmk_ps2_mouse_activity_cmd_timout
