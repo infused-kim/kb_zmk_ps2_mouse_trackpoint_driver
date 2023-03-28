@@ -39,7 +39,8 @@ LOG_MODULE_REGISTER(ps2_gpio);
 #define PS2_GPIO_POS_ACK 11  // Write mode only
 
 #define PS2_GPIO_RESP_ACK 0xfa
-#define PS2_GPIO_RESP_ERROR 0xfe
+#define PS2_GPIO_RESP_RESEND 0xfe
+#define PS2_GPIO_RESP_FAILURE 0xfc
 
 /*
  * PS/2 Timings
@@ -135,7 +136,6 @@ typedef enum
 {
     PS2_GPIO_WRITE_STATUS_INACTIVE,
     PS2_GPIO_WRITE_STATUS_ACTIVE,
-    PS2_GPIO_WRITE_STATUS_RETRY,
 	PS2_GPIO_WRITE_STATUS_SUCCESS,
 	PS2_GPIO_WRITE_STATUS_FAILURE,
 } ps2_gpio_write_status;
@@ -175,7 +175,6 @@ struct ps2_gpio_data {
 	ps2_gpio_write_status cur_write_status;
 	uint8_t cur_write_byte;
 	int cur_write_pos;
-	int cur_write_try;
 	struct k_work_delayable write_inhibition_wait;
 	struct k_work_delayable write_scl_timout;
 	struct k_sem write_lock;
@@ -210,7 +209,6 @@ static struct ps2_gpio_data ps2_gpio_data = {
 
 	.cur_write_byte = 0x0,
 	.cur_write_pos = 0,
-	.cur_write_try = 0,
 	.cur_write_status = PS2_GPIO_WRITE_STATUS_INACTIVE,
 
 	.write_awaits_resp = false,
@@ -736,7 +734,10 @@ void ps2_gpio_process_received_byte(uint8_t byte)
 		// data queue.
 		// If it's an ack, the write process will return success.
 		// If it's an error, the write process will return failure.
-		if(byte == PS2_GPIO_RESP_ACK || byte == PS2_GPIO_RESP_ERROR) {
+		if(byte == PS2_GPIO_RESP_ACK ||
+		   byte == PS2_GPIO_RESP_RESEND ||
+		   byte == PS2_GPIO_RESP_FAILURE) {
+
 			return;
 		}
 	}
@@ -779,8 +780,9 @@ bool ps2_gpio_check_parity(uint8_t byte, int parity_bit_val)
  * Writing PS2 data
  */
 
+int ps2_gpio_write_byte(uint8_t byte);
+int ps2_gpio_write_byte_await_response(uint8_t byte);
 int ps2_gpio_write_byte_blocking(uint8_t byte);
-int ps2_gpio_write_byte_async(uint8_t byte);
 void ps2_gpio_write_inhibition_wait(struct k_work *item);
 void ps2_gpio_scl_interrupt_handler_write_send_bit();
 void ps2_gpio_finish_write(bool successful);
@@ -788,13 +790,57 @@ void ps2_gpio_write_scl_timeout(struct k_work *item);
 bool ps2_gpio_get_byte_parity(uint8_t byte);
 
 void ps2_gpio_interrupt_log_write_start(uint8_t byte);
+// Returned when there was an error writing to the PS2 device, such
+// as not getting a clock from the device or receiving an invalid
+// ack bit.
+#define PS2_GPIO_E_WRITE_TRANSMIT 1
+
+// Returned when the write finished seemingly successful, but the
+// device didn't send a response in time
+#define PS2_GPIO_E_WRITE_RESPONSE 2
+
+// Returned when the write finished seemingly successful, but the
+// device responded with 0xfe (request to resend).
+#define PS2_GPIO_E_WRITE_RESEND 3
+
+// Returned when the write finished seemingly successful, but the
+// device responded with 0xfc (failure / cancel).
+#define PS2_GPIO_E_WRITE_FAILURE 4
+
+
+int ps2_gpio_write_byte(uint8_t byte)
+{
+	int err;
+
+	for(int i = 0; i < PS2_GPIO_WRITE_MAX_RETRY; i++) {
+		if(i > 0) {
+			LOG_WRN(
+				"Attempting write re-try #%d of %d...",
+				i + 1, PS2_GPIO_WRITE_MAX_RETRY
+			);
+		}
+
+		err = ps2_gpio_write_byte_await_response(byte);
+
+		if(err == 0) {
+			// Successful
+			break;
+		} else if(err == PS2_GPIO_E_WRITE_FAILURE) {
+			// Write failed and the device requested to stop trying
+			// to resend.
+			break;
+		}
+	}
+
+	return err;
+}
 
 // Writes the byte and blocks execution until we read the
 // response byte.
-// Returns failure if the write fails or the response is 0xfe (error)
+// Returns failure if the write fails or the response is 0xfe/0xfc (error)
 // Returns success if the response is 0xfa (ack) or any value except of
 // 0xfe.
-// 0xfe and 0xfa are not passed on to the read data queue or callback.
+// 0xfe, 0xfc and 0xfa are not passed on to the read data queue or callback.
 int ps2_gpio_write_byte_await_response(uint8_t byte)
 {
 	struct ps2_gpio_data *data = &ps2_gpio_data;
@@ -818,10 +864,10 @@ int ps2_gpio_write_byte_await_response(uint8_t byte)
     if (err) {
 		LOG_WRN(
 			"Write response didn't arrive in time for byte "
-			"0x%x. Considering send a success.", byte
+			"0x%x. Considering send a failure.", byte
 		);
 
-		return -1;
+		return PS2_GPIO_E_WRITE_RESPONSE;
 	}
 
 	LOG_DBG(
@@ -829,15 +875,18 @@ int ps2_gpio_write_byte_await_response(uint8_t byte)
 		byte, resp_byte
 	);
 
-	if(resp_byte == PS2_GPIO_RESP_ERROR) {
+	// We fail the write since we got an error response
+	if(resp_byte == PS2_GPIO_RESP_RESEND) {
 
-		// We fail the write since we got an error response
-		return -2;
+		return PS2_GPIO_E_WRITE_RESEND;
+	} else if(resp_byte == PS2_GPIO_RESP_FAILURE) {
+
+		return PS2_GPIO_E_WRITE_FAILURE;
 	}
 
 	// Most of the time when a write was successful the device
 	// responds with an 0xfa (ack), but for some commands it doesn't.
-	// So we consider all non-0xfe (err) responses as successful.
+	// So we consider all non-0xfe and 0xfc responses as successful.
 	return 0;
 }
 
@@ -851,7 +900,7 @@ int ps2_gpio_write_byte_blocking(uint8_t byte)
 	err = ps2_gpio_write_byte_async(byte);
     if (err) {
 		LOG_ERR("Could not initiate writing of byte.");
-		return err;
+		return PS2_GPIO_E_WRITE_TRANSMIT;
 	}
 
 	// The async `write_byte_async` function takes the only available semaphor.
@@ -863,7 +912,7 @@ int ps2_gpio_write_byte_blocking(uint8_t byte)
 			"Blocking write failed due to semaphore timeout for byte "
 			"0x%x: %d", byte, err
 		);
-		return err;
+		return PS2_GPIO_E_WRITE_TRANSMIT;
 	}
 
 	if(data->cur_write_status == PS2_GPIO_WRITE_STATUS_SUCCESS) {
@@ -888,8 +937,7 @@ int ps2_gpio_write_byte_async(uint8_t byte) {
 
 	LOG_DBG("ps2_gpio_write_byte_async called with byte=0x%x", byte);
 
-	if(data->mode == PS2_GPIO_MODE_WRITE &&
-	   data->cur_write_status != PS2_GPIO_WRITE_STATUS_RETRY)
+	if(data->mode == PS2_GPIO_MODE_WRITE)
 	{
 		LOG_ERR(
 			"Preventing write off byte 0x%x: "
@@ -1092,27 +1140,13 @@ void ps2_gpio_finish_write(bool successful)
 			data->cur_write_byte, data->cur_write_pos
 		);
 
-		if(data->cur_write_try < PS2_GPIO_WRITE_MAX_RETRY) {
-			LOG_WRN(
-				"Attempting write re-try #%d of %d...",
-				data->cur_write_try + 1, PS2_GPIO_WRITE_MAX_RETRY
-			);
-
-			data->cur_write_status = PS2_GPIO_WRITE_STATUS_RETRY;
-			data->cur_write_try++;
-
-			ps2_gpio_write_byte_async(data->cur_write_byte);
-			return;
-		} else {
-	 		data->cur_write_status = PS2_GPIO_WRITE_STATUS_FAILURE;
-		}
+		data->cur_write_status = PS2_GPIO_WRITE_STATUS_FAILURE;
 	}
 
 	data->mode = PS2_GPIO_MODE_READ;
 	data->cur_read_pos = PS2_GPIO_POS_START;
 	data->cur_write_pos = PS2_GPIO_POS_START;
 	data->cur_write_byte = 0x0;
-	data->cur_write_try = 0;
 
 	// Give back control over data and clock line if we still hold on to it
 	ps2_gpio_configure_pin_sda_input();
@@ -1198,7 +1232,7 @@ int ps2_gpio_read(const struct device *dev, uint8_t *value)
 
 static int ps2_gpio_write(const struct device *dev, uint8_t value)
 {
-	return ps2_gpio_write_byte_await_response(value);
+	return ps2_gpio_write_byte(value);
 }
 
 static int ps2_gpio_disable_callback(const struct device *dev)
