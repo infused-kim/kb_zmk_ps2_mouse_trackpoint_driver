@@ -547,7 +547,7 @@ int zmk_ps2_set_sampling_rate(const struct device *ps2_device,
  * Init
  */
 
-void zmk_ps2_init_wait_for_mouse(const struct device *dev)
+int zmk_ps2_init_wait_for_mouse(const struct device *dev)
 {
 	const struct zmk_ps2_mouse_config *config = dev->config;
     int err;
@@ -556,14 +556,17 @@ void zmk_ps2_init_wait_for_mouse(const struct device *dev)
 
     for(int i = 0; i < PS2_MOUSE_INIT_ATTEMPTS; i++) {
 
-        // PS/2 Devices do a self-test and send the result when they power up.
+        LOG_INF(
+            "Trying to initialize mouse device (attempt %d / %d)",
+            i+1, PS2_MOUSE_INIT_ATTEMPTS
+        );
 
-	    LOG_INF("Reading PS/2 self-test...");
+        // PS/2 Devices do a self-test and send the result when they power up.
 
         err = ps2_read(config->ps2_device, &read_val);
         if(err == 0) {
             if(read_val != PS2_MOUSE_RESP_SELF_TEST_PASS) {
-                LOG_DBG("Got invalid PS/2 self-test result: 0x%x", read_val);
+                LOG_WRN("Got invalid PS/2 self-test result: 0x%x", read_val);
                 continue;
             }
 
@@ -573,17 +576,18 @@ void zmk_ps2_init_wait_for_mouse(const struct device *dev)
             LOG_INF("Reading PS/2 device id...");
             err = ps2_read(config->ps2_device, &read_val);
             if(err) {
-                LOG_ERR("Could not read PS/2 device id: %d", err);
+                LOG_WRN("Could not read PS/2 device id: %d", err);
             } else {
                 if(read_val == 0) {
-                    LOG_DBG("Connected PS/2 device is a mouse...");
-                    return;
+                    LOG_INF("Connected PS/2 device is a mouse...");
+                    return 0;
                 } else {
                     LOG_WRN("PS/2 device is not a mouse: 0x%x", read_val);
+                    return 1;
                 }
             }
         } else {
-            LOG_ERR(
+            LOG_DBG(
                 "Could not read PS/2 device self-test result: %d. ", err
             );
         }
@@ -592,7 +596,7 @@ void zmk_ps2_init_wait_for_mouse(const struct device *dev)
         // devices. So the device acts as if it was never disconnected.
         // So we try sending the reset command.
         if(i % 2 == 0) {
-            LOG_INF("Trying to reset device...");
+            LOG_INF("Trying to reset PS2 device...");
             zmk_ps2_send_cmd_reset(config->ps2_device);
             continue;
         }
@@ -600,11 +604,9 @@ void zmk_ps2_init_wait_for_mouse(const struct device *dev)
         k_sleep(K_SECONDS(5));
     }
 
-    LOG_ERR(
-        "Could not init a mouse in %d attempts. Giving up...",
-        PS2_MOUSE_INIT_ATTEMPTS
-    );
+    return 1;
 }
+
 static void zmk_ps2_mouse_init_thread(int dev_ptr, int unused) {
     const struct device *dev = INT_TO_POINTER(dev_ptr);
     struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
@@ -612,13 +614,18 @@ static void zmk_ps2_mouse_init_thread(int dev_ptr, int unused) {
     int err;
 
 	LOG_INF("Waiting for mouse to connect...");
-    zmk_ps2_init_wait_for_mouse(dev);
-
-    k_sleep(K_SECONDS(2));
+    err = zmk_ps2_init_wait_for_mouse(dev);
+    if(err) {
+        LOG_ERR(
+            "Could not init a mouse in %d attempts. Giving up. "
+            "Power cycle the mouse and reset zmk to try again.",
+            PS2_MOUSE_INIT_ATTEMPTS
+        );
+        return;
+    }
 
 	LOG_INF("Setting sample rate...");
     zmk_ps2_set_sampling_rate(config->ps2_device, 200);
-    k_sleep(K_SECONDS(2));
 
     // Configure read callback
 	LOG_DBG("Configuring ps2 callback...");
@@ -641,8 +648,6 @@ static void zmk_ps2_mouse_init_thread(int dev_ptr, int unused) {
         &data->mouse_timer, K_NO_WAIT, K_MSEC(CONFIG_ZMK_MOUSE_TICK_DURATION)
     );
     k_work_init(&data->mouse_tick, zmk_ps2_mouse_tick_timer_handler);
-
-
     k_work_init_delayable(
         &data->cmd_buffer_timeout, zmk_ps2_mouse_activity_cmd_timout
     );
