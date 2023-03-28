@@ -127,7 +127,7 @@ void zmk_ps2_mouse_activity_callback(const struct device *ps2_device,
 
     k_work_cancel_delayable(&data->cmd_buffer_timeout);
 
-    LOG_INF("Received mouse movement data: 0x%x", byte);
+    LOG_DBG("Received mouse movement data: 0x%x", byte);
 
     data->cmd_buffer[data->cmd_idx] = byte;
 
@@ -190,7 +190,7 @@ void zmk_ps2_mouse_activity_process_cmd(uint8_t cmd_state,
         &button_l, &button_m, &button_r
     );
 
-    LOG_INF(
+    LOG_DBG(
         "Got mouse activity cmd "
         "(mov_x=%d, mov_y=%d, o_x=%d, o_y=%d, b_l=%d, b_m=%d, b_r=%d)",
         mov_x, mov_y, overflow_x, overflow_y,
@@ -211,7 +211,7 @@ void zmk_ps2_mouse_activity_move_mouse(int16_t mov_x, int16_t mov_y)
 
     #if IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_INVERT_Y)
         mov_y = -mov_y;
-        LOG_INF("Inverted mouse movement: %d", mov_y);
+        LOG_DBG("Inverted mouse movement: %d", mov_y);
     #endif /* IS_ENABLED(ZMK_MOUSE_PS2_INVERT_Y) */
 
     // zmk_hid_mouse_movement_set(0, 0);
@@ -244,31 +244,31 @@ void zmk_ps2_mouse_activity_click_buttons(bool button_l,
     // Check hid.c and zmk_hid_mouse_buttons_press() for more info.
 
     if(button_l == true && data->button_l_is_held == false) {
-        LOG_INF("Pressing button_l");
+        LOG_DBG("Pressing button_l");
         zmk_hid_mouse_button_press(PS2_MOUSE_BUTTON_L_IDX);
         data->button_l_is_held = true;
     } else if(button_l == false && data->button_l_is_held == true) {
-        LOG_INF("Releasing button_l");
+        LOG_DBG("Releasing button_l");
         zmk_hid_mouse_button_release(PS2_MOUSE_BUTTON_L_IDX);
         data->button_l_is_held = false;
     }
 
     if(button_m == true && data->button_m_is_held == false) {
-        LOG_INF("Pressing button_m");
+        LOG_DBG("Pressing button_m");
         zmk_hid_mouse_button_press(PS2_MOUSE_BUTTON_M_IDX);
         data->button_m_is_held = true;
     } else if(button_m == false && data->button_m_is_held == true) {
-        LOG_INF("Releasing button_m");
+        LOG_DBG("Releasing button_m");
         zmk_hid_mouse_button_release(PS2_MOUSE_BUTTON_M_IDX);
         data->button_m_is_held = false;
     }
 
     if(button_r == true && data->button_r_is_held == false) {
-        LOG_INF("Pressing button_r");
+        LOG_DBG("Pressing button_r");
         zmk_hid_mouse_button_press(PS2_MOUSE_BUTTON_R_IDX);
         data->button_r_is_held = true;
     } else if(button_r == false && data->button_r_is_held == true) {
-        LOG_INF("Releasing button_r");
+        LOG_DBG("Releasing button_r");
         zmk_hid_mouse_button_release(PS2_MOUSE_BUTTON_R_IDX);
         data->button_r_is_held = false;
     }
@@ -336,7 +336,7 @@ int zmk_ps2_send_cmd_reset(const struct device *ps2_device) {
     int err;
 
     uint8_t cmd = PS2_MOUSE_CMD_RESET;
-    LOG_INF("Sending reset command: 0x%x", cmd);
+    LOG_DBG("Sending reset command: 0x%x", cmd);
     err = ps2_write(ps2_device, cmd);
     if(err) {
         LOG_ERR(
@@ -344,7 +344,7 @@ int zmk_ps2_send_cmd_reset(const struct device *ps2_device) {
         );
         return err;
     } else {
-        LOG_INF("Sent command succesfully: 0x%x", cmd);
+        LOG_DBG("Sent command succesfully: 0x%x", cmd);
     }
 
     return 0;
@@ -418,7 +418,7 @@ int zmk_ps2_activity_reporting_enable(const struct device *ps2_device)
         return 0;
     }
 
-    LOG_DBG("Enabling mouse activity reporting...");
+    LOG_INF("Enabling mouse activity reporting...");
 
     int err = zmk_ps2_send_cmd_data_reporting_on(ps2_device);
     if(err) {
@@ -445,7 +445,7 @@ int zmk_ps2_activity_reporting_disable(const struct device *ps2_device)
         return 0;
     }
 
-    LOG_DBG("Disabling mouse activity reporting...");
+    LOG_INF("Disabling mouse activity reporting...");
 
     int err = zmk_ps2_send_cmd_data_reporting_off(ps2_device);
     if(err) {
@@ -504,7 +504,7 @@ void zmk_ps2_init_wait_for_mouse(const struct device *dev)
         err = ps2_read(config->ps2_device, &read_val);
         if(err == 0) {
             if(read_val != PS2_MOUSE_RESP_SELF_TEST_PASS) {
-                LOG_INF("Got invalid PS/2 self-test result: 0x%x", read_val);
+                LOG_DBG("Got invalid PS/2 self-test result: 0x%x", read_val);
                 continue;
             }
 
@@ -517,10 +517,10 @@ void zmk_ps2_init_wait_for_mouse(const struct device *dev)
                 LOG_ERR("Could not read PS/2 device id: %d", err);
             } else {
                 if(read_val == 0) {
-                    LOG_INF("Connected PS/2 device is a mouse...");
+                    LOG_DBG("Connected PS/2 device is a mouse...");
                     break;
                 } else {
-                    LOG_INF("PS/2 device is not a mouse: 0x%x", read_val);
+                    LOG_WRN("PS/2 device is not a mouse: 0x%x", read_val);
                 }
             }
         } else {
@@ -552,14 +552,14 @@ static void zmk_ps2_mouse_init_thread(int dev_ptr, int unused) {
 	LOG_INF("Waiting for mouse to connect...");
     zmk_ps2_init_wait_for_mouse(dev);
 
-    k_sleep(K_SECONDS(1));
+    k_sleep(K_SECONDS(2));
 
 	LOG_INF("Setting sample rate...");
     zmk_ps2_set_sampling_rate(config->ps2_device, 20);
     k_sleep(K_SECONDS(2));
 
     // Configure read callback
-	LOG_INF("Configuring ps2 callback...");
+	LOG_DBG("Configuring ps2 callback...");
     err = ps2_config(config->ps2_device, &zmk_ps2_mouse_activity_callback);
     if(err) {
         LOG_ERR("Could not configure ps2 interface: %d", err);
@@ -571,7 +571,7 @@ static void zmk_ps2_mouse_init_thread(int dev_ptr, int unused) {
     if(err) {
         LOG_ERR("Could not activate ps2 callback: %d", err);
     } else {
-        LOG_INF("Successfully activated ps2 callback");
+        LOG_DBG("Successfully activated ps2 callback");
     }
 
     k_work_init_delayable(
@@ -583,9 +583,9 @@ static void zmk_ps2_mouse_init_thread(int dev_ptr, int unused) {
 
 static int zmk_ps2_mouse_init(const struct device *dev)
 {
-	LOG_INF("Inside zmk_ps2_mouse_init");
+	LOG_DBG("Inside zmk_ps2_mouse_init");
 
-	LOG_INF("Creating ps2_mouse init thread.");
+	LOG_DBG("Creating ps2_mouse init thread.");
     k_thread_create(
         &zmk_ps2_mouse_data.thread,
         zmk_ps2_mouse_data.thread_stack,
