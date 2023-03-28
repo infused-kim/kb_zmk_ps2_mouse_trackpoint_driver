@@ -5,3 +5,11 @@ config PS2_GPIO
 	bool "GPIO bit banging PS/2 support"
 	help
 	  Enable software driven (bit banging) PS/2 support using GPIO pins
+
+if PS2_GPIO
+
+config PS2_GPIO_INTERRUPT_LOG_ENABLED
+	bool "Enable extensive interrupt logging."
+	default n
+
+endif # PS2_GPIO
