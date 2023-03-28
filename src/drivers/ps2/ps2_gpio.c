@@ -785,11 +785,10 @@ int ps2_gpio_write_byte_await_response(uint8_t byte);
 int ps2_gpio_write_byte_blocking(uint8_t byte);
 void ps2_gpio_write_inhibition_wait(struct k_work *item);
 void ps2_gpio_scl_interrupt_handler_write_send_bit();
-void ps2_gpio_finish_write(bool successful);
+void ps2_gpio_write_finish(bool successful);
 void ps2_gpio_write_scl_timeout(struct k_work *item);
 bool ps2_gpio_get_byte_parity(uint8_t byte);
 
-void ps2_gpio_interrupt_log_write_start(uint8_t byte);
 // Returned when there was an error writing to the PS2 device, such
 // as not getting a clock from the device or receiving an invalid
 // ack bit.
@@ -905,7 +904,7 @@ int ps2_gpio_write_byte_blocking(uint8_t byte)
 
 	// The async `write_byte_async` function takes the only available semaphor.
 	// This causes the `k_sem_take` call below to block until
-	// `ps2_gpio_finish_write` gives it back.
+	// `ps2_gpio_write_finish` gives it back.
 	err = k_sem_take(&data->write_lock, PS2_GPIO_TIMEOUT_WRITE_BLOCKING);
     if (err) {
 		LOG_ERR(
@@ -950,7 +949,7 @@ int ps2_gpio_write_byte_async(uint8_t byte) {
 
 	// Take semaphore so that when `ps2_gpio_write_byte_blocking` attempts
 	// taking it, the process gets blocked.
-	// It is released in `ps2_gpio_finish_write`.
+	// It is released in `ps2_gpio_write_finish`.
 	err = k_sem_take(&data->write_lock, K_NO_WAIT);
     if (err != 0 && err != -EBUSY) {
 		LOG_ERR("ps2_gpio_write_byte_async could not take semaphore: %d", err);
@@ -985,7 +984,6 @@ int ps2_gpio_write_byte_async(uint8_t byte) {
 	ps2_gpio_set_scl_callback_enabled(false);
 
 	// Inhibit the line by setting clock low and data high
-	// LOG_INF("Pulling clock line low to start write process.");
 	ps2_gpio_set_scl(0);
 	ps2_gpio_set_sda(1);
 
@@ -1038,8 +1036,7 @@ void ps2_gpio_write_inhibition_wait(struct k_work *item)
 	//  - Pull the clock line low
 	//  - Which will trigger our `scl_interrupt_handler_write`
 	//  - Which will send the correct bit
-	//  - After all bits are sent `scl_interrupt_handler_write_check_ack` is
-	//    called, which verifies if the transaction was successful
+	//  - After all bits are sent `ps2_gpio_write_finish` is called
 }
 
 void ps2_gpio_scl_interrupt_handler_write()
@@ -1087,10 +1084,10 @@ void ps2_gpio_scl_interrupt_handler_write()
 
 		if(ack_val == 0) {
 			ps2_gpio_interrupt_log_add("Write was successful with ack: %d", ack_val);
-			ps2_gpio_finish_write(true);
+			ps2_gpio_write_finish(true);
 		} else {
 			ps2_gpio_interrupt_log_add("Write failed with ack: %d", ack_val);
-			ps2_gpio_finish_write(false);
+			ps2_gpio_write_finish(false);
 		}
 
 		return;
@@ -1110,11 +1107,13 @@ void ps2_gpio_scl_interrupt_handler_write()
 
 void ps2_gpio_write_scl_timeout(struct k_work *item)
 {
+	// If the device stops sending clock signals
+	// we timeout and fail the write.
 	ps2_gpio_interrupt_log_add("Write SCL timeout");
-	ps2_gpio_finish_write(false);
+	ps2_gpio_write_finish(false);
 }
 
-void ps2_gpio_finish_write(bool successful)
+void ps2_gpio_write_finish(bool successful)
 {
 	struct ps2_gpio_data *data = &ps2_gpio_data;
 
