@@ -361,11 +361,13 @@ int ps2_gpio_configure_pin_sda_output()
 	);
 }
 
-void ps2_gpio_send_cmd_resend()
+bool ps2_gpio_get_byte_parity(uint8_t byte)
 {
-	uint8_t cmd = 0xfe;
-	LOG_DBG("Requesting resend of data with command: 0x%x", cmd);
-	ps2_gpio_write_byte_async(cmd);
+	int byte_parity = __builtin_parity(byte);
+
+	// gcc parity returns 1 if there is an odd number of bits in byte
+	// But the PS2 protocol sets the parity bit to 0 if there is an odd number
+	return !byte_parity;
 }
 
 uint8_t ps2_gpio_data_queue_get_next(uint8_t *dst_byte, k_timeout_t timeout)
@@ -426,6 +428,13 @@ void ps2_gpio_data_queue_add(uint8_t byte)
 	k_fifo_alloc_put(&data->data_queue, byte_heap);
 }
 
+
+void ps2_gpio_send_cmd_resend()
+{
+	uint8_t cmd = 0xfe;
+	LOG_DBG("Requesting resend of data with command: 0x%x", cmd);
+	ps2_gpio_write_byte_async(cmd);
+}
 
 
 /*
@@ -580,7 +589,6 @@ void ps2_gpio_read_scl_timeout(struct k_work *item);
 void ps2_gpio_abort_read(bool should_resend, char *reason);
 void ps2_gpio_process_received_byte(uint8_t byte);
 void ps2_gpio_read_finish();
-bool ps2_gpio_check_parity(uint8_t byte, int parity_bit_val);
 
 // Reading doesn't need to be initiated. It happens automatically whenever
 // the device sends data.
@@ -613,7 +621,9 @@ void ps2_gpio_scl_interrupt_handler_read()
 			return;
 		}
 	} else if(data->cur_read_pos == PS2_GPIO_POS_PARITY) {
-		if(ps2_gpio_check_parity(data->cur_read_byte, sda_val) != true) {
+		bool read_byte_parity = ps2_gpio_get_byte_parity(data->cur_read_byte);
+
+		if(read_byte_parity != sda_val) {
 			ps2_gpio_interrupt_log_add(
 				"Requesting re-send due to invalid parity bit."
 			);
@@ -760,19 +770,6 @@ void ps2_gpio_read_finish()
 	data->cur_read_byte = 0x0;
 
 	k_work_cancel_delayable(&data->read_scl_timout);
-}
-
-bool ps2_gpio_check_parity(uint8_t byte, int parity_bit_val)
-{
-	int byte_parity = __builtin_parity(byte);
-
-	// gcc parity returns 1 if there is an odd number of bits in byte
-	// But the PS2 protocol sets the parity bit to 0 if there is an odd number
-	if(byte_parity == parity_bit_val) {
-		return 0;  // Do not match
-	}
-
-	return 1;  // Match
 }
 
 
@@ -1153,15 +1150,6 @@ void ps2_gpio_write_finish(bool successful)
 
 	// Give the semaphore to allow write_byte_blocking to continue
 	k_sem_give(&data->write_lock);
-}
-
-bool ps2_gpio_get_byte_parity(uint8_t byte)
-{
-	int byte_parity = __builtin_parity(byte);
-
-	// gcc parity returns 1 if there is an odd number of bits in byte
-	// But the PS2 protocol sets the parity bit to 0 if there is an odd number
-	return !byte_parity;
 }
 
 
