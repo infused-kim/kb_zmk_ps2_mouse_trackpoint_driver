@@ -623,6 +623,13 @@ void ps2_gpio_read_interrupt_handler()
 			ps2_gpio_read_abort(false, "invalid start bit");
 			return;
 		}
+	} else if(data->cur_read_pos > PS2_GPIO_POS_START &&
+	   data->cur_read_pos < PS2_GPIO_POS_PARITY)
+	{  // Data Bits
+
+		// Current position, minus start bit
+		int bit_pos = data->cur_read_pos - 1;
+		PS2_GPIO_SET_BIT(data->cur_read_byte, sda_val, bit_pos);
 	} else if(data->cur_read_pos == PS2_GPIO_POS_PARITY) {
 		bool read_byte_parity = ps2_gpio_get_byte_parity(data->cur_read_byte);
 
@@ -653,11 +660,12 @@ void ps2_gpio_read_interrupt_handler()
 		ps2_gpio_read_process_received_byte(data->cur_read_byte);
 
 		return;
-	} else { // Data Bits
+	} else {
+		ps2_gpio_interrupt_log_add(
+			"Invalid read clock triggered with pos=%d", data->cur_write_pos
+		);
 
-		// Current position, minus start bit
-		int bit_pos = data->cur_read_pos - 1;
-		PS2_GPIO_SET_BIT(data->cur_read_byte, sda_val, bit_pos);
+		return;
 	}
 
  	data->cur_read_pos += 1;
