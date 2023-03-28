@@ -29,6 +29,7 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
  * Settings
  */
 
+#define PS2_MOUSE_INIT_ATTEMPTS 10
 #define PS2_MOUSE_TIMEOUT_CMD_BUFFER K_MSEC(500)
 
 /*
@@ -553,7 +554,7 @@ void zmk_ps2_init_wait_for_mouse(const struct device *dev)
 
     uint8_t read_val;
 
-    for(int i=0; true; i++) {
+    for(int i = 0; i < PS2_MOUSE_INIT_ATTEMPTS; i++) {
 
         // PS/2 Devices do a self-test and send the result when they power up.
 
@@ -576,7 +577,7 @@ void zmk_ps2_init_wait_for_mouse(const struct device *dev)
             } else {
                 if(read_val == 0) {
                     LOG_DBG("Connected PS/2 device is a mouse...");
-                    break;
+                    return;
                 } else {
                     LOG_WRN("PS/2 device is not a mouse: 0x%x", read_val);
                 }
@@ -590,16 +591,19 @@ void zmk_ps2_init_wait_for_mouse(const struct device *dev)
         // But when a zmk device is reset, it doesn't cut the power to external
         // devices. So the device acts as if it was never disconnected.
         // So we try sending the reset command.
-        if(i == 0) {
+        if(i % 2 == 0) {
             LOG_INF("Trying to reset device...");
             zmk_ps2_send_cmd_reset(config->ps2_device);
             continue;
-        } else if(i == 4) {
-            i = -1;
         }
 
         k_sleep(K_SECONDS(5));
     }
+
+    LOG_ERR(
+        "Could not init a mouse in %d attempts. Giving up...",
+        PS2_MOUSE_INIT_ATTEMPTS
+    );
 }
 static void zmk_ps2_mouse_init_thread(int dev_ptr, int unused) {
     const struct device *dev = INT_TO_POINTER(dev_ptr);
