@@ -64,6 +64,16 @@ struct zmk_ps2_mouse_config {
 	const struct device *ps2_device;
 };
 
+struct zmk_ps2_mouse_packet {
+    int16_t mov_x;
+    int16_t mov_y;
+    bool overflow_x;
+    bool overflow_y;
+    bool button_l;
+    bool button_m;
+    bool button_r;
+};
+
 struct zmk_ps2_mouse_data {
     K_THREAD_STACK_MEMBER(thread_stack, PS2_MOUSE_THREAD_STACK_SIZE);
     struct k_thread thread;
@@ -120,16 +130,11 @@ void zmk_ps2_mouse_activity_click_buttons(bool button_l,
                                           bool button_m,
                                           bool button_r);
 void zmk_ps2_mouse_activity_reset_cmd_buffer();
-void zmk_ps2_mouse_activity_parse_cmd_buffer(uint8_t cmd_state,
-                                             uint8_t cmd_x,
-                                             uint8_t cmd_y,
-                                             int16_t *mov_x,
-                                             int16_t *mov_y,
-                                             bool *overflow_x,
-                                             bool *overflow_y,
-                                             bool *button_l,
-                                             bool *button_m,
-                                             bool *button_r);
+
+struct zmk_ps2_mouse_packet
+zmk_ps2_mouse_activity_parse_cmd_buffer(uint8_t cmd_state,
+                                        uint8_t cmd_x,
+                                        uint8_t cmd_y);
 
 void zmk_ps2_mouse_activity_callback(const struct device *ps2_device,
                                      uint8_t byte)
@@ -190,26 +195,63 @@ void zmk_ps2_mouse_activity_process_cmd(uint8_t cmd_state,
                                         uint8_t cmd_x,
                                         uint8_t cmd_y)
 {
-    int16_t mov_x, mov_y;
-    bool overflow_x, overflow_y, button_l, button_m, button_r;
-
     LOG_DBG("zmk_ps2_mouse_activity_process_cmd Got state=0x%x x=0x%d, y=0x%d", cmd_state, cmd_x, cmd_y);
 
-    zmk_ps2_mouse_activity_parse_cmd_buffer(
-        cmd_state, cmd_x, cmd_y,
-        &mov_x, &mov_y, &overflow_x, &overflow_y,
-        &button_l, &button_m, &button_r
+    struct zmk_ps2_mouse_packet packet;
+    packet = zmk_ps2_mouse_activity_parse_cmd_buffer(
+        cmd_state, cmd_x, cmd_y
     );
 
     LOG_DBG(
         "Got mouse activity cmd "
         "(mov_x=%d, mov_y=%d, o_x=%d, o_y=%d, b_l=%d, b_m=%d, b_r=%d)",
-        mov_x, mov_y, overflow_x, overflow_y,
-        button_l, button_m, button_r
+        packet.mov_x, packet.mov_y, packet.overflow_x, packet.overflow_y,
+        packet.button_l, packet.button_m, packet.button_r
     );
 
-    zmk_ps2_mouse_activity_move_mouse(mov_x, mov_y);
-    zmk_ps2_mouse_activity_click_buttons(button_l, button_m, button_r);
+    zmk_ps2_mouse_activity_move_mouse(packet.mov_x, packet.mov_y);
+    zmk_ps2_mouse_activity_click_buttons(
+        packet.button_l, packet.button_m, packet.button_r
+    );
+}
+
+struct zmk_ps2_mouse_packet
+zmk_ps2_mouse_activity_parse_cmd_buffer(uint8_t cmd_state,
+                                        uint8_t cmd_x,
+                                        uint8_t cmd_y)
+{
+    struct zmk_ps2_mouse_packet packet;
+
+    packet.button_l = PS2_GPIO_GET_BIT(cmd_state, 0);
+    packet.button_r = PS2_GPIO_GET_BIT(cmd_state, 1);
+    packet.button_m = PS2_GPIO_GET_BIT(cmd_state, 2);
+    packet.overflow_x = PS2_GPIO_GET_BIT(cmd_state, 6);
+    packet.overflow_y = PS2_GPIO_GET_BIT(cmd_state, 7);
+
+    // The coordinates are delivered as a signed 9bit integers.
+    // But a PS/2 packet is only 8 bits, so the most significant
+    // bit with the sign is stored inside the state packet.
+    //
+    // Since we are converting the uint8_t into a int16_t
+    // we must pad the unused most significant bits with
+    // the sign bit.
+    //
+    // Example:
+    //                              ↓ x sign bit
+    //  - State: 0x18 (          0001 1000)
+    //                             ↑ y sign bit
+    //  - X:     0xfd (          1111 1101) / decimal 253
+    //  - New X:      (1111 1111 1111 1101) / decimal -3
+    //
+    //  - Y:     0x02 (          0000 0010) / decimal 2
+    //  - New Y:      (0000 0000 0000 0010) / decimal 2
+    //
+    // The code below creates a signed int and is from...
+    // https://wiki.osdev.org/PS/2_Mouse
+    packet.mov_x = cmd_x - ((cmd_state << 4) & 0x100);
+    packet.mov_y = cmd_y - ((cmd_state << 3) & 0x100);
+
+    return packet;
 }
 
 void zmk_ps2_mouse_activity_move_mouse(int16_t mov_x, int16_t mov_y)
@@ -313,57 +355,6 @@ void zmk_ps2_mouse_activity_click_buttons(bool button_l,
     if(should_send_report) {
         zmk_endpoints_send_mouse_report();
     }
-}
-
-void zmk_ps2_mouse_activity_reset_cmd_buffer()
-{
-    struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
-
-    data->cmd_idx = 0;
-    memset(data->cmd_buffer, 0x0, sizeof(data->cmd_buffer));
-}
-
-void zmk_ps2_mouse_activity_parse_cmd_buffer(uint8_t cmd_state,
-                                             uint8_t cmd_x,
-                                             uint8_t cmd_y,
-                                             int16_t *mov_x,
-                                             int16_t *mov_y,
-                                             bool *overflow_x,
-                                             bool *overflow_y,
-                                             bool *button_l,
-                                             bool *button_m,
-                                             bool *button_r)
-{
-    LOG_DBG("zmk_ps2_mouse_activity_parse_cmd_buffer gsot state=0x%x x=0x%d, y=0x%d", cmd_state, cmd_x, cmd_y);
-
-    *button_l = PS2_GPIO_GET_BIT(cmd_state, 0);
-    *button_r = PS2_GPIO_GET_BIT(cmd_state, 1);
-    *button_m = PS2_GPIO_GET_BIT(cmd_state, 2);
-    *overflow_x = PS2_GPIO_GET_BIT(cmd_state, 6);
-    *overflow_y = PS2_GPIO_GET_BIT(cmd_state, 7);
-
-    // The coordinates are delivered as a signed 9bit integers.
-    // But a PS/2 packet is only 8 bits, so the most significant
-    // bit with the sign is stored inside the state packet.
-    //
-    // Since we are converting the uint8_t into a int16_t
-    // we must pad the unused most significant bits with
-    // the sign bit.
-    //
-    // Example:
-    //                              ↓ x sign bit
-    //  - State: 0x18 (          0001 1000)
-    //                             ↑ y sign bit
-    //  - X:     0xfd (          1111 1101) / decimal 253
-    //  - New X:      (1111 1111 1111 1101) / decimal -3
-    //
-    //  - Y:     0x02 (          0000 0010) / decimal 2
-    //  - New Y:      (0000 0000 0000 0010) / decimal 2
-    //
-    // The code below creates a signed int and is from...
-    // https://wiki.osdev.org/PS/2_Mouse
-    *mov_x = cmd_x - ((cmd_state << 4) & 0x100);
-    *mov_y = cmd_y - ((cmd_state << 3) & 0x100);
 }
 
 
