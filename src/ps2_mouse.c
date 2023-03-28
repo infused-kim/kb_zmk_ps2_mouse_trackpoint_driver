@@ -119,7 +119,7 @@ static struct zmk_ps2_mouse_data zmk_ps2_mouse_data = {
 #define PS2_GPIO_GET_BIT(data, bit_pos) ( (data >> bit_pos) & 0x1 )
 
 /*
- * Mouse Activity
+ * Mouse Activity Packet Reading
  */
 
 void zmk_ps2_mouse_activity_process_cmd(uint8_t cmd_state,
@@ -136,6 +136,8 @@ zmk_ps2_mouse_activity_parse_cmd_buffer(uint8_t cmd_state,
                                         uint8_t cmd_x,
                                         uint8_t cmd_y);
 
+// Called by the PS/2 driver whenver the mouse sends a byte and
+// reporting is enabled through `zmk_ps2_activity_reporting_enable`.
 void zmk_ps2_mouse_activity_callback(const struct device *ps2_device,
                                      uint8_t byte)
 {
@@ -181,14 +183,27 @@ void zmk_ps2_mouse_activity_callback(const struct device *ps2_device,
 	k_work_schedule(&data->cmd_buffer_timeout, PS2_MOUSE_TIMEOUT_CMD_BUFFER);
 }
 
+// Called if no new byte arrives within
+// PS2_MOUSE_TIMEOUT_CMD_BUFFER
 void zmk_ps2_mouse_activity_cmd_timout(struct k_work *item)
 {
-    // Called if no new bit arrives within
-    // PS2_MOUSE_TIMEOUT_CMD_BUFFER
     struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
 
     LOG_DBG("Mouse movement cmd timed out on idx=%d", data->cmd_idx);
+
+    // Reset the cmd buffer in case we are out of alignment.
+    // This way if the mouse ever gets out of alignment, the user
+    // can reset it by just not moving it for a second.
     zmk_ps2_mouse_activity_reset_cmd_buffer();
+}
+
+
+void zmk_ps2_mouse_activity_reset_cmd_buffer()
+{
+    struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
+
+    data->cmd_idx = 0;
+    memset(data->cmd_buffer, 0x0, sizeof(data->cmd_buffer));
 }
 
 void zmk_ps2_mouse_activity_process_cmd(uint8_t cmd_state,
@@ -254,6 +269,16 @@ zmk_ps2_mouse_activity_parse_cmd_buffer(uint8_t cmd_state,
     return packet;
 }
 
+
+/*
+ * Mouse Moving and Clicking
+ */
+
+// We don't send the mouse move over BT every time we get a PS2 packet,
+// because it can send too fast.
+// Here we just add up the coordinates and then we use a timer to actually
+// send the movement once every CONFIG_ZMK_MOUSE_TICK_DURATION ms in
+// zmk_ps2_mouse_tick_timer_handler.
 void zmk_ps2_mouse_activity_move_mouse(int16_t mov_x, int16_t mov_y)
 {
     struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
@@ -267,10 +292,6 @@ void zmk_ps2_mouse_activity_move_mouse(int16_t mov_x, int16_t mov_y)
         LOG_DBG("Inverted mouse movement: %d", mov_y);
     #endif /* IS_ENABLED(ZMK_MOUSE_PS2_INVERT_Y) */
 
-    // Update the move coordinates.
-    // They will actually be sent at a regular interval in
-    // mouse_tick_timer_handler, because PS2 sends mouse data
-    // faster than zmk can send it over BT to the host.
     data->move_speed.x += mov_x;
 
     // zmk expects y coordinates to be negative for up.
@@ -283,9 +304,12 @@ void zmk_ps2_mouse_tick_timer_cb(struct k_timer *dummy) {
     struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
 
     // LOG_DBG("Submitting mouse work to queue");
+    // Calls zmk_ps2_mouse_tick_timer_handler
     k_work_submit_to_queue(zmk_mouse_work_q(), &data->mouse_tick);
 }
 
+// Here is where we actually ask zmk to send the mouse movement to
+// the OS.
 static void zmk_ps2_mouse_tick_timer_handler(struct k_work *work)
 {
     struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
@@ -352,6 +376,8 @@ void zmk_ps2_mouse_activity_click_buttons(bool button_l,
         should_send_report = true;
     }
 
+    // Since mouse clicks generate far few events than movement,
+    // we send them right away instead of using the timer.
     if(should_send_report) {
         zmk_endpoints_send_mouse_report();
     }
@@ -496,7 +522,6 @@ int zmk_ps2_activity_reporting_disable(const struct device *ps2_device)
     return 0;
 }
 
-
 int zmk_ps2_set_sampling_rate(const struct device *ps2_device,
                               uint8_t sampling_rate)
 {
@@ -515,6 +540,8 @@ int zmk_ps2_set_sampling_rate(const struct device *ps2_device,
 
     return err;
 }
+
+
 /*
  * Init
  */
@@ -524,7 +551,6 @@ void zmk_ps2_init_wait_for_mouse(const struct device *dev)
 	const struct zmk_ps2_mouse_config *config = dev->config;
     int err;
 
-    // Read self test result
     uint8_t read_val;
 
     for(int i=0; true; i++) {
