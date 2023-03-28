@@ -575,7 +575,8 @@ void ps2_gpio_interrupt_log_print()
 
 void ps2_gpio_interrupt_log_scl_timeout(struct k_work *item)
 {
-	// Called if there is no interrupt for PS2_GPIO_INTERRUPT_LOG_SCL_TIMEOUT
+	// Called if there is no interrupt for
+	// PS2_GPIO_INTERRUPT_LOG_SCL_TIMEOUT ms
 	ps2_gpio_interrupt_log_print();
 	ps2_gpio_interrupt_log_clear();
 }
@@ -585,16 +586,18 @@ void ps2_gpio_interrupt_log_scl_timeout(struct k_work *item)
  * Reading PS/2 data
  */
 
+void ps2_gpio_read_interrupt_handler();
 void ps2_gpio_read_scl_timeout(struct k_work *item);
-void ps2_gpio_abort_read(bool should_resend, char *reason);
-void ps2_gpio_process_received_byte(uint8_t byte);
+void ps2_gpio_read_abort(bool should_resend, char *reason);
+void ps2_gpio_read_process_received_byte(uint8_t byte);
 void ps2_gpio_read_finish();
 
 // Reading doesn't need to be initiated. It happens automatically whenever
 // the device sends data.
 // Once a full byte has been received successfully it is processed in
-// ps2_gpio_process_received_byte, which decides what should happen with it.
-void ps2_gpio_scl_interrupt_handler_read()
+// ps2_gpio_read_process_received_byte, which decides what should happen
+// with it.
+void ps2_gpio_read_interrupt_handler()
 {
 	struct ps2_gpio_data *data = &ps2_gpio_data;
 
@@ -617,7 +620,7 @@ void ps2_gpio_scl_interrupt_handler_read()
 			// devices send some unintended interrupts. If this is a "real
 			// transmission" and we are out of sync, we will catch it with the
 			// parity and stop bits and then request a resend.
-			ps2_gpio_abort_read(false, "invalid start bit");
+			ps2_gpio_read_abort(false, "invalid start bit");
 			return;
 		}
 	} else if(data->cur_read_pos == PS2_GPIO_POS_PARITY) {
@@ -631,7 +634,7 @@ void ps2_gpio_scl_interrupt_handler_read()
 			// If we got to the parity bit and it's incorrect then we
 			// are definitly in a transmission and out of sync. So we
 			// request a resend.
-			ps2_gpio_abort_read(true, "invalid parity bit");
+			ps2_gpio_read_abort(true, "invalid parity bit");
 			return;
 		}
 	} else if(data->cur_read_pos == PS2_GPIO_POS_STOP) {
@@ -643,11 +646,11 @@ void ps2_gpio_scl_interrupt_handler_read()
 			// If we got to the stop bit and it's incorrect then we
 			// are definitly in a transmission and out of sync. So we
 			// request a resend.
-			ps2_gpio_abort_read(true, "invalid stop bit");
+			ps2_gpio_read_abort(true, "invalid stop bit");
 			return;
 		}
 
-		ps2_gpio_process_received_byte(data->cur_read_byte);
+		ps2_gpio_read_process_received_byte(data->cur_read_byte);
 
 		return;
 	} else { // Data Bits
@@ -684,13 +687,13 @@ void ps2_gpio_read_scl_timeout(struct k_work *item)
 	// If we are really out of sync the parity and stop bits should catch
 	// it and request a re-transmission.
 	if(data->cur_read_pos <= 3) {
-		ps2_gpio_abort_read(false, "scl timeout");
+		ps2_gpio_read_abort(false, "scl timeout");
 	} else {
-		ps2_gpio_abort_read(true, "scl timeout");
+		ps2_gpio_read_abort(true, "scl timeout");
 	}
 }
 
-void ps2_gpio_abort_read(bool should_resend, char *reason)
+void ps2_gpio_read_abort(bool should_resend, char *reason)
 {
 	struct ps2_gpio_data *data = &ps2_gpio_data;
 
@@ -722,7 +725,7 @@ void ps2_gpio_abort_read(bool should_resend, char *reason)
 	}
 }
 
-void ps2_gpio_process_received_byte(uint8_t byte)
+void ps2_gpio_read_process_received_byte(uint8_t byte)
 {
 	struct ps2_gpio_data *data = &ps2_gpio_data;
 
@@ -780,8 +783,9 @@ void ps2_gpio_read_finish()
 int ps2_gpio_write_byte(uint8_t byte);
 int ps2_gpio_write_byte_await_response(uint8_t byte);
 int ps2_gpio_write_byte_blocking(uint8_t byte);
+// ps2_gpio_write_byte_async (defined above helper functions)
 void ps2_gpio_write_inhibition_wait(struct k_work *item);
-void ps2_gpio_scl_interrupt_handler_write_send_bit();
+void ps2_gpio_write_interrupt_handler();
 void ps2_gpio_write_finish(bool successful);
 void ps2_gpio_write_scl_timeout(struct k_work *item);
 bool ps2_gpio_get_byte_parity(uint8_t byte);
@@ -796,7 +800,8 @@ bool ps2_gpio_get_byte_parity(uint8_t byte);
 #define PS2_GPIO_E_WRITE_RESPONSE 2
 
 // Returned when the write finished seemingly successful, but the
-// device responded with 0xfe (request to resend).
+// device responded with 0xfe (request to resend) and we ran out of
+// retry attempts.
 #define PS2_GPIO_E_WRITE_RESEND 3
 
 // Returned when the write finished seemingly successful, but the
@@ -967,7 +972,7 @@ int ps2_gpio_write_byte_async(uint8_t byte) {
 	   data->cur_read_byte != 0x0)
 	{
 		LOG_WRN("Aborting in-progress read due to write of byte 0x%x", byte);
-		ps2_gpio_abort_read(false, "starting write");
+		ps2_gpio_read_abort(false, "starting write");
 	}
 
 	// Configure data and clock lines for output
@@ -1031,12 +1036,12 @@ void ps2_gpio_write_inhibition_wait(struct k_work *item)
 	// From here on the device takes over the control of the clock again
 	// Every time it is ready for the next bit to be trasmitted, it will...
 	//  - Pull the clock line low
-	//  - Which will trigger our `scl_interrupt_handler_write`
+	//  - Which will trigger our `ps2_gpio_write_interrupt_handler`
 	//  - Which will send the correct bit
 	//  - After all bits are sent `ps2_gpio_write_finish` is called
 }
 
-void ps2_gpio_scl_interrupt_handler_write()
+void ps2_gpio_write_interrupt_handler()
 {
 	// After initiating writing, the device takes over
 	// the clock and asks us for a new bit of data on
@@ -1104,8 +1109,11 @@ void ps2_gpio_scl_interrupt_handler_write()
 
 void ps2_gpio_write_scl_timeout(struct k_work *item)
 {
-	// If the device stops sending clock signals
-	// we timeout and fail the write.
+	// Once we start a transmission we expect the device to
+	// to send a new clock/interrupt within 100us.
+	// If we don't receive the next interrupt within that timeframe,
+	// we abort the writ).
+
 	ps2_gpio_interrupt_log_add("Write SCL timeout");
 	ps2_gpio_write_finish(false);
 }
@@ -1166,9 +1174,9 @@ void ps2_gpio_scl_interrupt_handler(const struct device *dev,
 	k_work_cancel_delayable(&interrupt_log_scl_timout);
 
 	if(data->mode == PS2_GPIO_MODE_READ) {
-		ps2_gpio_scl_interrupt_handler_read();
+		ps2_gpio_read_interrupt_handler();
 	} else {
-		ps2_gpio_scl_interrupt_handler_write();
+		ps2_gpio_write_interrupt_handler();
 	}
 
 	k_work_schedule(
