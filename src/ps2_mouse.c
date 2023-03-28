@@ -547,6 +547,74 @@ int zmk_ps2_set_sampling_rate(const struct device *ps2_device,
  * Init
  */
 
+static void zmk_ps2_mouse_init_thread(int dev_ptr, int unused);
+int zmk_ps2_init_wait_for_mouse(const struct device *dev);
+
+static int zmk_ps2_mouse_init(const struct device *dev)
+{
+	LOG_DBG("Inside zmk_ps2_mouse_init");
+
+	LOG_DBG("Creating ps2_mouse init thread.");
+    k_thread_create(
+        &zmk_ps2_mouse_data.thread,
+        zmk_ps2_mouse_data.thread_stack,
+        PS2_MOUSE_THREAD_STACK_SIZE,
+        (k_thread_entry_t)zmk_ps2_mouse_init_thread,
+        (struct device *)dev, 0, NULL,
+        K_PRIO_COOP(PS2_MOUSE_THREAD_PRIORITY), 0, K_NO_WAIT
+    );
+
+	return 0;
+}
+
+static void zmk_ps2_mouse_init_thread(int dev_ptr, int unused) {
+    const struct device *dev = INT_TO_POINTER(dev_ptr);
+    struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
+	const struct zmk_ps2_mouse_config *config = dev->config;
+    int err;
+
+	LOG_INF("Waiting for mouse to connect...");
+    err = zmk_ps2_init_wait_for_mouse(dev);
+    if(err) {
+        LOG_ERR(
+            "Could not init a mouse in %d attempts. Giving up. "
+            "Power cycle the mouse and reset zmk to try again.",
+            PS2_MOUSE_INIT_ATTEMPTS
+        );
+        return;
+    }
+
+	LOG_INF("Setting sample rate...");
+    zmk_ps2_set_sampling_rate(config->ps2_device, 200);
+
+    // Configure read callback
+	LOG_DBG("Configuring ps2 callback...");
+    err = ps2_config(config->ps2_device, &zmk_ps2_mouse_activity_callback);
+    if(err) {
+        LOG_ERR("Could not configure ps2 interface: %d", err);
+        return ;
+    }
+
+	LOG_INF("Enabling data reporting and ps2 callback...");
+    err = zmk_ps2_activity_reporting_enable(config->ps2_device);
+    if(err) {
+        LOG_ERR("Could not activate ps2 callback: %d", err);
+    } else {
+        LOG_DBG("Successfully activated ps2 callback");
+    }
+
+    k_timer_init(&data->mouse_timer, zmk_ps2_mouse_tick_timer_cb, NULL);
+    k_timer_start(
+        &data->mouse_timer, K_NO_WAIT, K_MSEC(CONFIG_ZMK_MOUSE_TICK_DURATION)
+    );
+    k_work_init(&data->mouse_tick, zmk_ps2_mouse_tick_timer_handler);
+    k_work_init_delayable(
+        &data->cmd_buffer_timeout, zmk_ps2_mouse_activity_cmd_timout
+    );
+
+	return;
+}
+
 int zmk_ps2_init_wait_for_mouse(const struct device *dev)
 {
 	const struct zmk_ps2_mouse_config *config = dev->config;
@@ -607,70 +675,6 @@ int zmk_ps2_init_wait_for_mouse(const struct device *dev)
     return 1;
 }
 
-static void zmk_ps2_mouse_init_thread(int dev_ptr, int unused) {
-    const struct device *dev = INT_TO_POINTER(dev_ptr);
-    struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
-	const struct zmk_ps2_mouse_config *config = dev->config;
-    int err;
-
-	LOG_INF("Waiting for mouse to connect...");
-    err = zmk_ps2_init_wait_for_mouse(dev);
-    if(err) {
-        LOG_ERR(
-            "Could not init a mouse in %d attempts. Giving up. "
-            "Power cycle the mouse and reset zmk to try again.",
-            PS2_MOUSE_INIT_ATTEMPTS
-        );
-        return;
-    }
-
-	LOG_INF("Setting sample rate...");
-    zmk_ps2_set_sampling_rate(config->ps2_device, 200);
-
-    // Configure read callback
-	LOG_DBG("Configuring ps2 callback...");
-    err = ps2_config(config->ps2_device, &zmk_ps2_mouse_activity_callback);
-    if(err) {
-        LOG_ERR("Could not configure ps2 interface: %d", err);
-        return ;
-    }
-
-	LOG_INF("Enabling data reporting and ps2 callback...");
-    err = zmk_ps2_activity_reporting_enable(config->ps2_device);
-    if(err) {
-        LOG_ERR("Could not activate ps2 callback: %d", err);
-    } else {
-        LOG_DBG("Successfully activated ps2 callback");
-    }
-
-    k_timer_init(&data->mouse_timer, zmk_ps2_mouse_tick_timer_cb, NULL);
-    k_timer_start(
-        &data->mouse_timer, K_NO_WAIT, K_MSEC(CONFIG_ZMK_MOUSE_TICK_DURATION)
-    );
-    k_work_init(&data->mouse_tick, zmk_ps2_mouse_tick_timer_handler);
-    k_work_init_delayable(
-        &data->cmd_buffer_timeout, zmk_ps2_mouse_activity_cmd_timout
-    );
-
-	return;
-}
-
-static int zmk_ps2_mouse_init(const struct device *dev)
-{
-	LOG_DBG("Inside zmk_ps2_mouse_init");
-
-	LOG_DBG("Creating ps2_mouse init thread.");
-    k_thread_create(
-        &zmk_ps2_mouse_data.thread,
-        zmk_ps2_mouse_data.thread_stack,
-        PS2_MOUSE_THREAD_STACK_SIZE,
-        (k_thread_entry_t)zmk_ps2_mouse_init_thread,
-        (struct device *)dev, 0, NULL,
-        K_PRIO_COOP(PS2_MOUSE_THREAD_PRIORITY), 0, K_NO_WAIT
-    );
-
-	return 0;
-}
 
 DEVICE_DT_INST_DEFINE(
 	0,
