@@ -786,8 +786,12 @@ static void zmk_ps2_mouse_init_thread(int dev_ptr, int unused) {
 	// LOG_INF("Setting sample rate...");
     // zmk_ps2_set_sampling_rate(config->ps2_device, 200);
 
-	LOG_INF("Enabling scroll mode.");
-    zmk_ps2_set_packet_mode(config->ps2_device, PS2_MOUSE_PACKET_MODE_SCROLL);
+    #if IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_SCROLL)
+        LOG_INF("Enabling scroll mode.");
+        zmk_ps2_set_packet_mode(
+            config->ps2_device, PS2_MOUSE_PACKET_MODE_SCROLL
+        );
+    #endif /* IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_SCROLL) */
 
     // Configure read callback
 	LOG_DBG("Configuring ps2 callback...");
