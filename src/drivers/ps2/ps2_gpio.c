@@ -91,7 +91,7 @@ LOG_MODULE_REGISTER(ps2_gpio);
 
 // Timeout for write_byte_blocking()
 #define PS2_GPIO_TIMEOUT_WRITE_BLOCKING K_USEC( \
-	PS2_GPIO_WRITE_MAX_RETRY * PS2_GPIO_TIMING_WRITE_MAX_TIME \
+	PS2_GPIO_TIMING_WRITE_MAX_TIME \
 )
 
 // Timeout for write_byte_await_response()
