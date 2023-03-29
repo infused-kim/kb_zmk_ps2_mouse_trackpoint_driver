@@ -39,9 +39,10 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #define PS2_MOUSE_CMD_RESEND 0xfe
 #define PS2_MOUSE_CMD_RESET 0xff
 #define PS2_MOUSE_CMD_MODE_STREAM 0xea
+#define PS2_MOUSE_CMD_GET_DEVICE_ID 0xf2
+#define PS2_MOUSE_CMD_SET_SAMPLING_RATE 0xf3
 #define PS2_MOUSE_CMD_ENABLE_REPORTING 0xf4
 #define PS2_MOUSE_CMD_DISABLE_REPORTING 0xf5
-#define PS2_MOUSE_CMD_SET_SAMPLING_RATE 0xf3
 
 #define PS2_MOUSE_RESP_SELF_TEST_PASS 0xaa
 #define PS2_MOUSE_RESP_SELF_TEST_FAIL 0xfc
@@ -61,6 +62,12 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
  * Global Variables
  */
 
+typedef enum
+{
+    PS2_MOUSE_PACKET_MODE_PS2_DEFAULT,
+    PS2_MOUSE_PACKET_MODE_SCROLL,
+} zmk_ps2_mouse_packet_mode;
+
 struct zmk_ps2_mouse_config {
 	const struct device *ps2_device;
 };
@@ -68,6 +75,7 @@ struct zmk_ps2_mouse_config {
 struct zmk_ps2_mouse_packet {
     int16_t mov_x;
     int16_t mov_y;
+    int8_t scroll;
     bool overflow_x;
     bool overflow_y;
     bool button_l;
@@ -79,12 +87,14 @@ struct zmk_ps2_mouse_data {
     K_THREAD_STACK_MEMBER(thread_stack, PS2_MOUSE_THREAD_STACK_SIZE);
     struct k_thread thread;
 
-    uint8_t cmd_buffer[3];
+    zmk_ps2_mouse_packet_mode packet_mode;
+    uint8_t cmd_buffer[4];
     int cmd_idx;
     struct k_work_delayable cmd_buffer_timeout;
 
     // Stores the x and y coordinates between reporting to the os
     struct vector2d move_speed;
+    struct vector2d scroll_speed;
     struct k_timer mouse_timer;
     struct k_work mouse_tick;
 
@@ -101,6 +111,7 @@ static const struct zmk_ps2_mouse_config zmk_ps2_mouse_config = {
 };
 
 static struct zmk_ps2_mouse_data zmk_ps2_mouse_data = {
+    .packet_mode = PS2_MOUSE_PACKET_MODE_PS2_DEFAULT,
     .cmd_idx = 0,
 
     .button_l_is_held = false,
@@ -108,6 +119,7 @@ static struct zmk_ps2_mouse_data zmk_ps2_mouse_data = {
     .button_r_is_held = false,
 
     .move_speed = {0},
+    .scroll_speed = {0},
 
     // Data reporting is disabled on init
     .activity_reporting_on = false,
@@ -118,24 +130,32 @@ static struct zmk_ps2_mouse_data zmk_ps2_mouse_data = {
  */
 
 #define PS2_GPIO_GET_BIT(data, bit_pos) ( (data >> bit_pos) & 0x1 )
+#define PS2_GPIO_SET_BIT(data, bit_val, bit_pos) ( \
+	data |= (bit_val) << bit_pos \
+)
 
 /*
  * Mouse Activity Packet Reading
  */
 
-void zmk_ps2_mouse_activity_process_cmd(uint8_t cmd_state,
+void zmk_ps2_mouse_activity_process_cmd(zmk_ps2_mouse_packet_mode packet_mode,
+                                        uint8_t cmd_state,
                                         uint8_t cmd_x,
-                                        uint8_t cmd_y);
+                                        uint8_t cmd_y,
+                                        uint8_t cmd_extra);
 void zmk_ps2_mouse_activity_move_mouse(int16_t mov_x, int16_t mov_y);
+void zmk_ps2_mouse_activity_scroll(int8_t scroll_y);
 void zmk_ps2_mouse_activity_click_buttons(bool button_l,
                                           bool button_m,
                                           bool button_r);
 void zmk_ps2_mouse_activity_reset_cmd_buffer();
 
 struct zmk_ps2_mouse_packet
-zmk_ps2_mouse_activity_parse_cmd_buffer(uint8_t cmd_state,
+zmk_ps2_mouse_activity_parse_cmd_buffer(zmk_ps2_mouse_packet_mode packet_mode,
+                                        uint8_t cmd_state,
                                         uint8_t cmd_x,
-                                        uint8_t cmd_y);
+                                        uint8_t cmd_y,
+                                        uint8_t cmd_extra);
 
 // Called by the PS/2 driver whenver the mouse sends a byte and
 // reporting is enabled through `zmk_ps2_activity_reporting_enable`.
@@ -168,12 +188,19 @@ void zmk_ps2_mouse_activity_callback(const struct device *ps2_device,
         }
     } else if(data->cmd_idx == 1) {
         // Do nothing
-    } else if(data->cmd_idx == 2) {
+    } else if(
+        (data->packet_mode == PS2_MOUSE_PACKET_MODE_PS2_DEFAULT &&
+         data->cmd_idx == 2) ||
+        (data->packet_mode == PS2_MOUSE_PACKET_MODE_SCROLL &&
+         data->cmd_idx == 3)
+    ) {
 
         zmk_ps2_mouse_activity_process_cmd(
+            data->packet_mode,
             data->cmd_buffer[0],
             data->cmd_buffer[1],
-            data->cmd_buffer[2]
+            data->cmd_buffer[2],
+            data->cmd_buffer[3]
         );
         zmk_ps2_mouse_activity_reset_cmd_buffer();
         return;
@@ -198,7 +225,6 @@ void zmk_ps2_mouse_activity_cmd_timout(struct k_work *item)
     zmk_ps2_mouse_activity_reset_cmd_buffer();
 }
 
-
 void zmk_ps2_mouse_activity_reset_cmd_buffer()
 {
     struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
@@ -207,34 +233,45 @@ void zmk_ps2_mouse_activity_reset_cmd_buffer()
     memset(data->cmd_buffer, 0x0, sizeof(data->cmd_buffer));
 }
 
-void zmk_ps2_mouse_activity_process_cmd(uint8_t cmd_state,
+void zmk_ps2_mouse_activity_process_cmd(zmk_ps2_mouse_packet_mode packet_mode,
+                                        uint8_t cmd_state,
                                         uint8_t cmd_x,
-                                        uint8_t cmd_y)
+                                        uint8_t cmd_y,
+                                        uint8_t cmd_extra)
 {
-    LOG_DBG("zmk_ps2_mouse_activity_process_cmd Got state=0x%x x=0x%d, y=0x%d", cmd_state, cmd_x, cmd_y);
+    LOG_DBG(
+        "zmk_ps2_mouse_activity_process_cmd "
+        "Got state=0x%x x=0x%x, y=0x%x, extra=0x%x",
+        cmd_state, cmd_x, cmd_y, cmd_extra
+    );
 
     struct zmk_ps2_mouse_packet packet;
     packet = zmk_ps2_mouse_activity_parse_cmd_buffer(
-        cmd_state, cmd_x, cmd_y
+        packet_mode,
+        cmd_state, cmd_x, cmd_y, cmd_extra
     );
 
     LOG_DBG(
         "Got mouse activity cmd "
-        "(mov_x=%d, mov_y=%d, o_x=%d, o_y=%d, b_l=%d, b_m=%d, b_r=%d)",
+        "(mov_x=%d, mov_y=%d, o_x=%d, o_y=%d, scroll=%d, "
+        "b_l=%d, b_m=%d, b_r=%d)",
         packet.mov_x, packet.mov_y, packet.overflow_x, packet.overflow_y,
-        packet.button_l, packet.button_m, packet.button_r
+        packet.scroll, packet.button_l, packet.button_m, packet.button_r
     );
 
     zmk_ps2_mouse_activity_move_mouse(packet.mov_x, packet.mov_y);
+    zmk_ps2_mouse_activity_scroll(packet.scroll);
     zmk_ps2_mouse_activity_click_buttons(
         packet.button_l, packet.button_m, packet.button_r
     );
 }
 
 struct zmk_ps2_mouse_packet
-zmk_ps2_mouse_activity_parse_cmd_buffer(uint8_t cmd_state,
+zmk_ps2_mouse_activity_parse_cmd_buffer(zmk_ps2_mouse_packet_mode packet_mode,
+                                        uint8_t cmd_state,
                                         uint8_t cmd_x,
-                                        uint8_t cmd_y)
+                                        uint8_t cmd_y,
+                                        uint8_t cmd_extra)
 {
     struct zmk_ps2_mouse_packet packet;
 
@@ -266,6 +303,31 @@ zmk_ps2_mouse_activity_parse_cmd_buffer(uint8_t cmd_state,
     // https://wiki.osdev.org/PS/2_Mouse
     packet.mov_x = cmd_x - ((cmd_state << 4) & 0x100);
     packet.mov_y = cmd_y - ((cmd_state << 3) & 0x100);
+
+    // If packet mode scroll or scroll+5 buttons is used,
+    // then the first 4 bit of the extra byte are used for the
+    // scroll wheel. It is a signed number with the rango of
+    // -8 to +7.
+    if(packet_mode == PS2_MOUSE_PACKET_MODE_SCROLL) {
+        packet.scroll = 0x0;
+
+        PS2_GPIO_SET_BIT(
+            packet.scroll,
+            PS2_GPIO_GET_BIT(cmd_extra, 0),
+            0
+        );
+        PS2_GPIO_SET_BIT(
+            packet.scroll,
+            PS2_GPIO_GET_BIT(cmd_extra, 1),
+            1
+        );
+        PS2_GPIO_SET_BIT(
+            packet.scroll,
+            PS2_GPIO_GET_BIT(cmd_extra, 2),
+            2
+        );
+        packet.scroll = cmd_extra - ((packet.scroll << 3) & 0x100);
+    }
 
     return packet;
 }
@@ -299,6 +361,13 @@ void zmk_ps2_mouse_activity_move_mouse(int16_t mov_x, int16_t mov_y)
     data->move_speed.y += -mov_y;
 }
 
+void zmk_ps2_mouse_activity_scroll(int8_t scroll_y)
+{
+    struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
+
+    data->scroll_speed.y += scroll_y;
+}
+
 // Called using k_timer data->mouse_timer every x ms as configured with
 // CONFIG_ZMK_MOUSE_TICK_DURATION
 void zmk_ps2_mouse_tick_timer_cb(struct k_timer *dummy) {
@@ -317,17 +386,25 @@ static void zmk_ps2_mouse_tick_timer_handler(struct k_work *work)
 
     // LOG_DBG("Raising mouse tick event");
 
-    if(data->move_speed.x == 0 && data->move_speed.y == 0) {
+    if(data->move_speed.x == 0 && data->move_speed.y == 0 &&
+       data->scroll_speed.x == 0 && data->scroll_speed.y == 0) {
         // LOG_DBG("Not raising mouse tick event as the mouse hasn't moved.");
         return;
     }
 
     zmk_hid_mouse_movement_set(0, 0);
     zmk_hid_mouse_movement_update(data->move_speed.x, data->move_speed.y);
+
+    zmk_hid_mouse_scroll_set(0, 0);
+    zmk_hid_mouse_scroll_update(data->scroll_speed.x, data->scroll_speed.y);
+
     zmk_endpoints_send_mouse_report();
 
     data->move_speed.x = 0;
     data->move_speed.y = 0;
+
+    data->scroll_speed.x = 0;
+    data->scroll_speed.y = 0;
 }
 
 void zmk_ps2_mouse_activity_click_buttons(bool button_l,
@@ -462,6 +539,31 @@ int zmk_ps2_send_cmd_set_sampling_rate(const struct device *ps2_device,
     return 0;
 }
 
+int zmk_ps2_send_cmd_get_device_id(const struct device *ps2_device,
+                                   uint8_t *resp_byte)
+{
+    int err;
+
+    uint8_t cmd = PS2_MOUSE_CMD_GET_DEVICE_ID;
+    err = ps2_write(ps2_device, cmd);
+    if(err) {
+        LOG_ERR(
+            "Could not send set sampling rate command: %d", err
+        );
+        return err;
+    }
+
+    uint8_t read_val;
+    err = ps2_read(ps2_device, &read_val);
+    if(err) {
+        return err;
+    }
+
+    *resp_byte = read_val;
+
+    return 0;
+}
+
 /*
  * Helper functions
  *
@@ -542,6 +644,103 @@ int zmk_ps2_set_sampling_rate(const struct device *ps2_device,
     return err;
 }
 
+int zmk_ps2_set_packet_mode(const struct device *ps2_device,
+                            zmk_ps2_mouse_packet_mode mode)
+{
+    struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
+
+    if(mode == PS2_MOUSE_PACKET_MODE_PS2_DEFAULT) {
+        // Do nothing. Mouse devices enable this by
+        // default.
+        return 0;
+    }
+
+    bool prev_activity_reporting_on = data->activity_reporting_on;
+    zmk_ps2_activity_reporting_disable(ps2_device);
+
+    // Setting a mouse mode is a bit like using a cheat code
+    // in a video game.
+    // You have to send a specific sequence of sampling rates.
+    if(mode == PS2_MOUSE_PACKET_MODE_SCROLL) {
+
+        zmk_ps2_send_cmd_set_sampling_rate(
+            ps2_device, 200
+        );
+        zmk_ps2_send_cmd_set_sampling_rate(
+            ps2_device, 100
+        );
+        zmk_ps2_send_cmd_set_sampling_rate(
+            ps2_device, 80
+        );
+    }
+
+    // Scroll mouse + 5 buttons mode can be enabled with the
+    // following sequence, but since I don't have a mouse to
+    // test it, I am commenting it out for now.
+    // else if(mode == PS2_MOUSE_PACKET_MODE_SCROLL_5_BUTTONS) {
+
+    //     zmk_ps2_send_cmd_set_sampling_rate(
+    //         ps2_device, 200
+    //     );
+    //     zmk_ps2_send_cmd_set_sampling_rate(
+    //         ps2_device, 200
+    //     );
+    //     zmk_ps2_send_cmd_set_sampling_rate(
+    //         ps2_device, 80
+    //     );
+    // }
+
+    uint8_t device_id;
+    int err = zmk_ps2_send_cmd_get_device_id(ps2_device, &device_id);
+    if(err) {
+        LOG_ERR(
+            "Could not enable packet mode %d. Failed to get device id with "
+            "error %d", mode, err
+        );
+    } else {
+        if(device_id == 0x00) {
+            LOG_ERR(
+                "Could not enable packet mode %d. The device does not support "
+                "it", mode
+            );
+
+            data->packet_mode = PS2_MOUSE_PACKET_MODE_PS2_DEFAULT;
+            err = 1;
+        } else if(device_id == 0x03 || device_id == 0x04) {
+            LOG_INF(
+                "Successfully activated packet mode %d. Mouse returned device "
+                "id: %d", mode, device_id
+            );
+
+            data->packet_mode = PS2_MOUSE_PACKET_MODE_SCROLL;
+            err = 0;
+        }
+        // else if(device_id == 0x04) {
+        //     LOG_INF(
+        //         "Successfully activated packet mode %d. Mouse returned device "
+        //         "id: %d", mode, device_id
+        //     );
+
+        //     data->packet_mode = PS2_MOUSE_PACKET_MODE_SCROLL_5_BUTTONS;
+        //     err = 0;
+        // }
+        else {
+            LOG_ERR(
+                "Could not enable packet mode %d. Received an invalid device "
+                "id: %d", mode, device_id
+            );
+
+            data->packet_mode = PS2_MOUSE_PACKET_MODE_PS2_DEFAULT;
+            err = 1;
+        }
+    }
+
+    if(prev_activity_reporting_on == true) {
+        zmk_ps2_activity_reporting_enable(ps2_device);
+    }
+
+    return err;
+}
 
 /*
  * Init
@@ -584,8 +783,11 @@ static void zmk_ps2_mouse_init_thread(int dev_ptr, int unused) {
         return;
     }
 
-	LOG_INF("Setting sample rate...");
-    zmk_ps2_set_sampling_rate(config->ps2_device, 200);
+	// LOG_INF("Setting sample rate...");
+    // zmk_ps2_set_sampling_rate(config->ps2_device, 200);
+
+	LOG_INF("Enabling scroll mode.");
+    zmk_ps2_set_packet_mode(config->ps2_device, PS2_MOUSE_PACKET_MODE_SCROLL);
 
     // Configure read callback
 	LOG_DBG("Configuring ps2 callback...");
