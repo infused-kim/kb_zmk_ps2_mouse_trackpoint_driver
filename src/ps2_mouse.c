@@ -103,6 +103,8 @@ struct zmk_ps2_mouse_data {
     bool button_r_is_held;
 
     bool activity_reporting_on;
+
+    uint8_t sampling_rate;
 };
 
 
@@ -123,6 +125,19 @@ static struct zmk_ps2_mouse_data zmk_ps2_mouse_data = {
 
     // Data reporting is disabled on init
     .activity_reporting_on = false,
+
+    // PS2 devices initialize with this rate
+    .sampling_rate = 100,
+};
+
+static int allowed_sampling_rates[] = {
+    10,
+    20,
+    40,
+    60,
+    80,
+    100,
+    200,
 };
 
 /*
@@ -133,6 +148,49 @@ static struct zmk_ps2_mouse_data zmk_ps2_mouse_data = {
 #define PS2_GPIO_SET_BIT(data, bit_val, bit_pos) ( \
 	data |= (bit_val) << bit_pos \
 )
+
+int array_get_elem_index(int elem, int *array, size_t array_size)
+{
+    int elem_index = -1;
+    for(int i = 0; i < array_size; i++) {
+        if(array[i] == elem) {
+            elem_index = i;
+            break;
+        }
+    }
+
+    return elem_index;
+}
+
+int array_get_next_elem(int elem, int *array, size_t array_size)
+{
+    int elem_index = array_get_elem_index(elem, array, array_size);
+    if(elem_index == -1) {
+        return -1;
+    }
+
+    int next_index = elem_index + 1;
+    if(next_index >= array_size) {
+        return -1;
+    }
+
+    return array[next_index];
+}
+
+int array_get_prev_elem(int elem, int *array, size_t array_size)
+{
+    int elem_index = array_get_elem_index(elem, array, array_size);
+    if(elem_index == -1) {
+        return -1;
+    }
+
+    int prev_index = elem_index - 1;
+    if(prev_index < 0 || prev_index >= array_size) {
+        return -1;
+    }
+
+    return array[prev_index];
+}
 
 /*
  * Mouse Activity Packet Reading
@@ -630,6 +688,15 @@ int zmk_ps2_set_sampling_rate(const struct device *ps2_device,
 {
     struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
 
+    int rate_idx = array_get_elem_index(
+        sampling_rate,
+        allowed_sampling_rates, sizeof(allowed_sampling_rates)
+    );
+    if(rate_idx == -1) {
+        LOG_ERR("Requested to set illegal sampling rate: %d", sampling_rate);
+        return -1;
+    }
+
     bool prev_activity_reporting_on = data->activity_reporting_on;
     zmk_ps2_activity_reporting_disable(ps2_device);
 
@@ -637,11 +704,56 @@ int zmk_ps2_set_sampling_rate(const struct device *ps2_device,
         ps2_device, sampling_rate
     );
 
+    if(err == 0) {
+        data->sampling_rate = sampling_rate;
+    }
+
     if(prev_activity_reporting_on == true) {
         zmk_ps2_activity_reporting_enable(ps2_device);
     }
 
     return err;
+}
+
+int zmk_ps2_set_sampling_rate_incr(const struct device *ps2_device) {
+    struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
+
+    int next_rate = array_get_next_elem(
+        data->sampling_rate,
+        allowed_sampling_rates, sizeof(allowed_sampling_rates)
+    );
+    if(next_rate == -1) {
+        LOG_ERR(
+            "Could not increase sampling rate from %d. Already the max rate",
+            data->sampling_rate
+        );
+
+        return -1;
+    }
+
+    LOG_DBG("zmk_ps2_send_cmd_sampling_rate_incr setting %d", next_rate);
+
+    return zmk_ps2_set_sampling_rate(ps2_device, next_rate);
+}
+
+int zmk_ps2_set_sampling_rate_decr(const struct device *ps2_device) {
+    struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
+
+    int prev_rate = array_get_prev_elem(
+        data->sampling_rate,
+        allowed_sampling_rates, sizeof(allowed_sampling_rates)
+    );
+    if(prev_rate == -1) {
+        LOG_ERR(
+            "Could not increase sampling rate from %d. Already the max rate",
+            data->sampling_rate
+        );
+
+        return -1;
+    }
+
+    LOG_DBG("zmk_ps2_send_cmd_sampling_rate_decr setting %d", prev_rate);
+    return zmk_ps2_set_sampling_rate(ps2_device, prev_rate);
 }
 
 int zmk_ps2_set_packet_mode(const struct device *ps2_device,
@@ -734,6 +846,9 @@ int zmk_ps2_set_packet_mode(const struct device *ps2_device,
             err = 1;
         }
     }
+
+    // Restore sampling rate to prev value
+    zmk_ps2_set_sampling_rate(ps2_device, data->sampling_rate);
 
     if(prev_activity_reporting_on == true) {
         zmk_ps2_activity_reporting_enable(ps2_device);
