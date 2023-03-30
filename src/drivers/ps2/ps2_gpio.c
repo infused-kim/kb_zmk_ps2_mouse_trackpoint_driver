@@ -26,6 +26,9 @@ LOG_MODULE_REGISTER(ps2_gpio);
 #define PS2_GPIO_WRITE_MAX_RETRY 3
 #define PS2_GPIO_READ_MAX_RETRY 3
 
+#define PS2_GPIO_WORK_QUEUE_PRIORITY 5
+#define PS2_GPIO_WORK_QUEUE_STACK_SIZE 1024
+
 
 /*
  * PS/2 Defines
@@ -207,6 +210,12 @@ static struct ps2_gpio_data ps2_gpio_data = {
 	.write_awaits_resp = false,
 	.write_awaits_resp_byte = 0x0,
 };
+
+K_THREAD_STACK_DEFINE(
+	ps2_gpio_work_queue_stack_area,
+	PS2_GPIO_WORK_QUEUE_STACK_SIZE
+);
+static struct k_work_q ps2_gpio_work_queue;
 
 /*
  * Function Definitions
@@ -766,7 +775,7 @@ void ps2_gpio_read_process_received_byte(uint8_t byte)
 		// doesn't block the interrupt.
 		// Will call ps2_gpio_read_callback_work_handler
 		data->callback_byte = byte;
-    	k_work_submit(&data->callback_work);
+    	k_work_submit_to_queue(&ps2_gpio_work_queue, &data->callback_work);
 	} else {
 		ps2_gpio_data_queue_add(byte);
 	}
@@ -1007,7 +1016,8 @@ int ps2_gpio_write_byte_async(uint8_t byte) {
 	LOG_PS2_INT("Inhibited clock line");
 
 	// Keep the line inhibited for at least 100 microseconds
-	k_work_schedule(
+	k_work_schedule_for_queue(
+		&ps2_gpio_work_queue,
 		&data->write_inhibition_wait,
 		PS2_GPIO_WRITE_INHIBIT_SLC_DURATION
 	);
@@ -1046,7 +1056,11 @@ void ps2_gpio_write_inhibition_wait(struct k_work *item)
 
 	LOG_PS2_INT("Released clock");
 
-	k_work_schedule(&data->write_scl_timout, PS2_GPIO_TIMEOUT_WRITE_SCL_START);
+	k_work_schedule_for_queue(
+		&ps2_gpio_work_queue,
+		&data->write_scl_timout,
+		PS2_GPIO_TIMEOUT_WRITE_SCL_START
+	);
 
 	// From here on the device takes over the control of the clock again
 	// Every time it is ready for the next bit to be trasmitted, it will...
@@ -1119,7 +1133,11 @@ void ps2_gpio_write_interrupt_handler()
 	LOG_PS2_INT("Write interrupt");
 
 	data->cur_write_pos += 1;
-	k_work_schedule(&data->write_scl_timout, PS2_GPIO_TIMEOUT_WRITE_SCL);
+	k_work_schedule_for_queue(
+		&ps2_gpio_work_queue,
+		&data->write_scl_timout,
+		PS2_GPIO_TIMEOUT_WRITE_SCL
+	);
 }
 
 void ps2_gpio_write_scl_timeout(struct k_work *item)
@@ -1197,7 +1215,8 @@ void ps2_gpio_scl_interrupt_handler(const struct device *dev,
 	}
 
 #if IS_ENABLED(CONFIG_PS2_GPIO_INTERRUPT_LOG_ENABLED)
-	k_work_schedule(
+	k_work_schedule_for_queue(
+		&ps2_gpio_work_queue,
 		&interrupt_log_scl_timout,
 		PS2_GPIO_INTERRUPT_LOG_SCL_TIMEOUT
 	);
@@ -1379,6 +1398,14 @@ static int ps2_gpio_init(const struct device *dev)
 	// Init semaphore that waits for read after write
 	k_sem_init(&data->write_awaits_resp_sem, 0, 1);
 
+	// Custom queue for background work
+	k_work_queue_start(
+        &ps2_gpio_work_queue,
+        ps2_gpio_work_queue_stack_area,
+        K_THREAD_STACK_SIZEOF(ps2_gpio_work_queue_stack_area),
+        PS2_GPIO_WORK_QUEUE_PRIORITY,
+        NULL
+    );
 	// Timeouts for clock pulses during read and write
     k_work_init_delayable(&data->read_scl_timout, ps2_gpio_read_scl_timeout);
     k_work_init_delayable(&data->write_scl_timout, ps2_gpio_write_scl_timeout);
