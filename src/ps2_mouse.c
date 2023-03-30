@@ -715,7 +715,8 @@ int zmk_ps2_set_sampling_rate(const struct device *ps2_device,
     return err;
 }
 
-int zmk_ps2_set_sampling_rate_incr(const struct device *ps2_device) {
+int zmk_ps2_set_sampling_rate_incr() {
+    const struct zmk_ps2_mouse_config *config = &zmk_ps2_mouse_config;
     struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
 
     int next_rate = array_get_next_elem(
@@ -733,10 +734,11 @@ int zmk_ps2_set_sampling_rate_incr(const struct device *ps2_device) {
 
     LOG_DBG("zmk_ps2_send_cmd_sampling_rate_incr setting %d", next_rate);
 
-    return zmk_ps2_set_sampling_rate(ps2_device, next_rate);
+    return zmk_ps2_set_sampling_rate(config->ps2_device, next_rate);
 }
 
-int zmk_ps2_set_sampling_rate_decr(const struct device *ps2_device) {
+int zmk_ps2_set_sampling_rate_decr() {
+    const struct zmk_ps2_mouse_config *config = &zmk_ps2_mouse_config;
     struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
 
     int prev_rate = array_get_prev_elem(
@@ -745,7 +747,7 @@ int zmk_ps2_set_sampling_rate_decr(const struct device *ps2_device) {
     );
     if(prev_rate == -1) {
         LOG_ERR(
-            "Could not increase sampling rate from %d. Already the max rate",
+            "Could not decrease sampling rate from %d. Already the min rate",
             data->sampling_rate
         );
 
@@ -753,7 +755,7 @@ int zmk_ps2_set_sampling_rate_decr(const struct device *ps2_device) {
     }
 
     LOG_DBG("zmk_ps2_send_cmd_sampling_rate_decr setting %d", prev_rate);
-    return zmk_ps2_set_sampling_rate(ps2_device, prev_rate);
+    return zmk_ps2_set_sampling_rate(config->ps2_device, prev_rate);
 }
 
 int zmk_ps2_set_packet_mode(const struct device *ps2_device,
