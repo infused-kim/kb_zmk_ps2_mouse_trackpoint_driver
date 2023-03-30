@@ -12,3 +12,8 @@ properties:
     required: true
     description: |
       The ps2 device the mouse should use.
+
+  rst-gpios:
+    type: phandle-array
+    required: false
+    description: GPIO to which the RST pin of the device is connected and on which the Power-On-Reset will be performed.

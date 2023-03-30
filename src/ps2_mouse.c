@@ -18,6 +18,7 @@
 #include <dt-bindings/zmk/mouse.h>
 #include <dt-bindings/zmk/keys.h>
 #include <zmk/events/mouse_tick.h>
+#include <drivers/gpio.h>
 
 // #if DT_HAS_COMPAT_STATUS_OKAY(DT_DRV_COMPAT)
 
@@ -35,6 +36,12 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 /*
  * PS/2 Defines
  */
+
+// According to the `IBM TrackPoint System Version 4.0 Engineering
+// Specification`...
+// "The POR shall be timed to occur 600 ms ± 20 % from the time power is
+//  applied to the TrackPoint controller."
+#define PS2_MOUSE_POWER_ON_RESET_TIME K_MSEC(600)
 
 #define PS2_MOUSE_CMD_RESEND 0xfe
 #define PS2_MOUSE_CMD_RESET 0xff
@@ -70,6 +77,8 @@ typedef enum
 
 struct zmk_ps2_mouse_config {
 	const struct device *ps2_device;
+	const char *rst_gpio_name;
+	gpio_pin_t rst_pin;
 };
 
 struct zmk_ps2_mouse_packet {
@@ -84,6 +93,8 @@ struct zmk_ps2_mouse_packet {
 };
 
 struct zmk_ps2_mouse_data {
+	const struct device *rst_gpio;	/* GPIO used for Power-On-Reset line */
+
     K_THREAD_STACK_MEMBER(thread_stack, PS2_MOUSE_THREAD_STACK_SIZE);
     struct k_thread thread;
 
@@ -109,10 +120,20 @@ struct zmk_ps2_mouse_data {
 
 
 static const struct zmk_ps2_mouse_config zmk_ps2_mouse_config = {
-    .ps2_device = DEVICE_DT_GET(DT_INST_PHANDLE(0, ps2_device))
+    .ps2_device = DEVICE_DT_GET(DT_INST_PHANDLE(0, ps2_device)),
+
+#if DT_INST_NODE_HAS_PROP(0, rst_gpios)
+    .rst_gpio_name = DT_INST_GPIO_LABEL(0, rst_gpios),
+    .rst_pin = DT_INST_GPIO_PIN(0, rst_gpios),
+#else
+    .rst_gpio_name = NULL,
+    .rst_pin = 0,
+#endif
+
 };
 
 static struct zmk_ps2_mouse_data zmk_ps2_mouse_data = {
+    .rst_gpio = NULL,
     .packet_mode = PS2_MOUSE_PACKET_MODE_PS2_DEFAULT,
     .cmd_idx = 0,
 
@@ -864,6 +885,7 @@ int zmk_ps2_set_packet_mode(const struct device *ps2_device,
  */
 
 static void zmk_ps2_mouse_init_thread(int dev_ptr, int unused);
+int zmk_ps2_init_to_power_on_reset();
 int zmk_ps2_init_wait_for_mouse(const struct device *dev);
 
 static int zmk_ps2_mouse_init(const struct device *dev)
@@ -888,6 +910,8 @@ static void zmk_ps2_mouse_init_thread(int dev_ptr, int unused) {
     struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
 	const struct zmk_ps2_mouse_config *config = dev->config;
     int err;
+
+    zmk_ps2_init_to_power_on_reset();
 
 	LOG_INF("Waiting for mouse to connect...");
     err = zmk_ps2_init_wait_for_mouse(dev);
@@ -936,6 +960,65 @@ static void zmk_ps2_mouse_init_thread(int dev_ptr, int unused) {
     );
 
 	return;
+}
+
+// Power-On-Reset for trackpoints (and possibly other devices).
+// From the `IBM TrackPoint System Version 4.0 Engineering
+// Specification`...
+// "The TrackPoint logic shall execute a Power On Reset (POR) when power is
+//  applied to the device. The POR shall be timed to occur 600 ms ± 20 % from
+//  the time power is applied to the TrackPoint controller. Activity on the
+//  clock and data lines is ignored prior to the completion of the diagnostic
+//  sequence. (See RESET mode of operation.)"
+int zmk_ps2_init_to_power_on_reset()
+{
+    struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
+	const struct zmk_ps2_mouse_config *config = &zmk_ps2_mouse_config;
+
+    if(config->rst_gpio_name == NULL) {
+        return 0;
+    }
+
+    LOG_INF("Performing Power-On-Reset...");
+
+    if(data->rst_gpio == NULL) {
+        data->rst_gpio = device_get_binding(config->rst_gpio_name);
+        if (!data->rst_gpio) {
+            LOG_ERR("Failed Power-On-Reset: Failed to get RST GPIO device...");
+            return -EINVAL;
+        }
+    }
+
+    //  Set reset pin low...
+	int err = gpio_pin_configure(
+		data->rst_gpio,
+		config->rst_pin,
+		(GPIO_OUTPUT_LOW)
+	);
+	if (err) {
+		LOG_ERR(
+            "Failed Power-On-Reset: Failed to configure RST GPIO pin to "
+            "output low (err %d)", err
+        );
+        return err;
+	}
+
+    // Wait 600ms
+    k_sleep(PS2_MOUSE_POWER_ON_RESET_TIME);
+
+    // Set pin high
+    err = gpio_pin_set(data->rst_gpio, config->rst_pin, 1);
+	if (err) {
+		LOG_ERR(
+            "Failed Power-On-Reset: Failed to set RST GPIO pin to "
+            "low (err %d)", err
+        );
+        return err;
+	}
+
+    LOG_DBG("Finished Power-On-Reset successfully...");
+
+    return 0;
 }
 
 int zmk_ps2_init_wait_for_mouse(const struct device *dev)
