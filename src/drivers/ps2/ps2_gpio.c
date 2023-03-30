@@ -1252,7 +1252,7 @@ int ps2_gpio_read(const struct device *dev, uint8_t *value)
 	uint8_t queue_byte;
 	int err = ps2_gpio_data_queue_get_next(&queue_byte, PS2_GPIO_TIMEOUT_READ);
 	if(err) {  // Timeout due to no data to read in data queue
-		LOG_ERR("ps2_gpio_read: Fifo timed out...");
+		LOG_DBG("ps2_gpio_read: Fifo timed out...");
 
 		return -ETIMEDOUT;
 	}
