@@ -43,13 +43,15 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 //  applied to the TrackPoint controller."
 #define PS2_MOUSE_POWER_ON_RESET_TIME K_MSEC(600)
 
-#define PS2_MOUSE_CMD_RESEND 0xfe
-#define PS2_MOUSE_CMD_RESET 0xff
+
+#define PS2_MOUSE_CMD_GET_SECONDARY_ID 0xe1
 #define PS2_MOUSE_CMD_MODE_STREAM 0xea
 #define PS2_MOUSE_CMD_GET_DEVICE_ID 0xf2
 #define PS2_MOUSE_CMD_SET_SAMPLING_RATE 0xf3
 #define PS2_MOUSE_CMD_ENABLE_REPORTING 0xf4
 #define PS2_MOUSE_CMD_DISABLE_REPORTING 0xf5
+#define PS2_MOUSE_CMD_RESEND 0xfe
+#define PS2_MOUSE_CMD_RESET 0xff
 
 #define PS2_MOUSE_RESP_SELF_TEST_PASS 0xaa
 #define PS2_MOUSE_RESP_SELF_TEST_FAIL 0xfc
@@ -627,7 +629,7 @@ int zmk_ps2_send_cmd_get_device_id(const struct device *ps2_device,
     err = ps2_write(ps2_device, cmd);
     if(err) {
         LOG_ERR(
-            "Could not send set sampling rate command: %d", err
+            "Could not send get device id command: %d", err
         );
         return err;
     }
@@ -639,6 +641,39 @@ int zmk_ps2_send_cmd_get_device_id(const struct device *ps2_device,
     }
 
     *resp_byte = read_val;
+
+    return 0;
+}
+
+int zmk_ps2_send_cmd_get_secondary_id(const struct device *ps2_device,
+                                      uint8_t *resp_byte_1,
+                                      uint8_t *resp_byte_2)
+{
+    int err;
+
+    uint8_t cmd = PS2_MOUSE_CMD_GET_SECONDARY_ID;
+    err = ps2_write(ps2_device, cmd);
+    if(err) {
+        LOG_ERR(
+            "Could not send get secondary id command: %d", err
+        );
+        return err;
+    }
+
+    uint8_t read_val_1;
+    err = ps2_read(ps2_device, &read_val_1);
+    if(err) {
+        return err;
+    }
+
+    uint8_t read_val_2;
+    err = ps2_read(ps2_device, &read_val_2);
+    if(err) {
+        return err;
+    }
+
+    *resp_byte_1 = read_val_1;
+    *resp_byte_2 = read_val_2;
 
     return 0;
 }
@@ -880,6 +915,39 @@ int zmk_ps2_set_packet_mode(const struct device *ps2_device,
     return err;
 }
 
+bool zmk_ps2_is_device_trackpoint()
+{
+    struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
+	const struct zmk_ps2_mouse_config *config = &zmk_ps2_mouse_config;
+    const struct device *ps2_device = config->ps2_device;
+
+    bool prev_activity_reporting_on = data->activity_reporting_on;
+    zmk_ps2_activity_reporting_disable(ps2_device);
+
+    bool ret = false;
+
+    uint8_t second_id_1, second_id_2;
+    int err = zmk_ps2_send_cmd_get_secondary_id(
+        ps2_device, &second_id_1, &second_id_2
+    );
+    if(err) {
+        // Not all devices implement this command.
+        ret = false;
+    } else {
+        if(second_id_1 == 0x1) {
+            ret = true;
+        }
+    }
+
+    if(prev_activity_reporting_on == true) {
+        zmk_ps2_activity_reporting_enable(ps2_device);
+    }
+
+    LOG_DBG("Connected device is a trackpoint: %d", ret);
+
+    return ret;
+}
+
 /*
  * Init
  */
@@ -924,6 +992,9 @@ static void zmk_ps2_mouse_init_thread(int dev_ptr, int unused) {
         return;
     }
 
+    if(zmk_ps2_is_device_trackpoint() == true) {
+        LOG_INF("Device is a trackpoint");
+    }
 	// LOG_INF("Setting sample rate...");
     // zmk_ps2_set_sampling_rate(config->ps2_device, 200);
 
