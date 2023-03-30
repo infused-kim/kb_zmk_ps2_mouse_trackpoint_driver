@@ -95,15 +95,10 @@ LOG_MODULE_REGISTER(ps2_gpio);
 )
 
 // Timeout for write_byte_await_response()
-// Takes into account that the response reading might fail and needs to
-// be re-tried by sending the 0xfe resend command.
-#define PS2_GPIO_TIMEOUT_WRITE_AWAIT_RESPONSE K_USEC( \
-	PS2_GPIO_READ_MAX_RETRY * (\
-		PS2_GPIO_TIMING_READ_MAX_TIME \
-		+ PS2_GPIO_TIMING_WRITE_MAX_TIME \
-		+ PS2_GPIO_TIMING_READ_MAX_TIME \
-	) \
-)
+// PS/2 spec says that device must respond within 20msec,
+// but real life devices take much longer. Especially if
+// you interrupt existing transmissions.
+#define PS2_GPIO_TIMEOUT_WRITE_AWAIT_RESPONSE K_MSEC(300)
 
 // Max time we allow the device to send the next clock signal during reads
 // and writes.
