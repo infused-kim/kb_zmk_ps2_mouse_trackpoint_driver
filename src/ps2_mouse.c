@@ -44,14 +44,26 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #define PS2_MOUSE_POWER_ON_RESET_TIME K_MSEC(600)
 
 
-#define PS2_MOUSE_CMD_GET_SECONDARY_ID 0xe1
-#define PS2_MOUSE_CMD_MODE_STREAM 0xea
-#define PS2_MOUSE_CMD_GET_DEVICE_ID 0xf2
-#define PS2_MOUSE_CMD_SET_SAMPLING_RATE 0xf3
-#define PS2_MOUSE_CMD_ENABLE_REPORTING 0xf4
-#define PS2_MOUSE_CMD_DISABLE_REPORTING 0xf5
-#define PS2_MOUSE_CMD_RESEND 0xfe
-#define PS2_MOUSE_CMD_RESET 0xff
+#define PS2_MOUSE_CMD_GET_SECONDARY_ID "\xe1"
+#define PS2_MOUSE_CMD_GET_SECONDARY_ID_RESP_LEN 2
+
+#define PS2_MOUSE_CMD_GET_DEVICE_ID "\xf2"
+#define PS2_MOUSE_CMD_GET_DEVICE_ID_RESP_LEN 1
+
+#define PS2_MOUSE_CMD_SET_SAMPLING_RATE "\xf3"
+#define PS2_MOUSE_CMD_SET_SAMPLING_RATE_RESP_LEN 0
+
+#define PS2_MOUSE_CMD_ENABLE_REPORTING "\xf4"
+#define PS2_MOUSE_CMD_ENABLE_REPORTING_RESP_LEN 0
+
+#define PS2_MOUSE_CMD_DISABLE_REPORTING "\xf5"
+#define PS2_MOUSE_CMD_DISABLE_REPORTING_RESP_LEN 0
+
+#define PS2_MOUSE_CMD_RESEND "\xfe"
+#define PS2_MOUSE_CMD_RESEND_RESP_LEN 0
+
+#define PS2_MOUSE_CMD_RESET "\xff"
+#define PS2_MOUSE_CMD_RESET_RESP_LEN 0
 
 #define PS2_MOUSE_RESP_SELF_TEST_PASS 0xaa
 #define PS2_MOUSE_RESP_SELF_TEST_FAIL 0xfc
@@ -263,7 +275,7 @@ void zmk_ps2_mouse_activity_callback(const struct device *ps2_device,
                 "PS/2 Mouse cmd buffer is out of aligment. Requesting resend."
             );
 
-            ps2_write(ps2_device, PS2_MOUSE_CMD_RESEND);
+            ps2_write(ps2_device, PS2_MOUSE_CMD_RESEND[0]);
             data->cmd_idx = 0;
             return;
         }
@@ -544,150 +556,143 @@ void zmk_ps2_mouse_activity_click_buttons(bool button_l,
 
 
 /*
- * PS/2 Commands
- *
- * These functions only send the commands without any additional logic.
+ * PS/2 Command Sending Wrapper
  */
+int zmk_ps2_activity_reporting_enable();
+int zmk_ps2_activity_reporting_disable();
 
-int zmk_ps2_send_cmd_reset(const struct device *ps2_device) {
+
+struct zmk_ps2_send_cmd_resp {
     int err;
+    char err_msg[50];
+    uint8_t resp_buffer[8];
+    int resp_len;
+};
 
-    uint8_t cmd = PS2_MOUSE_CMD_RESET;
-    LOG_DBG("Sending reset command: 0x%x", cmd);
-    err = ps2_write(ps2_device, cmd);
-    if(err) {
-        LOG_ERR(
-            "Could not reset: %d", err
-        );
-        return err;
-    } else {
-        LOG_DBG("Sent command succesfully: 0x%x", cmd);
-    }
-
-    return 0;
-}
-
-int zmk_ps2_send_cmd_data_reporting_on(const struct device *ps2_device) {
-    int err;
-
-    uint8_t cmd = PS2_MOUSE_CMD_ENABLE_REPORTING;
-    err = ps2_write(ps2_device, cmd);
-    if(err) {
-        LOG_ERR(
-            "Could not enable reporting for stream mode."
-        );
-        return err;
-    }
-
-    return 0;
-}
-
-int zmk_ps2_send_cmd_data_reporting_off(const struct device *ps2_device) {
-    int err;
-
-    uint8_t cmd = PS2_MOUSE_CMD_DISABLE_REPORTING;
-    err = ps2_write(ps2_device, cmd);
-    if(err) {
-        LOG_ERR(
-            "Could not disable reporting for stream mode."
-        );
-        return err;
-    }
-
-    return 0;
-}
-
-int zmk_ps2_send_cmd_set_sampling_rate(const struct device *ps2_device,
-                                       uint8_t sampling_rate) {
-    int err;
-
-    uint8_t cmd = PS2_MOUSE_CMD_SET_SAMPLING_RATE;
-    err = ps2_write(ps2_device, cmd);
-    if(err) {
-        LOG_ERR(
-            "Could not send set sampling rate command: %d", err
-        );
-        return err;
-    }
-    err = ps2_write(ps2_device, sampling_rate);
-    if(err) {
-        LOG_ERR(
-            "Could not send sampling rate value: %d", err
-        );
-        return err;
-    }
-
-    return 0;
-}
-
-int zmk_ps2_send_cmd_get_device_id(const struct device *ps2_device,
-                                   uint8_t *resp_byte)
-{
-    int err;
-
-    uint8_t cmd = PS2_MOUSE_CMD_GET_DEVICE_ID;
-    err = ps2_write(ps2_device, cmd);
-    if(err) {
-        LOG_ERR(
-            "Could not send get device id command: %d", err
-        );
-        return err;
-    }
-
-    uint8_t read_val;
-    err = ps2_read(ps2_device, &read_val);
-    if(err) {
-        return err;
-    }
-
-    *resp_byte = read_val;
-
-    return 0;
-}
-
-int zmk_ps2_send_cmd_get_secondary_id(const struct device *ps2_device,
-                                      uint8_t *resp_byte_1,
-                                      uint8_t *resp_byte_2)
-{
-    int err;
-
-    uint8_t cmd = PS2_MOUSE_CMD_GET_SECONDARY_ID;
-    err = ps2_write(ps2_device, cmd);
-    if(err) {
-        LOG_ERR(
-            "Could not send get secondary id command: %d", err
-        );
-        return err;
-    }
-
-    uint8_t read_val_1;
-    err = ps2_read(ps2_device, &read_val_1);
-    if(err) {
-        return err;
-    }
-
-    uint8_t read_val_2;
-    err = ps2_read(ps2_device, &read_val_2);
-    if(err) {
-        return err;
-    }
-
-    *resp_byte_1 = read_val_1;
-    *resp_byte_2 = read_val_2;
-
-    return 0;
-}
-
-/*
- * Helper functions
- *
- * These functions send commands and do necessary checks like disabling
- * data reporting and callbacks before sending the commands.
- */
-
-int zmk_ps2_activity_reporting_enable(const struct device *ps2_device)
+struct zmk_ps2_send_cmd_resp zmk_ps2_send_cmd(char *cmd,
+                                              int cmd_len,
+                                              uint8_t *arg,
+                                              int resp_len,
+                                              bool pause_reporting)
 {
     struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
+    const struct zmk_ps2_mouse_config *config = &zmk_ps2_mouse_config;
+    const struct device *ps2_device = config->ps2_device;
+    int err = 0;
+    bool prev_activity_reporting_on = data->activity_reporting_on;
+
+    struct zmk_ps2_send_cmd_resp resp = {
+        .err = 0,
+        .err_msg = "",
+        .resp_len = 0,
+    };
+    memset(resp.resp_buffer, 0x0, sizeof(resp.resp_buffer));
+
+    // Don't send the string termination NULL byte
+    int cmd_bytes = cmd_len - 1;
+    if(cmd_bytes < 1) {
+        err = 1;
+        snprintf(
+            resp.err_msg, sizeof(resp.err_msg),
+            "Cannot send cmd with less than 1 byte length"
+        );
+
+        return resp;
+    }
+
+    if(resp_len > sizeof(resp.resp_buffer)) {
+        err = 2;
+        snprintf(
+            resp.err_msg, sizeof(resp.err_msg),
+            "Response can't be longer than the resp_buffer (%d)",
+            sizeof(resp.err_msg)
+        );
+
+        return resp;
+    }
+
+    if(pause_reporting == true && data->activity_reporting_on == true) {
+        LOG_DBG("Disabling mouse activity reporting...");
+
+        err = zmk_ps2_activity_reporting_disable();
+        if(err) {
+            resp.err = err;
+            snprintf(
+                resp.err_msg, sizeof(resp.err_msg),
+                "Could not disable data reporting (%d)", err
+            );
+        }
+    }
+
+    if(resp.err == 0) {
+        LOG_DBG("Sending cmd...");
+
+        for(int i = 0; i < cmd_bytes; i++) {
+            err = ps2_write(ps2_device, cmd[i]);
+            if(err) {
+                resp.err = err;
+                snprintf(
+                    resp.err_msg, sizeof(resp.err_msg),
+                    "Could not send cmd byte %d/%d (%d)", i+1, cmd_bytes, err
+                );
+                break;
+            }
+        }
+    }
+
+    if(resp.err == 0 && arg != NULL) {
+        LOG_DBG("Sending arg...");
+        err = ps2_write(ps2_device, *arg);
+        if(err) {
+            resp.err = err;
+            snprintf(
+                resp.err_msg, sizeof(resp.err_msg),
+                "Could not send arg (%d)", err
+            );
+        }
+    }
+
+    if(resp.err == 0 && resp_len > 0) {
+        LOG_DBG("Reading response...");
+        for(int i = 0; i < resp_len; i++) {
+            err = ps2_read(ps2_device, &resp.resp_buffer[i]);
+            if(err) {
+                resp.err = err;
+                snprintf(
+                    resp.err_msg, sizeof(resp.err_msg),
+                    "Could not read response cmd byte %d/%d (%d)",
+                    i+1, resp_len, err
+                );
+                break;
+            }
+        }
+    }
+
+    if(pause_reporting == true && prev_activity_reporting_on == true) {
+        LOG_DBG("Enabling mouse activity reporting...");
+
+        err = zmk_ps2_activity_reporting_enable();
+        if(err) {
+            // Don' overwrite existing error
+            if(resp.err == 0) {
+                resp.err = err;
+                snprintf(
+                    resp.err_msg, sizeof(resp.err_msg),
+                    "Could not re-enable data reporting (%d)", err
+                );
+            }
+        }
+    }
+
+    return resp;
+}
+
+
+int zmk_ps2_activity_reporting_enable()
+{
+    struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
+    const struct zmk_ps2_mouse_config *config = &zmk_ps2_mouse_config;
+    const struct device *ps2_device = config->ps2_device;
 
     if(data->activity_reporting_on == true) {
         return 0;
@@ -695,7 +700,8 @@ int zmk_ps2_activity_reporting_enable(const struct device *ps2_device)
 
     LOG_INF("Enabling mouse activity reporting...");
 
-    int err = zmk_ps2_send_cmd_data_reporting_on(ps2_device);
+    uint8_t cmd = PS2_MOUSE_CMD_ENABLE_REPORTING[0];
+    int err = ps2_write(ps2_device, cmd);
     if(err) {
         LOG_ERR("Could not enable data reporting: %d", err);
         return err;
@@ -712,9 +718,11 @@ int zmk_ps2_activity_reporting_enable(const struct device *ps2_device)
     return 0;
 }
 
-int zmk_ps2_activity_reporting_disable(const struct device *ps2_device)
+int zmk_ps2_activity_reporting_disable()
 {
     struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
+    const struct zmk_ps2_mouse_config *config = &zmk_ps2_mouse_config;
+    const struct device *ps2_device = config->ps2_device;
 
     if(data->activity_reporting_on == false) {
         return 0;
@@ -722,7 +730,8 @@ int zmk_ps2_activity_reporting_disable(const struct device *ps2_device)
 
     LOG_INF("Disabling mouse activity reporting...");
 
-    int err = zmk_ps2_send_cmd_data_reporting_off(ps2_device);
+    uint8_t cmd = PS2_MOUSE_CMD_DISABLE_REPORTING[0];
+    int err = ps2_write(ps2_device, cmd);
     if(err) {
         LOG_ERR("Could not disable data reporting: %d", err);
         return err;
@@ -739,8 +748,51 @@ int zmk_ps2_activity_reporting_disable(const struct device *ps2_device)
     return 0;
 }
 
-int zmk_ps2_set_sampling_rate(const struct device *ps2_device,
-                              uint8_t sampling_rate)
+/*
+ * PS/2 Commands
+ */
+
+int zmk_ps2_reset(const struct device *ps2_device) {
+    struct zmk_ps2_send_cmd_resp resp = zmk_ps2_send_cmd(
+        PS2_MOUSE_CMD_RESET,
+        sizeof(PS2_MOUSE_CMD_RESET),
+        NULL,
+        PS2_MOUSE_CMD_RESET_RESP_LEN,
+        false
+    );
+    if(resp.err) {
+        LOG_ERR(
+            "Could not send reset cmd: %s", resp.err_msg
+        );
+    }
+
+    return resp.err;
+}
+
+int zmk_ps2_get_secondary_id(uint8_t *resp_byte_1,
+                             uint8_t *resp_byte_2)
+{
+    struct zmk_ps2_send_cmd_resp resp = zmk_ps2_send_cmd(
+        PS2_MOUSE_CMD_GET_SECONDARY_ID,
+        sizeof(PS2_MOUSE_CMD_GET_SECONDARY_ID),
+        NULL,
+        PS2_MOUSE_CMD_GET_SECONDARY_ID_RESP_LEN,
+        true
+    );
+    if(resp.err) {
+        LOG_ERR(
+            "Could not get secondary id: %s", resp.err_msg
+        );
+        return resp.err;
+    }
+
+    *resp_byte_1 = resp.resp_buffer[0];
+    *resp_byte_2 = resp.resp_buffer[1];
+
+    return 0;
+}
+
+int zmk_ps2_set_sampling_rate(uint8_t sampling_rate)
 {
     struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
 
@@ -753,26 +805,26 @@ int zmk_ps2_set_sampling_rate(const struct device *ps2_device,
         return -1;
     }
 
-    bool prev_activity_reporting_on = data->activity_reporting_on;
-    zmk_ps2_activity_reporting_disable(ps2_device);
-
-    int err = zmk_ps2_send_cmd_set_sampling_rate(
-        ps2_device, sampling_rate
+    struct zmk_ps2_send_cmd_resp resp = zmk_ps2_send_cmd(
+        PS2_MOUSE_CMD_SET_SAMPLING_RATE,
+        sizeof(PS2_MOUSE_CMD_SET_SAMPLING_RATE),
+        &sampling_rate,
+        PS2_MOUSE_CMD_SET_SAMPLING_RATE_RESP_LEN,
+        true
     );
-
-    if(err == 0) {
-        data->sampling_rate = sampling_rate;
+    if(resp.err) {
+        LOG_ERR(
+            "Could not set sample rate to %d: %s", sampling_rate, resp.err_msg
+        );
+        return resp.err;
     }
 
-    if(prev_activity_reporting_on == true) {
-        zmk_ps2_activity_reporting_enable(ps2_device);
-    }
+    data->sampling_rate = sampling_rate;
 
-    return err;
+    return resp.err;
 }
 
 int zmk_ps2_set_sampling_rate_incr() {
-    const struct zmk_ps2_mouse_config *config = &zmk_ps2_mouse_config;
     struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
 
     int next_rate = array_get_next_elem(
@@ -790,11 +842,10 @@ int zmk_ps2_set_sampling_rate_incr() {
 
     LOG_DBG("zmk_ps2_send_cmd_sampling_rate_incr setting %d", next_rate);
 
-    return zmk_ps2_set_sampling_rate(config->ps2_device, next_rate);
+    return zmk_ps2_set_sampling_rate(next_rate);
 }
 
 int zmk_ps2_set_sampling_rate_decr() {
-    const struct zmk_ps2_mouse_config *config = &zmk_ps2_mouse_config;
     struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
 
     int prev_rate = array_get_prev_elem(
@@ -811,11 +862,32 @@ int zmk_ps2_set_sampling_rate_decr() {
     }
 
     LOG_DBG("zmk_ps2_send_cmd_sampling_rate_decr setting %d", prev_rate);
-    return zmk_ps2_set_sampling_rate(config->ps2_device, prev_rate);
+    return zmk_ps2_set_sampling_rate(prev_rate);
 }
 
-int zmk_ps2_set_packet_mode(const struct device *ps2_device,
-                            zmk_ps2_mouse_packet_mode mode)
+int zmk_ps2_get_device_id(uint8_t *device_id)
+{
+
+    struct zmk_ps2_send_cmd_resp resp = zmk_ps2_send_cmd(
+        PS2_MOUSE_CMD_GET_DEVICE_ID,
+        sizeof(PS2_MOUSE_CMD_GET_DEVICE_ID),
+        NULL,
+        1,
+        true
+    );
+    if(resp.err) {
+        LOG_ERR(
+            "Could not get device id: %s", resp.err_msg
+        );
+        return resp.err;
+    }
+
+    *device_id = resp.resp_buffer[0];
+
+    return 0;
+}
+
+int zmk_ps2_set_packet_mode(zmk_ps2_mouse_packet_mode mode)
 {
     struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
 
@@ -826,22 +898,16 @@ int zmk_ps2_set_packet_mode(const struct device *ps2_device,
     }
 
     bool prev_activity_reporting_on = data->activity_reporting_on;
-    zmk_ps2_activity_reporting_disable(ps2_device);
+    zmk_ps2_activity_reporting_disable();
 
     // Setting a mouse mode is a bit like using a cheat code
     // in a video game.
     // You have to send a specific sequence of sampling rates.
     if(mode == PS2_MOUSE_PACKET_MODE_SCROLL) {
 
-        zmk_ps2_send_cmd_set_sampling_rate(
-            ps2_device, 200
-        );
-        zmk_ps2_send_cmd_set_sampling_rate(
-            ps2_device, 100
-        );
-        zmk_ps2_send_cmd_set_sampling_rate(
-            ps2_device, 80
-        );
+        zmk_ps2_set_sampling_rate(200);
+        zmk_ps2_set_sampling_rate(100);
+        zmk_ps2_set_sampling_rate(80);
     }
 
     // Scroll mouse + 5 buttons mode can be enabled with the
@@ -849,19 +915,13 @@ int zmk_ps2_set_packet_mode(const struct device *ps2_device,
     // test it, I am commenting it out for now.
     // else if(mode == PS2_MOUSE_PACKET_MODE_SCROLL_5_BUTTONS) {
 
-    //     zmk_ps2_send_cmd_set_sampling_rate(
-    //         ps2_device, 200
-    //     );
-    //     zmk_ps2_send_cmd_set_sampling_rate(
-    //         ps2_device, 200
-    //     );
-    //     zmk_ps2_send_cmd_set_sampling_rate(
-    //         ps2_device, 80
-    //     );
+    //     zmk_ps2_set_sampling_rate(200);
+    //     zmk_ps2_set_sampling_rate(200);
+    //     zmk_ps2_set_sampling_rate(80);
     // }
 
     uint8_t device_id;
-    int err = zmk_ps2_send_cmd_get_device_id(ps2_device, &device_id);
+    int err = zmk_ps2_get_device_id(&device_id);
     if(err) {
         LOG_ERR(
             "Could not enable packet mode %d. Failed to get device id with "
@@ -906,10 +966,10 @@ int zmk_ps2_set_packet_mode(const struct device *ps2_device,
     }
 
     // Restore sampling rate to prev value
-    zmk_ps2_set_sampling_rate(ps2_device, data->sampling_rate);
+    zmk_ps2_set_sampling_rate(data->sampling_rate);
 
     if(prev_activity_reporting_on == true) {
-        zmk_ps2_activity_reporting_enable(ps2_device);
+        zmk_ps2_activity_reporting_enable();
     }
 
     return err;
@@ -917,18 +977,11 @@ int zmk_ps2_set_packet_mode(const struct device *ps2_device,
 
 bool zmk_ps2_is_device_trackpoint()
 {
-    struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
-	const struct zmk_ps2_mouse_config *config = &zmk_ps2_mouse_config;
-    const struct device *ps2_device = config->ps2_device;
-
-    bool prev_activity_reporting_on = data->activity_reporting_on;
-    zmk_ps2_activity_reporting_disable(ps2_device);
-
     bool ret = false;
 
     uint8_t second_id_1, second_id_2;
-    int err = zmk_ps2_send_cmd_get_secondary_id(
-        ps2_device, &second_id_1, &second_id_2
+    int err = zmk_ps2_get_secondary_id(
+        &second_id_1, &second_id_2
     );
     if(err) {
         // Not all devices implement this command.
@@ -937,10 +990,6 @@ bool zmk_ps2_is_device_trackpoint()
         if(second_id_1 == 0x1) {
             ret = true;
         }
-    }
-
-    if(prev_activity_reporting_on == true) {
-        zmk_ps2_activity_reporting_enable(ps2_device);
     }
 
     LOG_DBG("Connected device is a trackpoint: %d", ret);
@@ -1000,9 +1049,7 @@ static void zmk_ps2_mouse_init_thread(int dev_ptr, int unused) {
 
     #if IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_SCROLL)
         LOG_INF("Enabling scroll mode.");
-        zmk_ps2_set_packet_mode(
-            config->ps2_device, PS2_MOUSE_PACKET_MODE_SCROLL
-        );
+        zmk_ps2_set_packet_mode(PS2_MOUSE_PACKET_MODE_SCROLL);
     #endif /* IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_SCROLL) */
 
     // Configure read callback
@@ -1014,7 +1061,7 @@ static void zmk_ps2_mouse_init_thread(int dev_ptr, int unused) {
     }
 
 	LOG_INF("Enabling data reporting and ps2 callback...");
-    err = zmk_ps2_activity_reporting_enable(config->ps2_device);
+    err = zmk_ps2_activity_reporting_enable();
     if(err) {
         LOG_ERR("Could not activate ps2 callback: %d", err);
     } else {
@@ -1142,7 +1189,7 @@ int zmk_ps2_init_wait_for_mouse(const struct device *dev)
         // So we try sending the reset command.
         if(i % 2 == 0) {
             LOG_INF("Trying to reset PS2 device...");
-            zmk_ps2_send_cmd_reset(config->ps2_device);
+            zmk_ps2_reset(config->ps2_device);
             continue;
         }
 
