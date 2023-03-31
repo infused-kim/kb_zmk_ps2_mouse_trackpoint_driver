@@ -43,7 +43,7 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 //  applied to the TrackPoint controller."
 #define PS2_MOUSE_POWER_ON_RESET_TIME K_MSEC(600)
 
-
+// Common PS/2 Mouse commands
 #define PS2_MOUSE_CMD_GET_SECONDARY_ID "\xe1"
 #define PS2_MOUSE_CMD_GET_SECONDARY_ID_RESP_LEN 2
 
@@ -65,6 +65,28 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #define PS2_MOUSE_CMD_RESET "\xff"
 #define PS2_MOUSE_CMD_RESET_RESP_LEN 0
 
+// Trackpoint Commands
+// They can be found in the `IBM TrackPoint System Version 4.0 Engineering
+// Specification` (YKT3Eext.pdf)...
+
+#define PS2_MOUSE_CMD_TP_GET_CONFIG_BYTE "\xe2\x80\x2c"
+#define PS2_MOUSE_CMD_TP_GET_CONFIG_BYTE_RESP_LEN 1
+
+#define PS2_MOUSE_CMD_TP_TOGGLE_PRESS_TO_SELECT "\xe2\x47\x2c\x01"
+#define PS2_MOUSE_CMD_TP_TOGGLE_PRESS_TO_SELECT_RESP_LEN 0
+
+#define PS2_MOUSE_CMD_TP_GET_SENSITIVITY "\xe2\x80\x4a"
+#define PS2_MOUSE_CMD_TP_GET_SENSITIVITY_RESP_LEN 1
+
+#define PS2_MOUSE_CMD_TP_SET_SENSITIVITY "\xe2\x81\x4a"
+#define PS2_MOUSE_CMD_TP_SET_SENSITIVITY_RESP_LEN 0
+#define PS2_MOUSE_CMD_TP_SET_SENSITIVITY_MIN 0.0
+#define PS2_MOUSE_CMD_TP_SET_SENSITIVITY_MAX 1.999
+
+// Trackpoint Ram Locations
+#define PS2_MOUSE_TP_CONFIG_BIT_PRESS_TO_SELECT 0x00
+
+// Responses
 #define PS2_MOUSE_RESP_SELF_TEST_PASS 0xaa
 #define PS2_MOUSE_RESP_SELF_TEST_FAIL 0xfc
 
@@ -975,6 +997,10 @@ int zmk_ps2_set_packet_mode(zmk_ps2_mouse_packet_mode mode)
     return err;
 }
 
+/*
+ * Trackpoint Commands
+ */
+
 bool zmk_ps2_is_device_trackpoint()
 {
     bool ret = false;
@@ -995,6 +1021,141 @@ bool zmk_ps2_is_device_trackpoint()
     LOG_DBG("Connected device is a trackpoint: %d", ret);
 
     return ret;
+}
+
+int zmk_ps2_tp_get_config_byte(uint8_t *config_byte)
+{
+    struct zmk_ps2_send_cmd_resp resp = zmk_ps2_send_cmd(
+        PS2_MOUSE_CMD_TP_GET_CONFIG_BYTE,
+        sizeof(PS2_MOUSE_CMD_TP_GET_CONFIG_BYTE),
+        NULL,
+        PS2_MOUSE_CMD_TP_GET_CONFIG_BYTE_RESP_LEN,
+        true
+    );
+    if(resp.err) {
+        LOG_ERR(
+            "Could not read trackpoint config byte: %s",
+            resp.err_msg
+        );
+        return resp.err;
+    }
+
+    *config_byte = resp.resp_buffer[0];
+
+    return 0;
+}
+
+bool zmk_ps2_tp_press_to_select_is_enabled()
+{
+    uint8_t config_byte;
+    int err = zmk_ps2_tp_get_config_byte(
+        &config_byte
+    );
+    if(err) {
+        LOG_ERR("Could not get config byte");
+        return false;
+    }
+
+    bool pts_enabled = PS2_GPIO_GET_BIT(config_byte, 0);
+    LOG_DBG("Press to select is enabled: %d", pts_enabled);
+
+    return pts_enabled;
+}
+
+int zmk_ps2_tp_press_to_select_toggle()
+{
+    struct zmk_ps2_send_cmd_resp resp = zmk_ps2_send_cmd(
+        PS2_MOUSE_CMD_TP_TOGGLE_PRESS_TO_SELECT,
+        sizeof(PS2_MOUSE_CMD_TP_TOGGLE_PRESS_TO_SELECT),
+        NULL,
+        PS2_MOUSE_CMD_TP_TOGGLE_PRESS_TO_SELECT_RESP_LEN,
+        true
+    );
+    if(resp.err) {
+        LOG_ERR(
+            "Could not toggle press to select: %s", resp.err_msg
+        );
+        return resp.err;
+    }
+
+    return 0;
+}
+
+int zmk_ps2_tp_press_to_select_set(bool enable)
+{
+    bool is_enabled = zmk_ps2_tp_press_to_select_is_enabled();
+    if(is_enabled == enable) {
+        LOG_DBG(
+            "Press to select is already %s... Not doing anything.",
+            is_enabled ? "enabled" : "disabled"
+        );
+        return 0;
+    }
+
+    return zmk_ps2_tp_press_to_select_toggle();
+}
+
+int zmk_ps2_tp_sensitivity_get(float *sensitivity)
+{
+    struct zmk_ps2_send_cmd_resp resp = zmk_ps2_send_cmd(
+        PS2_MOUSE_CMD_TP_GET_SENSITIVITY,
+        sizeof(PS2_MOUSE_CMD_TP_GET_SENSITIVITY),
+        NULL,
+        PS2_MOUSE_CMD_TP_GET_SENSITIVITY_RESP_LEN,
+        true
+    );
+    if(resp.err) {
+        LOG_ERR(
+            "Could not get trackpad sensitivity: %s",
+            resp.err_msg
+        );
+        return resp.err;
+    }
+
+    // Convert uint8_t to float
+    // 0x80 (128) represents 1.0
+    uint8_t sensitivity_int = resp.resp_buffer[0];
+    float sensitivity_float = sensitivity_int / 0x80;
+    *sensitivity = sensitivity_float;
+
+    LOG_DBG("Trackpoint sensitivity is %f", sensitivity_float);
+
+    return 0;
+}
+
+int zmk_ps2_tp_sensitivity_set(float sensitivity)
+{
+    if(sensitivity < PS2_MOUSE_CMD_TP_SET_SENSITIVITY_MIN ||
+       sensitivity > PS2_MOUSE_CMD_TP_SET_SENSITIVITY_MAX)
+    {
+        LOG_ERR(
+            "Invalid sensitivity value %f. Min: %f; Max: %f",
+            sensitivity,
+            PS2_MOUSE_CMD_TP_SET_SENSITIVITY_MIN,
+            PS2_MOUSE_CMD_TP_SET_SENSITIVITY_MAX
+        );
+        return 1;
+    }
+
+    // Convert float to byte arg
+    // 0x80 (128) represents 1.0
+    uint8_t sensitivity_arg = 0x80 * sensitivity;
+
+    struct zmk_ps2_send_cmd_resp resp = zmk_ps2_send_cmd(
+        PS2_MOUSE_CMD_TP_SET_SENSITIVITY,
+        sizeof(PS2_MOUSE_CMD_TP_SET_SENSITIVITY),
+        &sensitivity_arg,
+        PS2_MOUSE_CMD_TP_SET_SENSITIVITY_RESP_LEN,
+        true
+    );
+    if(resp.err) {
+        LOG_ERR(
+            "Could not set sensitivity to %f: %s", sensitivity, resp.err_msg
+        );
+        return resp.err;
+    }
+
+    return 0;
 }
 
 /*
@@ -1043,6 +1204,9 @@ static void zmk_ps2_mouse_init_thread(int dev_ptr, int unused) {
 
     if(zmk_ps2_is_device_trackpoint() == true) {
         LOG_INF("Device is a trackpoint");
+
+        LOG_INF("Enabling trackpoint press to select...");
+        zmk_ps2_tp_press_to_select_set(true);
     }
 	// LOG_INF("Setting sample rate...");
     // zmk_ps2_set_sampling_rate(config->ps2_device, 200);
