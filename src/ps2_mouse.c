@@ -1278,7 +1278,7 @@ int zmk_ps2_init_to_power_on_reset()
 	int err = gpio_pin_configure(
 		data->rst_gpio,
 		config->rst_pin,
-		(GPIO_OUTPUT_LOW)
+		(GPIO_OUTPUT_HIGH)
 	);
 	if (err) {
 		LOG_ERR(
@@ -1292,7 +1292,7 @@ int zmk_ps2_init_to_power_on_reset()
     k_sleep(PS2_MOUSE_POWER_ON_RESET_TIME);
 
     // Set pin high
-    err = gpio_pin_set(data->rst_gpio, config->rst_pin, 1);
+    err = gpio_pin_set(data->rst_gpio, config->rst_pin, 0);
 	if (err) {
 		LOG_ERR(
             "Failed Power-On-Reset: Failed to set RST GPIO pin to "
