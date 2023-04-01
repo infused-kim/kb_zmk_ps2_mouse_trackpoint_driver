@@ -99,6 +99,14 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #define PS2_MOUSE_CMD_TP_SET_VALUE6_UPPER_PLATEAU_SPEED_MIN 0
 #define PS2_MOUSE_CMD_TP_SET_VALUE6_UPPER_PLATEAU_SPEED_MAX 255
 
+#define PS2_MOUSE_CMD_TP_GET_PTS_THRESHOLD "\xe2\x80\x5c"
+#define PS2_MOUSE_CMD_TP_GET_PTS_THRESHOLD_RESP_LEN 1
+
+#define PS2_MOUSE_CMD_TP_SET_PTS_THRESHOLD "\xe2\x81\x5c"
+#define PS2_MOUSE_CMD_TP_SET_PTS_THRESHOLD_RESP_LEN 0
+#define PS2_MOUSE_CMD_TP_SET_PTS_THRESHOLD_MIN 0
+#define PS2_MOUSE_CMD_TP_SET_PTS_THRESHOLD_MAX 255
+
 // Trackpoint Config Bits
 #define PS2_MOUSE_TP_CONFIG_BIT_PRESS_TO_SELECT 0x00
 #define PS2_MOUSE_TP_CONFIG_BIT_RESERVED 0x01
@@ -1176,7 +1184,7 @@ int zmk_ps2_tp_sensitivity_get(float *sensitivity)
     );
     if(resp.err) {
         LOG_ERR(
-            "Could not get trackpad sensitivity: %s",
+            "Could not get trackpoint sensitivity: %s",
             resp.err_msg
         );
         return resp.err;
@@ -1239,7 +1247,7 @@ int zmk_ps2_tp_negative_inertia_get(uint8_t *neg_inertia)
     );
     if(resp.err) {
         LOG_ERR(
-            "Could not get trackpad negative inertia: %s",
+            "Could not get trackpoint negative inertia: %s",
             resp.err_msg
         );
         return resp.err;
@@ -1296,7 +1304,7 @@ int zmk_ps2_tp_value6_upper_plateau_speed_get(uint8_t *value6)
     );
     if(resp.err) {
         LOG_ERR(
-            "Could not get trackpad value6 upper plateau speed: %s",
+            "Could not get trackpoint value6 upper plateau speed: %s",
             resp.err_msg
         );
         return resp.err;
@@ -1335,6 +1343,65 @@ int zmk_ps2_tp_value6_upper_plateau_speed_set(uint8_t value6)
         LOG_ERR(
             "Could not set value6 upper plateau speed to %d: %s",
             value6, resp.err_msg
+        );
+        return resp.err;
+    }
+
+    return 0;
+}
+
+int zmk_ps2_tp_pts_threshold_get(uint8_t *pts_threshold)
+{
+    struct zmk_ps2_send_cmd_resp resp = zmk_ps2_send_cmd(
+        PS2_MOUSE_CMD_TP_GET_PTS_THRESHOLD,
+        sizeof(PS2_MOUSE_CMD_TP_GET_PTS_THRESHOLD),
+        NULL,
+        PS2_MOUSE_CMD_TP_GET_PTS_THRESHOLD_RESP_LEN,
+        true
+    );
+    if(resp.err) {
+        LOG_ERR(
+            "Could not get trackpoint press-to-select threshold: %s",
+            resp.err_msg
+        );
+        return resp.err;
+    }
+
+    uint8_t pts_threshold_int = resp.resp_buffer[0];
+    *pts_threshold = pts_threshold_int;
+
+    LOG_DBG(
+        "Trackpoint press-to-select threshold is %d", pts_threshold_int
+    );
+
+    return 0;
+}
+
+int zmk_ps2_tp_pts_threshold_set(uint8_t pts_threshold)
+{
+    if(pts_threshold < PS2_MOUSE_CMD_TP_SET_PTS_THRESHOLD_MIN ||
+       pts_threshold > PS2_MOUSE_CMD_TP_SET_PTS_THRESHOLD_MAX)
+    {
+        LOG_ERR(
+            "Invalid press-to-select threshold value %d. Min: %d; Max: %d",
+            pts_threshold,
+            PS2_MOUSE_CMD_TP_SET_PTS_THRESHOLD_MIN,
+            PS2_MOUSE_CMD_TP_SET_PTS_THRESHOLD_MAX
+        );
+        return 1;
+    }
+
+    struct zmk_ps2_send_cmd_resp resp = zmk_ps2_send_cmd(
+        PS2_MOUSE_CMD_TP_SET_PTS_THRESHOLD,
+        sizeof(PS2_MOUSE_CMD_TP_SET_PTS_THRESHOLD),
+        &pts_threshold,
+        PS2_MOUSE_CMD_TP_SET_PTS_THRESHOLD_RESP_LEN,
+        true
+    );
+    if(resp.err) {
+        LOG_ERR(
+            "Could not set press-to-select threshold to %d: %s",
+            pts_threshold, resp.err_msg
         );
         return resp.err;
     }
