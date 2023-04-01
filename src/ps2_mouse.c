@@ -72,8 +72,14 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #define PS2_MOUSE_CMD_TP_GET_CONFIG_BYTE "\xe2\x80\x2c"
 #define PS2_MOUSE_CMD_TP_GET_CONFIG_BYTE_RESP_LEN 1
 
+#define PS2_MOUSE_CMD_TP_SET_CONFIG_BYTE "\xe2\x81\x2c"
+#define PS2_MOUSE_CMD_TP_SET_CONFIG_BYTE_RESP_LEN 0
+
 #define PS2_MOUSE_CMD_TP_TOGGLE_PRESS_TO_SELECT "\xe2\x47\x2c\x01"
 #define PS2_MOUSE_CMD_TP_TOGGLE_PRESS_TO_SELECT_RESP_LEN 0
+
+#define PS2_MOUSE_CMD_TP_TOGGLE_SWAP_XY "\xe2\x47\x2c\x40"
+#define PS2_MOUSE_CMD_TP_TOGGLE_SWAP_XY_RESP_LEN 0
 
 #define PS2_MOUSE_CMD_TP_GET_SENSITIVITY "\xe2\x80\x4a"
 #define PS2_MOUSE_CMD_TP_GET_SENSITIVITY_RESP_LEN 1
@@ -83,8 +89,15 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #define PS2_MOUSE_CMD_TP_SET_SENSITIVITY_MIN 0.0
 #define PS2_MOUSE_CMD_TP_SET_SENSITIVITY_MAX 1.999
 
-// Trackpoint Ram Locations
+// Trackpoint Config Bits
 #define PS2_MOUSE_TP_CONFIG_BIT_PRESS_TO_SELECT 0x00
+#define PS2_MOUSE_TP_CONFIG_BIT_RESERVED 0x01
+#define PS2_MOUSE_TP_CONFIG_BIT_BUTTON2 0x02
+#define PS2_MOUSE_TP_CONFIG_BIT_INVERT_X 0x03
+#define PS2_MOUSE_TP_CONFIG_BIT_INVERT_Y 0x04
+#define PS2_MOUSE_TP_CONFIG_BIT_INVERT_Z 0x05
+#define PS2_MOUSE_TP_CONFIG_BIT_SWAP_XY 0x06
+#define PS2_MOUSE_TP_CONFIG_BIT_FORCE_TRANSPARENT 0x07
 
 // Responses
 #define PS2_MOUSE_RESP_SELF_TEST_PASS 0xaa
@@ -1095,6 +1108,59 @@ int zmk_ps2_tp_press_to_select_set(bool enable)
     return zmk_ps2_tp_press_to_select_toggle();
 }
 
+bool zmk_ps2_tp_swap_xy_is_enabled()
+{
+    uint8_t config_byte;
+    int err = zmk_ps2_tp_get_config_byte(
+        &config_byte
+    );
+    if(err) {
+        LOG_ERR("Could not get config byte");
+        return false;
+    }
+
+    bool pts_enabled = PS2_GPIO_GET_BIT(
+        config_byte,
+        PS2_MOUSE_TP_CONFIG_BIT_SWAP_XY
+    );
+    LOG_DBG("Swap XY is enabled: %d", pts_enabled);
+
+    return pts_enabled;
+}
+
+int zmk_ps2_tp_swap_xy_toggle()
+{
+    struct zmk_ps2_send_cmd_resp resp = zmk_ps2_send_cmd(
+        PS2_MOUSE_CMD_TP_TOGGLE_SWAP_XY,
+        sizeof(PS2_MOUSE_CMD_TP_TOGGLE_SWAP_XY),
+        NULL,
+        PS2_MOUSE_CMD_TP_TOGGLE_SWAP_XY_RESP_LEN,
+        true
+    );
+    if(resp.err) {
+        LOG_ERR(
+            "Could not toggle swap xy: %s", resp.err_msg
+        );
+        return resp.err;
+    }
+
+    return 0;
+}
+
+int zmk_ps2_tp_swap_xy_set(bool enable)
+{
+    bool is_enabled = zmk_ps2_tp_swap_xy_is_enabled();
+    if(is_enabled == enable) {
+        LOG_DBG(
+            "Swap XY is already %s... Not doing anything.",
+            is_enabled ? "enabled" : "disabled"
+        );
+        return 0;
+    }
+
+    return zmk_ps2_tp_swap_xy_toggle();
+}
+
 int zmk_ps2_tp_sensitivity_get(float *sensitivity)
 {
     struct zmk_ps2_send_cmd_resp resp = zmk_ps2_send_cmd(
@@ -1205,12 +1271,15 @@ static void zmk_ps2_mouse_init_thread(int dev_ptr, int unused) {
     if(zmk_ps2_is_device_trackpoint() == true) {
         LOG_INF("Device is a trackpoint");
 
-    #if IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_TP_TAP_TO_SELECT)
+        #if IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_TP_TAP_TO_SELECT)
+            LOG_INF("Enabling trackpoint press to select...");
+            zmk_ps2_tp_press_to_select_set(true);
+        #endif /* IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_TP_TAP_TO_SELECT) */
 
-        LOG_INF("Enabling trackpoint press to select...");
-        zmk_ps2_tp_press_to_select_set(true);
-
-    #endif /* IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_TP_TAP_TO_SELECT) */
+        #if IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_TP_SWAP_XY)
+            LOG_INF("Swapping trackpoint x and y axis.");
+            zmk_ps2_tp_swap_xy_set(true);
+        #endif /* IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_TP_SWAP_XY) */
 
     }
 
