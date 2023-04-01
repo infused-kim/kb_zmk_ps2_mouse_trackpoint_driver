@@ -8,6 +8,11 @@
 #include <zmk/mouse_ps2.h>
 #include <zmk/mouse.h>
 
+#define INCREMENT_TP_SENSITIVITY 0.1
+#define INCREMENT_TP_NEG_INERTIA 1
+#define INCREMENT_TP_VALUE6 5
+#define INCREMENT_TP_PTS_THRESHOLD 1
+
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
 // #if DT_HAS_COMPAT_STATUS_OKAY(DT_DRV_COMPAT)
@@ -20,6 +25,30 @@ static int on_keymap_binding_pressed(struct zmk_behavior_binding *binding,
             return zmk_ps2_set_sampling_rate_incr();
         case MS_SAMPLING_RATE_DECR:
             return zmk_ps2_set_sampling_rate_decr();
+
+        case MS_TP_SENSITIVITY_INCR:
+            return zmk_ps2_tp_sensitivity_incr(INCREMENT_TP_SENSITIVITY);
+        case MS_TP_SENSITIVITY_DECR:
+            return zmk_ps2_tp_sensitivity_decr(INCREMENT_TP_SENSITIVITY);
+
+        case MS_TP_NEG_INERTIA_INCR:
+            return zmk_ps2_tp_neg_inertia_incr(INCREMENT_TP_NEG_INERTIA);
+        case MS_TP_NEG_INERTIA_DECR:
+            return zmk_ps2_tp_neg_inertia_decr(INCREMENT_TP_NEG_INERTIA);
+
+        case MS_TP_VALUE6_INCR:
+            return zmk_ps2_tp_value6_upper_plateau_speed_incr(
+                INCREMENT_TP_VALUE6
+            );
+        case MS_TP_VALUE6_DECR:
+            return zmk_ps2_tp_value6_upper_plateau_speed_decr(
+                INCREMENT_TP_VALUE6
+            );
+
+        case MS_TP_PTS_THRESHOLD_INCR:
+            return zmk_ps2_tp_pts_threshold_incr(INCREMENT_TP_PTS_THRESHOLD);
+        case MS_TP_PTS_THRESHOLD_DECR:
+            return zmk_ps2_tp_pts_threshold_decr(INCREMENT_TP_PTS_THRESHOLD);
     }
 
     return -ENOTSUP;

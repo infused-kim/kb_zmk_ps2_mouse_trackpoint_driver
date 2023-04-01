@@ -52,6 +52,7 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
 #define PS2_MOUSE_CMD_SET_SAMPLING_RATE "\xf3"
 #define PS2_MOUSE_CMD_SET_SAMPLING_RATE_RESP_LEN 0
+#define PS2_MOUSE_CMD_SET_SAMPLING_RATE_DEFAULT 100
 
 #define PS2_MOUSE_CMD_ENABLE_REPORTING "\xf4"
 #define PS2_MOUSE_CMD_ENABLE_REPORTING_RESP_LEN 0
@@ -82,6 +83,7 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #define PS2_MOUSE_CMD_TP_SET_SENSITIVITY_RESP_LEN 0
 #define PS2_MOUSE_CMD_TP_SET_SENSITIVITY_MIN 0.0
 #define PS2_MOUSE_CMD_TP_SET_SENSITIVITY_MAX 1.999
+#define PS2_MOUSE_CMD_TP_SET_SENSITIVITY_DEFAULT 1.0
 
 #define PS2_MOUSE_CMD_TP_GET_NEG_INERTIA "\xe2\x80\x4d"
 #define PS2_MOUSE_CMD_TP_GET_NEG_INERTIA_RESP_LEN 1
@@ -90,6 +92,7 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #define PS2_MOUSE_CMD_TP_SET_NEG_INERTIA_RESP_LEN 0
 #define PS2_MOUSE_CMD_TP_SET_NEG_INERTIA_MIN 0
 #define PS2_MOUSE_CMD_TP_SET_NEG_INERTIA_MAX 255
+#define PS2_MOUSE_CMD_TP_SET_NEG_INERTIA_DEFAULT 0x06
 
 #define PS2_MOUSE_CMD_TP_GET_VALUE6_UPPER_PLATEAU_SPEED "\xe2\x80\x4d"
 #define PS2_MOUSE_CMD_TP_GET_VALUE6_UPPER_PLATEAU_SPEED_RESP_LEN 1
@@ -98,6 +101,7 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #define PS2_MOUSE_CMD_TP_SET_VALUE6_UPPER_PLATEAU_SPEED_RESP_LEN 0
 #define PS2_MOUSE_CMD_TP_SET_VALUE6_UPPER_PLATEAU_SPEED_MIN 0
 #define PS2_MOUSE_CMD_TP_SET_VALUE6_UPPER_PLATEAU_SPEED_MAX 255
+#define PS2_MOUSE_CMD_TP_SET_VALUE6_UPPER_PLATEAU_SPEED_DEFAULT 0x61
 
 #define PS2_MOUSE_CMD_TP_GET_PTS_THRESHOLD "\xe2\x80\x5c"
 #define PS2_MOUSE_CMD_TP_GET_PTS_THRESHOLD_RESP_LEN 1
@@ -106,6 +110,7 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #define PS2_MOUSE_CMD_TP_SET_PTS_THRESHOLD_RESP_LEN 0
 #define PS2_MOUSE_CMD_TP_SET_PTS_THRESHOLD_MIN 0
 #define PS2_MOUSE_CMD_TP_SET_PTS_THRESHOLD_MAX 255
+#define PS2_MOUSE_CMD_TP_SET_PTS_THRESHOLD_DEFAULT 0x08
 
 // Trackpoint Config Bits
 #define PS2_MOUSE_TP_CONFIG_BIT_PRESS_TO_SELECT 0x00
@@ -183,6 +188,10 @@ struct zmk_ps2_mouse_data {
     bool activity_reporting_on;
 
     uint8_t sampling_rate;
+    float tp_sensitivity;
+    uint8_t tp_neg_inertia;
+    uint8_t tp_value6;
+    uint8_t tp_pts_threshold;
 };
 
 
@@ -215,7 +224,11 @@ static struct zmk_ps2_mouse_data zmk_ps2_mouse_data = {
     .activity_reporting_on = false,
 
     // PS2 devices initialize with this rate
-    .sampling_rate = 100,
+    .sampling_rate = PS2_MOUSE_CMD_SET_SAMPLING_RATE_DEFAULT,
+    .tp_sensitivity = PS2_MOUSE_CMD_TP_SET_SENSITIVITY_DEFAULT,
+    .tp_neg_inertia = PS2_MOUSE_CMD_TP_SET_NEG_INERTIA_DEFAULT,
+    .tp_value6 = PS2_MOUSE_CMD_TP_SET_VALUE6_UPPER_PLATEAU_SPEED_DEFAULT,
+    .tp_pts_threshold = PS2_MOUSE_CMD_TP_SET_PTS_THRESHOLD_DEFAULT,
 };
 
 static int allowed_sampling_rates[] = {
@@ -1236,6 +1249,30 @@ int zmk_ps2_tp_sensitivity_set(float sensitivity)
     return 0;
 }
 
+int zmk_ps2_tp_sensitivity_incr(float incr_amount)
+{
+    struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
+
+    float new_val = data->tp_sensitivity + incr_amount;
+
+    LOG_INF("Setting trackpoint sensitivity to %f", new_val);
+    int err = zmk_ps2_tp_sensitivity_set(new_val);
+
+    return err;
+}
+
+int zmk_ps2_tp_sensitivity_decr(float decr_amount)
+{
+    struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
+
+    float new_val = data->tp_sensitivity - decr_amount;
+
+    LOG_INF("Setting trackpoint sensitivity to %f", new_val);
+    int err = zmk_ps2_tp_sensitivity_set(new_val);
+
+    return err;
+}
+
 int zmk_ps2_tp_negative_inertia_get(uint8_t *neg_inertia)
 {
     struct zmk_ps2_send_cmd_resp resp = zmk_ps2_send_cmd(
@@ -1261,7 +1298,7 @@ int zmk_ps2_tp_negative_inertia_get(uint8_t *neg_inertia)
     return 0;
 }
 
-int zmk_ps2_tp_neg_inertia_set(uint8_t neg_inertia)
+int zmk_ps2_tp_neg_inertia_set(int neg_inertia)
 {
     if(neg_inertia < PS2_MOUSE_CMD_TP_SET_NEG_INERTIA_MIN ||
        neg_inertia > PS2_MOUSE_CMD_TP_SET_NEG_INERTIA_MAX)
@@ -1275,10 +1312,12 @@ int zmk_ps2_tp_neg_inertia_set(uint8_t neg_inertia)
         return 1;
     }
 
+    uint8_t arg = neg_inertia;
+
     struct zmk_ps2_send_cmd_resp resp = zmk_ps2_send_cmd(
         PS2_MOUSE_CMD_TP_SET_NEG_INERTIA,
         sizeof(PS2_MOUSE_CMD_TP_SET_NEG_INERTIA),
-        &neg_inertia,
+        &arg,
         PS2_MOUSE_CMD_TP_SET_NEG_INERTIA_RESP_LEN,
         true
     );
@@ -1291,6 +1330,30 @@ int zmk_ps2_tp_neg_inertia_set(uint8_t neg_inertia)
     }
 
     return 0;
+}
+
+int zmk_ps2_tp_neg_inertia_incr(int incr_amount)
+{
+    struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
+
+    int new_val = data->tp_neg_inertia + incr_amount;
+
+    LOG_INF("Setting negative inertia to %d", new_val);
+    int err = zmk_ps2_tp_neg_inertia_set(new_val);
+
+    return err;
+}
+
+int zmk_ps2_tp_neg_inertia_decr(int decr_amount)
+{
+    struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
+
+    int new_val = data->tp_neg_inertia - decr_amount;
+
+    LOG_INF("Setting negative inertia to %d", new_val);
+    int err = zmk_ps2_tp_neg_inertia_set(new_val);
+
+    return err;
 }
 
 int zmk_ps2_tp_value6_upper_plateau_speed_get(uint8_t *value6)
@@ -1318,7 +1381,7 @@ int zmk_ps2_tp_value6_upper_plateau_speed_get(uint8_t *value6)
     return 0;
 }
 
-int zmk_ps2_tp_value6_upper_plateau_speed_set(uint8_t value6)
+int zmk_ps2_tp_value6_upper_plateau_speed_set(int value6)
 {
     if(value6 < PS2_MOUSE_CMD_TP_SET_VALUE6_UPPER_PLATEAU_SPEED_MIN ||
        value6 > PS2_MOUSE_CMD_TP_SET_VALUE6_UPPER_PLATEAU_SPEED_MAX)
@@ -1332,10 +1395,12 @@ int zmk_ps2_tp_value6_upper_plateau_speed_set(uint8_t value6)
         return 1;
     }
 
+    uint8_t arg = value6;
+
     struct zmk_ps2_send_cmd_resp resp = zmk_ps2_send_cmd(
         PS2_MOUSE_CMD_TP_SET_VALUE6_UPPER_PLATEAU_SPEED,
         sizeof(PS2_MOUSE_CMD_TP_SET_VALUE6_UPPER_PLATEAU_SPEED),
-        &value6,
+        &arg,
         PS2_MOUSE_CMD_TP_SET_VALUE6_UPPER_PLATEAU_SPEED_RESP_LEN,
         true
     );
@@ -1348,6 +1413,30 @@ int zmk_ps2_tp_value6_upper_plateau_speed_set(uint8_t value6)
     }
 
     return 0;
+}
+
+int zmk_ps2_tp_value6_upper_plateau_speed_incr(int incr_amount)
+{
+    struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
+
+    int new_val = data->tp_value6 + incr_amount;
+
+    LOG_INF("Setting value6 upper plateau speed to %d", new_val);
+    int err = zmk_ps2_tp_value6_upper_plateau_speed_set(new_val);
+
+    return err;
+}
+
+int zmk_ps2_tp_value6_upper_plateau_speed_decr(int decr_amount)
+{
+    struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
+
+    int new_val = data->tp_value6 - decr_amount;
+
+    LOG_INF("Setting value6 upper plateau speed to %d", new_val);
+    int err = zmk_ps2_tp_value6_upper_plateau_speed_set(new_val);
+
+    return err;
 }
 
 int zmk_ps2_tp_pts_threshold_get(uint8_t *pts_threshold)
@@ -1377,7 +1466,7 @@ int zmk_ps2_tp_pts_threshold_get(uint8_t *pts_threshold)
     return 0;
 }
 
-int zmk_ps2_tp_pts_threshold_set(uint8_t pts_threshold)
+int zmk_ps2_tp_pts_threshold_set(int pts_threshold)
 {
     if(pts_threshold < PS2_MOUSE_CMD_TP_SET_PTS_THRESHOLD_MIN ||
        pts_threshold > PS2_MOUSE_CMD_TP_SET_PTS_THRESHOLD_MAX)
@@ -1391,10 +1480,12 @@ int zmk_ps2_tp_pts_threshold_set(uint8_t pts_threshold)
         return 1;
     }
 
+    uint8_t arg = pts_threshold;
+
     struct zmk_ps2_send_cmd_resp resp = zmk_ps2_send_cmd(
         PS2_MOUSE_CMD_TP_SET_PTS_THRESHOLD,
         sizeof(PS2_MOUSE_CMD_TP_SET_PTS_THRESHOLD),
-        &pts_threshold,
+        &arg,
         PS2_MOUSE_CMD_TP_SET_PTS_THRESHOLD_RESP_LEN,
         true
     );
@@ -1407,6 +1498,30 @@ int zmk_ps2_tp_pts_threshold_set(uint8_t pts_threshold)
     }
 
     return 0;
+}
+
+int zmk_ps2_tp_pts_threshold_incr(int incr_amount)
+{
+    struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
+
+    int new_val = data->tp_pts_threshold + incr_amount;
+
+    LOG_INF("Setting press-to-select threshold to %d", new_val);
+    int err = zmk_ps2_tp_pts_threshold_set(new_val);
+
+    return err;
+}
+
+int zmk_ps2_tp_pts_threshold_decr(int decr_amount)
+{
+    struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
+
+    int new_val = data->tp_pts_threshold - decr_amount;
+
+    LOG_INF("Setting press-to-select threshold to %d", new_val);
+    int err = zmk_ps2_tp_pts_threshold_set(new_val);
+
+    return err;
 }
 
 /*
