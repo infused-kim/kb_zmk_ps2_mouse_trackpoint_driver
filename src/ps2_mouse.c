@@ -474,19 +474,8 @@ void zmk_ps2_mouse_activity_move_mouse(int16_t mov_x, int16_t mov_y)
 {
     struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
 
-    #if IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_INVERT_X)
-        mov_x = -mov_x;
-    #endif /* IS_ENABLED(ZMK_MOUSE_PS2_INVERT_X) */
-
-    #if IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_INVERT_Y)
-        mov_y = -mov_y;
-        LOG_DBG("Inverted mouse movement: %d", mov_y);
-    #endif /* IS_ENABLED(ZMK_MOUSE_PS2_INVERT_Y) */
-
     data->move_speed.x += mov_x;
-
-    // zmk expects y coordinates to be negative for up.
-    data->move_speed.y += -mov_y;
+    data->move_speed.y += mov_y;
 }
 
 void zmk_ps2_mouse_activity_scroll(int8_t scroll_y)
@@ -520,8 +509,24 @@ static void zmk_ps2_mouse_tick_timer_handler(struct k_work *work)
         return;
     }
 
+    struct vector2d mouse_move = data->move_speed;
+    #if IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_SWAP_XY)
+        mouse_move.x = data->move_speed.y;
+        mouse_move.y = data->move_speed.x;
+    #endif /* IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_SWAP_XY) */
+
+    #if IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_INVERT_X)
+        mouse_move.x = -mouse_move.x;
+    #endif /* IS_ENABLED(ZMK_MOUSE_PS2_INVERT_X) */
+
+    #if IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_INVERT_Y)
+        mouse_move.y = -mouse_move.y;
+    #endif /* IS_ENABLED(ZMK_MOUSE_PS2_INVERT_Y) */
+
     zmk_hid_mouse_movement_set(0, 0);
-    zmk_hid_mouse_movement_update(data->move_speed.x, data->move_speed.y);
+
+    // ZMK expects up movement to be negative, but PS2 sends it as positive
+    zmk_hid_mouse_movement_update(mouse_move.x, -mouse_move.y);
 
     zmk_hid_mouse_scroll_set(0, 0);
     zmk_hid_mouse_scroll_update(data->scroll_speed.x, data->scroll_speed.y);
