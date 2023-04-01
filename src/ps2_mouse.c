@@ -91,6 +91,14 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #define PS2_MOUSE_CMD_TP_SET_NEG_INERTIA_MIN 0
 #define PS2_MOUSE_CMD_TP_SET_NEG_INERTIA_MAX 255
 
+#define PS2_MOUSE_CMD_TP_GET_VALUE6_UPPER_PLATEAU_SPEED "\xe2\x80\x4d"
+#define PS2_MOUSE_CMD_TP_GET_VALUE6_UPPER_PLATEAU_SPEED_RESP_LEN 1
+
+#define PS2_MOUSE_CMD_TP_SET_VALUE6_UPPER_PLATEAU_SPEED "\xe2\x81\x4d"
+#define PS2_MOUSE_CMD_TP_SET_VALUE6_UPPER_PLATEAU_SPEED_RESP_LEN 0
+#define PS2_MOUSE_CMD_TP_SET_VALUE6_UPPER_PLATEAU_SPEED_MIN 0
+#define PS2_MOUSE_CMD_TP_SET_VALUE6_UPPER_PLATEAU_SPEED_MAX 255
+
 // Trackpoint Config Bits
 #define PS2_MOUSE_TP_CONFIG_BIT_PRESS_TO_SELECT 0x00
 #define PS2_MOUSE_TP_CONFIG_BIT_RESERVED 0x01
@@ -1270,6 +1278,63 @@ int zmk_ps2_tp_neg_inertia_set(uint8_t neg_inertia)
         LOG_ERR(
             "Could not set negative inertia to %d: %s",
             neg_inertia, resp.err_msg
+        );
+        return resp.err;
+    }
+
+    return 0;
+}
+
+int zmk_ps2_tp_value6_upper_plateau_speed_get(uint8_t *value6)
+{
+    struct zmk_ps2_send_cmd_resp resp = zmk_ps2_send_cmd(
+        PS2_MOUSE_CMD_TP_GET_VALUE6_UPPER_PLATEAU_SPEED,
+        sizeof(PS2_MOUSE_CMD_TP_GET_VALUE6_UPPER_PLATEAU_SPEED),
+        NULL,
+        PS2_MOUSE_CMD_TP_GET_VALUE6_UPPER_PLATEAU_SPEED_RESP_LEN,
+        true
+    );
+    if(resp.err) {
+        LOG_ERR(
+            "Could not get trackpad value6 upper plateau speed: %s",
+            resp.err_msg
+        );
+        return resp.err;
+    }
+
+    uint8_t value6_int = resp.resp_buffer[0];
+    *value6 = value6_int;
+
+    LOG_DBG("Trackpoint value6 upper plateau speed is %d", value6_int);
+
+    return 0;
+}
+
+int zmk_ps2_tp_value6_upper_plateau_speed_set(uint8_t value6)
+{
+    if(value6 < PS2_MOUSE_CMD_TP_SET_VALUE6_UPPER_PLATEAU_SPEED_MIN ||
+       value6 > PS2_MOUSE_CMD_TP_SET_VALUE6_UPPER_PLATEAU_SPEED_MAX)
+    {
+        LOG_ERR(
+            "Invalid value6 upper plateau speed value %d. Min: %d; Max: %d",
+            value6,
+            PS2_MOUSE_CMD_TP_SET_VALUE6_UPPER_PLATEAU_SPEED_MIN,
+            PS2_MOUSE_CMD_TP_SET_VALUE6_UPPER_PLATEAU_SPEED_MAX
+        );
+        return 1;
+    }
+
+    struct zmk_ps2_send_cmd_resp resp = zmk_ps2_send_cmd(
+        PS2_MOUSE_CMD_TP_SET_VALUE6_UPPER_PLATEAU_SPEED,
+        sizeof(PS2_MOUSE_CMD_TP_SET_VALUE6_UPPER_PLATEAU_SPEED),
+        &value6,
+        PS2_MOUSE_CMD_TP_SET_VALUE6_UPPER_PLATEAU_SPEED_RESP_LEN,
+        true
+    );
+    if(resp.err) {
+        LOG_ERR(
+            "Could not set value6 upper plateau speed to %d: %s",
+            value6, resp.err_msg
         );
         return resp.err;
     }
