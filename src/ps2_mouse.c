@@ -83,6 +83,14 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #define PS2_MOUSE_CMD_TP_SET_SENSITIVITY_MIN 0.0
 #define PS2_MOUSE_CMD_TP_SET_SENSITIVITY_MAX 1.999
 
+#define PS2_MOUSE_CMD_TP_GET_NEG_INERTIA "\xe2\x80\x4d"
+#define PS2_MOUSE_CMD_TP_GET_NEG_INERTIA_RESP_LEN 1
+
+#define PS2_MOUSE_CMD_TP_SET_NEG_INERTIA "\xe2\x81\x4d"
+#define PS2_MOUSE_CMD_TP_SET_NEG_INERTIA_RESP_LEN 0
+#define PS2_MOUSE_CMD_TP_SET_NEG_INERTIA_MIN 0
+#define PS2_MOUSE_CMD_TP_SET_NEG_INERTIA_MAX 255
+
 // Trackpoint Config Bits
 #define PS2_MOUSE_TP_CONFIG_BIT_PRESS_TO_SELECT 0x00
 #define PS2_MOUSE_TP_CONFIG_BIT_RESERVED 0x01
@@ -1205,6 +1213,63 @@ int zmk_ps2_tp_sensitivity_set(float sensitivity)
     if(resp.err) {
         LOG_ERR(
             "Could not set sensitivity to %f: %s", sensitivity, resp.err_msg
+        );
+        return resp.err;
+    }
+
+    return 0;
+}
+
+int zmk_ps2_tp_negative_inertia_get(uint8_t *neg_inertia)
+{
+    struct zmk_ps2_send_cmd_resp resp = zmk_ps2_send_cmd(
+        PS2_MOUSE_CMD_TP_GET_NEG_INERTIA,
+        sizeof(PS2_MOUSE_CMD_TP_GET_NEG_INERTIA),
+        NULL,
+        PS2_MOUSE_CMD_TP_GET_NEG_INERTIA_RESP_LEN,
+        true
+    );
+    if(resp.err) {
+        LOG_ERR(
+            "Could not get trackpad negative inertia: %s",
+            resp.err_msg
+        );
+        return resp.err;
+    }
+
+    uint8_t neg_inertia_int = resp.resp_buffer[0];
+    *neg_inertia = neg_inertia_int;
+
+    LOG_DBG("Trackpoint negative inertia is %d", neg_inertia_int);
+
+    return 0;
+}
+
+int zmk_ps2_tp_neg_inertia_set(uint8_t neg_inertia)
+{
+    if(neg_inertia < PS2_MOUSE_CMD_TP_SET_NEG_INERTIA_MIN ||
+       neg_inertia > PS2_MOUSE_CMD_TP_SET_NEG_INERTIA_MAX)
+    {
+        LOG_ERR(
+            "Invalid sensitivity value %d. Min: %d; Max: %d",
+            neg_inertia,
+            PS2_MOUSE_CMD_TP_SET_NEG_INERTIA_MIN,
+            PS2_MOUSE_CMD_TP_SET_NEG_INERTIA_MAX
+        );
+        return 1;
+    }
+
+    struct zmk_ps2_send_cmd_resp resp = zmk_ps2_send_cmd(
+        PS2_MOUSE_CMD_TP_SET_NEG_INERTIA,
+        sizeof(PS2_MOUSE_CMD_TP_SET_NEG_INERTIA),
+        &neg_inertia,
+        PS2_MOUSE_CMD_TP_SET_NEG_INERTIA_RESP_LEN,
+        true
+    );
+    if(resp.err) {
+        LOG_ERR(
+            "Could not set negative inertia to %d: %s",
+            neg_inertia, resp.err_msg
         );
         return resp.err;
     }
