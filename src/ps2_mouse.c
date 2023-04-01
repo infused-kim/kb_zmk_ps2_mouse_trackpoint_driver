@@ -1205,11 +1205,14 @@ static void zmk_ps2_mouse_init_thread(int dev_ptr, int unused) {
     if(zmk_ps2_is_device_trackpoint() == true) {
         LOG_INF("Device is a trackpoint");
 
+    #if IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_TP_TAP_TO_SELECT)
+
         LOG_INF("Enabling trackpoint press to select...");
         zmk_ps2_tp_press_to_select_set(true);
+
+    #endif /* IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_TP_TAP_TO_SELECT) */
+
     }
-	// LOG_INF("Setting sample rate...");
-    // zmk_ps2_set_sampling_rate(config->ps2_device, 200);
 
     #if IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_SCROLL)
         LOG_INF("Enabling scroll mode.");

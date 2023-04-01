@@ -18,4 +18,8 @@ config ZMK_MOUSE_PS2_SCROLL
     bool "Enable scroll wheel on mouse devices supporting the Intellimouse extension."
 	default n
 
+config ZMK_MOUSE_PS2_TP_TAP_TO_SELECT
+    bool "Enables the ability to left-click by tapping the trackpoint."
+	default n
+
 endif # ZMK_MOUSE_PS2s
