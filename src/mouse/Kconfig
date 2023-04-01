@@ -26,6 +26,14 @@ config ZMK_MOUSE_PS2_TP_TAP_TO_SELECT
     bool "Enables the ability to left-click by tapping the trackpoint."
 	default n
 
+config ZMK_MOUSE_PS2_TP_INVERT_X
+    bool "Inverts x on the trackpoint. This is sets the setting directly in the trackpoint firmware and should therefore correctly impact the trackpoint algorithms."
+	default n
+
+config ZMK_MOUSE_PS2_TP_INVERT_Y
+    bool "Inverts y on the trackpoint. This is sets the setting directly in the trackpoint firmware and should therefore correctly impact the trackpoint algorithms."
+	default n
+
 config ZMK_MOUSE_PS2_TP_SWAP_XY
     bool "Swaps the x and y axis on the trackpoint. This is sets the swap settingin the trackpoint firmware and should therefore correctly impact the trackpoint algorithms. But this setting is not supported by all trackpoints."
 	default n
