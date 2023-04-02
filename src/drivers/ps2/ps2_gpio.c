@@ -1322,9 +1322,6 @@ int ps2_gpio_configure_scl_pin(struct ps2_gpio_data *data,
 	ps2_gpio_configure_pin_scl_input();
 
 	// Interrupt for clock line
-	// Almost all actions happen on the falling edge, but at the end of a write
-	// the device sends an ack bit on the rising edge. Setting up both edges
-	// allows us to detect it.
 	err = gpio_pin_interrupt_configure(
 		data->scl_gpio,
 		config->scl_pin,
