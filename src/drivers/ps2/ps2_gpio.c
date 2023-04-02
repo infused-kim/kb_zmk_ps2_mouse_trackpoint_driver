@@ -566,7 +566,7 @@ void ps2_gpio_interrupt_log_print()
 			interrupt_log_offset + i + 1, l->uptime_ticks, l->msg,
 			 ps2_gpio_interrupt_log_get_mode_str(), pos_str, l->scl, l->sda
 		);
-		k_sleep(K_MSEC(10));
+		k_sleep(K_MSEC(30));
 	}
 	LOG_INF("======== End Log ========");
 }
