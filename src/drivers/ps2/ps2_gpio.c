@@ -724,7 +724,7 @@ void ps2_gpio_read_abort(bool should_resend, char *reason)
 		if(data->cur_read_try < PS2_GPIO_READ_MAX_RETRY) {
 
 			data->cur_read_try++;
-			// ps2_gpio_send_cmd_resend();
+			ps2_gpio_send_cmd_resend();
 		} else {
 			LOG_ERR(
 				"Failed to read value %d times. Stopping asking the device "
