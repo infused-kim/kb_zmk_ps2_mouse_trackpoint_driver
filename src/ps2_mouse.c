@@ -325,7 +325,7 @@ void zmk_ps2_mouse_activity_callback(const struct device *ps2_device,
 
     k_work_cancel_delayable(&data->cmd_buffer_timeout);
 
-    LOG_DBG("Received mouse movement data: 0x%x", byte);
+    // LOG_DBG("Received mouse movement data: 0x%x", byte);
 
     data->cmd_buffer[data->cmd_idx] = byte;
 
