@@ -434,7 +434,7 @@ void ps2_gpio_data_queue_add(uint8_t byte)
 void ps2_gpio_send_cmd_resend()
 {
 	uint8_t cmd = 0xfe;
-	LOG_DBG("Requesting resend of data with command: 0x%x", cmd);
+	// LOG_DBG("Requesting resend of data with command: 0x%x", cmd);
 	ps2_gpio_write_byte_async(cmd);
 }
 
@@ -741,7 +741,7 @@ void ps2_gpio_read_process_received_byte(uint8_t byte)
 {
 	struct ps2_gpio_data *data = &ps2_gpio_data;
 
-	LOG_INF("Successfully received value: 0x%x", byte);
+	LOG_DBG("Successfully received value: 0x%x", byte);
 	LOG_PS2_INT("Successfully received value: 0x%x", byte);
 
 	// Since read was successful we reset the read try
@@ -920,7 +920,7 @@ int ps2_gpio_write_byte_blocking(uint8_t byte)
 	struct ps2_gpio_data *data = &ps2_gpio_data;
 	int err;
 
-	LOG_DBG("ps2_gpio_write_byte_blocking called with byte=0x%x", byte);
+	// LOG_DBG("ps2_gpio_write_byte_blocking called with byte=0x%x", byte);
 
 	err = ps2_gpio_write_byte_async(byte);
     if (err) {
@@ -941,7 +941,7 @@ int ps2_gpio_write_byte_blocking(uint8_t byte)
 	}
 
 	if(data->cur_write_status == PS2_GPIO_WRITE_STATUS_SUCCESS) {
-		LOG_DBG("Blocking write finished successfully for byte 0x%x", byte);
+		// LOG_DBG("Blocking write finished successfully for byte 0x%x", byte);
 		err = 0;
 	} else {
 		LOG_ERR(
@@ -1158,7 +1158,7 @@ void ps2_gpio_write_finish(bool successful)
 	k_work_cancel_delayable(&data->write_scl_timout);
 
 	if(successful) {
-		LOG_INF(
+		LOG_DBG(
 			"Successfully wrote value 0x%x",
 			data->cur_write_byte
 		);
@@ -1232,7 +1232,6 @@ static int ps2_gpio_enable_callback(const struct device *dev);
 static int ps2_gpio_configure(const struct device *dev,
 			     ps2_callback_t callback_isr)
 {
-	LOG_ERR("In ps2_gpio_configure");
 	struct ps2_gpio_data *data = dev->data;
 
 	if (!callback_isr) {
@@ -1252,12 +1251,12 @@ int ps2_gpio_read(const struct device *dev, uint8_t *value)
 	uint8_t queue_byte;
 	int err = ps2_gpio_data_queue_get_next(&queue_byte, PS2_GPIO_TIMEOUT_READ);
 	if(err) {  // Timeout due to no data to read in data queue
-		LOG_DBG("ps2_gpio_read: Fifo timed out...");
+		// LOG_DBG("ps2_gpio_read: Fifo timed out...");
 
 		return -ETIMEDOUT;
 	}
 
-	LOG_DBG("ps2_gpio_read: Returning 0x%x", queue_byte);
+	// LOG_DBG("ps2_gpio_read: Returning 0x%x", queue_byte);
 	*value =  queue_byte;
 
 	return 0;
@@ -1278,7 +1277,7 @@ static int ps2_gpio_disable_callback(const struct device *dev)
 
 	data->callback_enabled = false;
 
-	LOG_DBG("Disabled PS2 callback.");
+	// LOG_DBG("Disabled PS2 callback.");
 
 	return 0;
 }
@@ -1288,7 +1287,7 @@ static int ps2_gpio_enable_callback(const struct device *dev)
 	struct ps2_gpio_data *data = dev->data;
 	data->callback_enabled = true;
 
-	LOG_DBG("Enabled PS2 callback.");
+	// LOG_DBG("Enabled PS2 callback.");
 
 	ps2_gpio_data_queue_empty();
 
@@ -1362,7 +1361,6 @@ int ps2_gpio_configure_sda_pin(struct ps2_gpio_data *data,
 
 static int ps2_gpio_init(const struct device *dev)
 {
-	LOG_DBG("Inside ps2_gpio_init");
 
 	struct ps2_gpio_data *data = dev->data;
 	const struct ps2_gpio_config *config = dev->config;
