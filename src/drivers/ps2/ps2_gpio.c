@@ -26,9 +26,13 @@ LOG_MODULE_REGISTER(ps2_gpio);
 #define PS2_GPIO_WRITE_MAX_RETRY 3
 #define PS2_GPIO_READ_MAX_RETRY 3
 
-#define PS2_GPIO_WORK_QUEUE_PRIORITY 5
+// Custom queue for background PS/2 processing work at high priority
+#define PS2_GPIO_WORK_QUEUE_PRIORITY 1
 #define PS2_GPIO_WORK_QUEUE_STACK_SIZE 1024
 
+// Custom queue for calling the zephyr ps/2 callback at lower priority
+#define PS2_GPIO_WORK_QUEUE_CB_PRIORITY 5
+#define PS2_GPIO_WORK_QUEUE_CB_STACK_SIZE 1024
 
 /*
  * PS/2 Defines
@@ -60,6 +64,13 @@ LOG_MODULE_REGISTER(ps2_gpio);
 	3 * PS2_GPIO_TIMING_SCL_INHIBITION_MIN \
 )
 
+// When we start the inhibition timer for PS2_GPIO_TIMING_SCL_INHIBITION us,
+// it doesn't mean it will be called after exactly that time.
+// If there are higher priority interrupts, it will be delayed and might stay
+// inhibitied much longer. So we account for that delay and add a maximum
+// allowed delay.
+#define PS2_GPIO_TIMING_SCL_INHIBITION_TIMER_DELAY_MAX 200
+
 // After inhibiting the clock, the device starts sending the
 // clock. It's supposed to start immediately, but some devices
 // need much longer if you are asking them to interrupt an
@@ -71,6 +82,7 @@ LOG_MODULE_REGISTER(ps2_gpio);
 // To be conservative we give it another 2 cycles to complete
 #define PS2_GPIO_TIMING_WRITE_MAX_TIME ( \
 	PS2_GPIO_TIMING_SCL_INHIBITION \
+	+ PS2_GPIO_TIMING_SCL_INHIBITION_TIMER_DELAY_MAX \
 	+ PS2_GPIO_TIMING_SCL_INHIBITION_RESP_MAX \
 	+ 11 * PS2_GPIO_TIMING_SCL_CYCLE_MAX \
 	+ 2 * PS2_GPIO_TIMING_SCL_CYCLE_MAX \
@@ -216,6 +228,12 @@ K_THREAD_STACK_DEFINE(
 	PS2_GPIO_WORK_QUEUE_STACK_SIZE
 );
 static struct k_work_q ps2_gpio_work_queue;
+
+K_THREAD_STACK_DEFINE(
+	ps2_gpio_work_queue_cb_stack_area,
+	PS2_GPIO_WORK_QUEUE_CB_STACK_SIZE
+);
+static struct k_work_q ps2_gpio_work_queue_cb;
 
 /*
  * Function Definitions
@@ -775,7 +793,7 @@ void ps2_gpio_read_process_received_byte(uint8_t byte)
 		// doesn't block the interrupt.
 		// Will call ps2_gpio_read_callback_work_handler
 		data->callback_byte = byte;
-    	k_work_submit_to_queue(&ps2_gpio_work_queue, &data->callback_work);
+    	k_work_submit_to_queue(&ps2_gpio_work_queue_cb, &data->callback_work);
 	} else {
 		ps2_gpio_data_queue_add(byte);
 	}
@@ -1393,7 +1411,7 @@ static int ps2_gpio_init(const struct device *dev)
 	// Init semaphore that waits for read after write
 	k_sem_init(&data->write_awaits_resp_sem, 0, 1);
 
-	// Custom queue for background work
+	// Custom queue for background PS/2 processing work at high priority
 	k_work_queue_start(
         &ps2_gpio_work_queue,
         ps2_gpio_work_queue_stack_area,
@@ -1401,6 +1419,16 @@ static int ps2_gpio_init(const struct device *dev)
         PS2_GPIO_WORK_QUEUE_PRIORITY,
         NULL
     );
+
+	// Custom queue for calling the zephyr ps/2 callback at lower priority
+	k_work_queue_start(
+        &ps2_gpio_work_queue_cb,
+        ps2_gpio_work_queue_cb_stack_area,
+        K_THREAD_STACK_SIZEOF(ps2_gpio_work_queue_cb_stack_area),
+        PS2_GPIO_WORK_QUEUE_CB_PRIORITY,
+        NULL
+    );
+
 	// Timeouts for clock pulses during read and write
     k_work_init_delayable(&data->read_scl_timout, ps2_gpio_read_scl_timeout);
     k_work_init_delayable(&data->write_scl_timout, ps2_gpio_write_scl_timeout);
