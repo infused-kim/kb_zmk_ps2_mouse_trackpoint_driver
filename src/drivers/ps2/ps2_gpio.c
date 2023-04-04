@@ -828,7 +828,7 @@ int ps2_gpio_write_byte_blocking(uint8_t byte);
 // ps2_gpio_write_byte_async (defined above helper functions)
 void ps2_gpio_write_inhibition_wait(struct k_work *item);
 void ps2_gpio_write_interrupt_handler();
-void ps2_gpio_write_finish(bool successful);
+void ps2_gpio_write_finish(bool successful, char *descr);
 void ps2_gpio_write_scl_timeout(struct k_work *item);
 bool ps2_gpio_get_byte_parity(uint8_t byte);
 
@@ -1133,10 +1133,10 @@ void ps2_gpio_write_interrupt_handler()
 
 		if(ack_val == 0) {
 			LOG_PS2_INT("Write was successful with ack: %d", ack_val);
-			ps2_gpio_write_finish(true);
+			ps2_gpio_write_finish(true, "valid ack bit");
 		} else {
 			LOG_PS2_INT("Write failed with ack: %d", ack_val);
-			ps2_gpio_write_finish(false);
+			ps2_gpio_write_finish(false, "invalid ack bit");
 		}
 
 		return;
@@ -1166,10 +1166,10 @@ void ps2_gpio_write_scl_timeout(struct k_work *item)
 	// we abort the writ).
 
 	LOG_PS2_INT("Write SCL timeout");
-	ps2_gpio_write_finish(false);
+	ps2_gpio_write_finish(false, "scl timeout");
 }
 
-void ps2_gpio_write_finish(bool successful)
+void ps2_gpio_write_finish(bool successful, char *descr)
 {
 	struct ps2_gpio_data *data = &ps2_gpio_data;
 
@@ -1187,12 +1187,12 @@ void ps2_gpio_write_finish(bool successful)
 		data->cur_write_status = PS2_GPIO_WRITE_STATUS_SUCCESS;
 	} else {  // Failure
 		LOG_ERR(
-			"Failed to write value 0x%x at pos=%d",
-			data->cur_write_byte, data->cur_write_pos
+			"Failed to write value 0x%x at pos=%d: %s",
+			data->cur_write_byte, data->cur_write_pos, descr
 		);
 		LOG_PS2_INT(
-			"Failed to write value 0x%x at pos=%d",
-			data->cur_write_byte, data->cur_write_pos
+			"Failed to write value 0x%x at pos=%d: %s",
+			data->cur_write_byte, data->cur_write_pos, descr
 		);
 
 		data->cur_write_status = PS2_GPIO_WRITE_STATUS_FAILURE;
