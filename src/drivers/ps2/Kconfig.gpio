@@ -8,6 +8,29 @@ config PS2_GPIO
 
 if PS2_GPIO
 
+# PS/2 events must be processed within 30-50us. Therefore we shift the
+# BT_CTLR_LLL_PRIO from 0 to 1 and BT_CTLR_ULL_* priorities from 1 to 2.
+# We then set the gpio priority to 0.
+#
+# On top of this, the following has to be added to the device tree:
+# &gpiote {
+# 	interrupts = < 0x6 0 >;
+# };
+#
+# This allows the PS/2 interrupts to be triggered in time.
+
+config BT_CTLR_ADVANCED_FEATURES
+	default y
+
+config BT_CTLR_LLL_PRIO
+	default 1
+
+config BT_CTLR_ULL_HIGH_PRIO
+	default 2
+
+config BT_CTLR_ULL_LOW_PRIO
+	default 2
+
 config PS2_GPIO_INTERRUPT_LOG_ENABLED
 	bool "Enable extensive interrupt logging."
 	default n
