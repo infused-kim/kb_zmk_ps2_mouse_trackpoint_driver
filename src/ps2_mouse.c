@@ -1571,6 +1571,23 @@ static void zmk_ps2_mouse_init_thread(int dev_ptr, int unused) {
         return;
     }
 
+    #if CONFIG_ZMK_MOUSE_PS2_SAMPLING_RATE != \
+            PS2_MOUSE_CMD_SET_SAMPLING_RATE_DEFAULT
+        LOG_INF(
+            "Setting sample rate to %d...",
+            CONFIG_ZMK_MOUSE_PS2_SAMPLING_RATE
+        );
+        zmk_ps2_set_sampling_rate(CONFIG_ZMK_MOUSE_PS2_SAMPLING_RATE);
+        if(err) {
+            LOG_ERR(
+                "Could not set sampling rate to %d: %d",
+                CONFIG_ZMK_MOUSE_PS2_SAMPLING_RATE,
+                err
+            );
+            return;
+        }
+    #endif /* CONFIG_ZMK_MOUSE_PS2_SAMPLING_RATE */
+
     if(zmk_ps2_is_device_trackpoint() == true) {
         LOG_INF("Device is a trackpoint");
 
