@@ -420,9 +420,12 @@ void zmk_ps2_mouse_activity_process_cmd(zmk_ps2_mouse_packet_mode packet_mode,
 
     zmk_ps2_mouse_activity_move_mouse(packet.mov_x, packet.mov_y);
     zmk_ps2_mouse_activity_scroll(packet.scroll);
-    zmk_ps2_mouse_activity_click_buttons(
-        packet.button_l, packet.button_m, packet.button_r
-    );
+
+    #if IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_ENABLE_CLICKING)
+        zmk_ps2_mouse_activity_click_buttons(
+            packet.button_l, packet.button_m, packet.button_r
+        );
+    #endif /* IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_ENABLE_CLICKING) */
 }
 
 struct zmk_ps2_mouse_packet

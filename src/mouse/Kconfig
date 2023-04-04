@@ -6,6 +6,10 @@ menuconfig ZMK_MOUSE_PS2
 
 if ZMK_MOUSE_PS2
 
+config ZMK_MOUSE_PS2_ENABLE_CLICKING
+    bool "Enables clicking events."
+	default y
+
 config ZMK_MOUSE_PS2_INVERT_X
     bool "Invert the mouse movement x axis."
 	default n
