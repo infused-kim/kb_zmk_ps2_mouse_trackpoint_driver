@@ -19,6 +19,7 @@
 #include <dt-bindings/zmk/keys.h>
 #include <zmk/events/mouse_tick.h>
 #include <drivers/gpio.h>
+#include <stdlib.h>
 
 // #if DT_HAS_COMPAT_STATUS_OKAY(DT_DRV_COMPAT)
 
@@ -173,6 +174,7 @@ struct zmk_ps2_mouse_data {
     zmk_ps2_mouse_packet_mode packet_mode;
     uint8_t cmd_buffer[4];
     int cmd_idx;
+    struct zmk_ps2_mouse_packet prev_packet;
     struct k_work_delayable cmd_buffer_timeout;
 
     // Stores the x and y coordinates between reporting to the os
@@ -212,6 +214,16 @@ static struct zmk_ps2_mouse_data zmk_ps2_mouse_data = {
     .rst_gpio = NULL,
     .packet_mode = PS2_MOUSE_PACKET_MODE_PS2_DEFAULT,
     .cmd_idx = 0,
+    .prev_packet = {
+        .button_l = false,
+        .button_r = false,
+        .button_m = false,
+        .overflow_x = 0,
+        .overflow_y = 0,
+        .mov_x = 0,
+        .mov_y = 0,
+        .scroll = 0,
+    },
 
     .button_l_is_held = false,
     .button_m_is_held = false,
@@ -302,6 +314,7 @@ void zmk_ps2_mouse_activity_process_cmd(zmk_ps2_mouse_packet_mode packet_mode,
                                         uint8_t cmd_x,
                                         uint8_t cmd_y,
                                         uint8_t cmd_extra);
+void zmk_ps2_mouse_activity_abort_cmd();
 void zmk_ps2_mouse_activity_move_mouse(int16_t mov_x, int16_t mov_y);
 void zmk_ps2_mouse_activity_scroll(int8_t scroll_y);
 void zmk_ps2_mouse_activity_click_buttons(bool button_l,
@@ -337,12 +350,8 @@ void zmk_ps2_mouse_activity_callback(const struct device *ps2_device,
         // again.
         int alignment_bit = PS2_GPIO_GET_BIT(byte, 3);
         if(alignment_bit != 1) {
-            LOG_ERR(
-                "PS/2 Mouse cmd buffer is out of aligment. Requesting resend."
-            );
 
-            ps2_write(ps2_device, PS2_MOUSE_CMD_RESEND[0]);
-            data->cmd_idx = 0;
+            zmk_ps2_mouse_activity_abort_cmd();
             return;
         }
     } else if(data->cmd_idx == 1) {
@@ -368,6 +377,19 @@ void zmk_ps2_mouse_activity_callback(const struct device *ps2_device,
     data->cmd_idx += 1;
 
 	k_work_schedule(&data->cmd_buffer_timeout, PS2_MOUSE_TIMEOUT_CMD_BUFFER);
+}
+
+void zmk_ps2_mouse_activity_abort_cmd() {
+    struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
+    const struct zmk_ps2_mouse_config *config = &zmk_ps2_mouse_config;
+    const struct device *ps2_device = config->ps2_device;
+
+    LOG_ERR(
+        "PS/2 Mouse cmd buffer is out of aligment. Requesting resend."
+    );
+
+    data->cmd_idx = 0;
+    ps2_write(ps2_device, PS2_MOUSE_CMD_RESEND[0]);
 }
 
 // Called if no new byte arrives within
@@ -398,6 +420,8 @@ void zmk_ps2_mouse_activity_process_cmd(zmk_ps2_mouse_packet_mode packet_mode,
                                         uint8_t cmd_y,
                                         uint8_t cmd_extra)
 {
+    struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
+
     LOG_DBG(
         "zmk_ps2_mouse_activity_process_cmd "
         "Got state=0x%x x=0x%x, y=0x%x, extra=0x%x",
@@ -410,13 +434,41 @@ void zmk_ps2_mouse_activity_process_cmd(zmk_ps2_mouse_packet_mode packet_mode,
         cmd_state, cmd_x, cmd_y, cmd_extra
     );
 
-    LOG_DBG(
+    int x_delta = abs(data->prev_packet.mov_x - packet.mov_x);
+    int x_delta_factor = 0;
+    if (packet.mov_x != 0) {
+        x_delta_factor = x_delta  / abs(packet.mov_x);
+    }
+
+    int y_delta = abs(data->prev_packet.mov_y - packet.mov_y);
+    int y_delta_factor = 0;
+    if (packet.mov_y != 0) {
+        y_delta_factor = y_delta  / abs(packet.mov_y);
+    }
+
+    LOG_INF(
         "Got mouse activity cmd "
         "(mov_x=%d, mov_y=%d, o_x=%d, o_y=%d, scroll=%d, "
-        "b_l=%d, b_m=%d, b_r=%d)",
+        "b_l=%d, b_m=%d, b_r=%d) and ("
+        "x_delta=%d, x_delta_factor=%d, "
+        "y_delta=%d, y_delta_factor=%d)",
         packet.mov_x, packet.mov_y, packet.overflow_x, packet.overflow_y,
-        packet.scroll, packet.button_l, packet.button_m, packet.button_r
+        packet.scroll, packet.button_l, packet.button_m, packet.button_r,
+        x_delta, x_delta_factor, y_delta, y_delta_factor
     );
+
+    if((x_delta > 30 && x_delta_factor >= 4) ||
+       (y_delta > 30 && y_delta_factor >= 4))
+    {
+        LOG_WRN(
+            "Detected malformed packet with "
+            "x_delta=%d; x_delta_factor=%d; "
+            "y_delta=%d; y_delta_factor=%d;",
+            x_delta, x_delta_factor, y_delta, y_delta_factor
+        );
+        // zmk_ps2_mouse_activity_abort_cmd();
+        return;
+    }
 
     zmk_ps2_mouse_activity_move_mouse(packet.mov_x, packet.mov_y);
     zmk_ps2_mouse_activity_scroll(packet.scroll);
@@ -426,6 +478,8 @@ void zmk_ps2_mouse_activity_process_cmd(zmk_ps2_mouse_packet_mode packet_mode,
             packet.button_l, packet.button_m, packet.button_r
         );
     #endif /* IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_ENABLE_CLICKING) */
+
+    data->prev_packet = packet;
 }
 
 struct zmk_ps2_mouse_packet
