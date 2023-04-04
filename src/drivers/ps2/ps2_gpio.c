@@ -731,7 +731,10 @@ void ps2_gpio_read_abort(bool should_resend, char *reason)
 	struct ps2_gpio_data *data = &ps2_gpio_data;
 
 	if(should_resend == true) {
-		LOG_ERR("Aborting read with resend request: %s", reason);
+		LOG_ERR(
+			"Aborting read with resend request on pos=%d: %s",
+			data->cur_read_pos, reason
+		);
 		LOG_PS2_INT("Aborting read with resend request.");
 	} else {
 		LOG_PS2_INT("Aborting read without resend request.");
