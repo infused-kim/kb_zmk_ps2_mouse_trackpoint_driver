@@ -66,7 +66,7 @@ LOG_MODULE_REGISTER(ps2_gpio);
 
 // When we start the inhibition timer for PS2_GPIO_TIMING_SCL_INHIBITION us,
 // it doesn't mean it will be called after exactly that time.
-// If there are higher priority interrupts, it will be delayed and might stay
+// If there are higher priority threads, it will be delayed and might stay
 // inhibitied much longer. So we account for that delay and add a maximum
 // allowed delay.
 #define PS2_GPIO_TIMING_SCL_INHIBITION_TIMER_DELAY_MAX 200
@@ -117,8 +117,11 @@ LOG_MODULE_REGISTER(ps2_gpio);
 
 // Max time we allow the device to send the next clock signal during reads
 // and writes.
-#define PS2_GPIO_TIMEOUT_READ_SCL K_USEC(PS2_GPIO_TIMING_SCL_CYCLE_MAX)
-#define PS2_GPIO_TIMEOUT_WRITE_SCL K_USEC(PS2_GPIO_TIMING_SCL_CYCLE_MAX)
+// Even though PS/2 devices send the clock at most every 100us, it doesn't mean
+// that the interrupts always get triggered within that time. So we allow a
+// little extra time.
+#define PS2_GPIO_TIMEOUT_READ_SCL K_USEC(PS2_GPIO_TIMING_SCL_CYCLE_MAX + 50)
+#define PS2_GPIO_TIMEOUT_WRITE_SCL K_USEC(PS2_GPIO_TIMING_SCL_CYCLE_MAX + 50)
 
 // But after inhibiting the clock line, sometimes clocks take a little longer
 // to start. So we allow a bit more time for the first write clock.
