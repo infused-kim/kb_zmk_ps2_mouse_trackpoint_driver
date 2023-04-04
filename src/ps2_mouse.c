@@ -435,36 +435,29 @@ void zmk_ps2_mouse_activity_process_cmd(zmk_ps2_mouse_packet_mode packet_mode,
     );
 
     int x_delta = abs(data->prev_packet.mov_x - packet.mov_x);
-    int x_delta_factor = 0;
-    if (packet.mov_x != 0) {
-        x_delta_factor = x_delta  / abs(packet.mov_x);
-    }
-
     int y_delta = abs(data->prev_packet.mov_y - packet.mov_y);
-    int y_delta_factor = 0;
-    if (packet.mov_y != 0) {
-        y_delta_factor = y_delta  / abs(packet.mov_y);
-    }
 
-    LOG_INF(
+    LOG_DBG(
         "Got mouse activity cmd "
         "(mov_x=%d, mov_y=%d, o_x=%d, o_y=%d, scroll=%d, "
         "b_l=%d, b_m=%d, b_r=%d) and ("
-        "x_delta=%d, x_delta_factor=%d, "
-        "y_delta=%d, y_delta_factor=%d)",
+        "x_delta=%d, y_delta=%d)",
         packet.mov_x, packet.mov_y, packet.overflow_x, packet.overflow_y,
         packet.scroll, packet.button_l, packet.button_m, packet.button_r,
-        x_delta, x_delta_factor, y_delta, y_delta_factor
+        x_delta, y_delta
     );
 
-    if((x_delta > 30 && x_delta_factor >= 4) ||
-       (y_delta > 30 && y_delta_factor >= 4))
+    if(x_delta > 150  ||
+       y_delta > 150 )
     {
         LOG_WRN(
             "Detected malformed packet with "
-            "x_delta=%d; x_delta_factor=%d; "
-            "y_delta=%d; y_delta_factor=%d;",
-            x_delta, x_delta_factor, y_delta, y_delta_factor
+            "(mov_x=%d, mov_y=%d, o_x=%d, o_y=%d, scroll=%d, "
+            "b_l=%d, b_m=%d, b_r=%d) and ("
+            "x_delta=%d, y_delta=%d)",
+            packet.mov_x, packet.mov_y, packet.overflow_x, packet.overflow_y,
+            packet.scroll, packet.button_l, packet.button_m, packet.button_r,
+            x_delta, y_delta
         );
         // zmk_ps2_mouse_activity_abort_cmd();
         return;
