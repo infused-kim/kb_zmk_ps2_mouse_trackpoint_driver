@@ -1134,8 +1134,9 @@ void ps2_gpio_write_interrupt_handler()
 		ps2_gpio_configure_pin_sda_input();
 	} else if(data->cur_write_pos == PS2_GPIO_POS_ACK)
 	{
-		LOG_PS2_INT("Write interrupt");
 		int ack_val = ps2_gpio_get_sda();
+
+		LOG_PS2_INT("Write interrupt");
 
 		if(ack_val == 0) {
 			LOG_PS2_INT("Write was successful with ack: %d", ack_val);
