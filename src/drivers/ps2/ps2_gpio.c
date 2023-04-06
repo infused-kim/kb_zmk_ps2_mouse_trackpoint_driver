@@ -502,10 +502,11 @@ void ps2_gpio_interrupt_log_add(char *format, ...)
 
 	l.uptime_ticks = k_uptime_ticks();
 
-	va_list arglist;
-    va_start(arglist, format);
-    vsnprintf(l.msg, sizeof(l.msg) - 1, format, arglist);
-    va_end(arglist);
+	// va_list arglist;
+    // va_start(arglist, format);
+    // vsnprintfcb(l.msg, sizeof(l.msg) - 1, format, arglist);
+    // va_end(arglist);
+	strncpy(l.msg, format, sizeof(l.msg) - 1);
 
 	l.scl = ps2_gpio_get_scl();
 	l.sda = ps2_gpio_get_sda();
