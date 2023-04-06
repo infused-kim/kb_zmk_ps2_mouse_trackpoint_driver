@@ -490,10 +490,15 @@ int interrupt_log_idx = 0;
 struct interrupt_log interrupt_log[PS2_GPIO_INTERRUPT_LOG_MAX_ITEMS];
 
 struct k_work_delayable interrupt_log_scl_timout;
+struct k_work interrupt_log_print_worker;
 
 void ps2_gpio_interrupt_log_add(char *format, ...);
 void ps2_gpio_interrupt_log_print();
 void ps2_gpio_interrupt_log_clear();
+char *ps2_gpio_interrupt_log_get_mode_str();
+void ps2_gpio_interrupt_log_get_pos_str(int pos,
+										char *pos_str,
+										int pos_str_size);
 
 void ps2_gpio_interrupt_log_add(char *format, ...)
 {
@@ -517,22 +522,73 @@ void ps2_gpio_interrupt_log_add(char *format, ...)
 		l.pos = data->cur_write_pos;
 	}
 
-	if(interrupt_log_idx >= (PS2_GPIO_INTERRUPT_LOG_MAX_ITEMS)) {
+	if(interrupt_log_idx == (PS2_GPIO_INTERRUPT_LOG_MAX_ITEMS * 0.80)) {
 		ps2_gpio_interrupt_log_print();
-		ps2_gpio_interrupt_log_clear();
+	} else if(interrupt_log_idx >= PS2_GPIO_INTERRUPT_LOG_MAX_ITEMS) {
+		interrupt_log_offset++;
 		return;
 	}
 
 	interrupt_log[interrupt_log_idx] = l;
-
 	interrupt_log_idx += 1;
+}
+
+void ps2_gpio_interrupt_log_print()
+{
+	// ps2_gpio_interrupt_log_print_worker(NULL);
+    k_work_submit_to_queue(
+		&ps2_gpio_work_queue_cb,
+		&interrupt_log_print_worker
+	);
+}
+
+void ps2_gpio_interrupt_log_print_worker(struct k_work *item)
+{
+
+	LOG_INF("===== Interrupt Log =====");
+	for(int i = 0; i < interrupt_log_idx; i++) {
+		struct interrupt_log *l = &interrupt_log[i];
+		char pos_str[50];
+
+		ps2_gpio_interrupt_log_get_pos_str(l->pos, pos_str, sizeof(pos_str));
+
+		LOG_INF(
+			"%d - %" PRIu64 ": %s "
+			"(mode=%s, pos=%s, scl=%d, sda=%d)" ,
+			interrupt_log_offset + i + 1, l->uptime_ticks, l->msg,
+			 ps2_gpio_interrupt_log_get_mode_str(), pos_str, l->scl, l->sda
+		);
+		k_sleep(K_MSEC(15));
+	}
+	LOG_INF("======== End Log ========");
+
+	ps2_gpio_interrupt_log_clear();
 }
 
 void ps2_gpio_interrupt_log_clear()
 {
 	memset(&interrupt_log,	0x0, sizeof(interrupt_log));
-	interrupt_log_offset = interrupt_log_idx;
+	interrupt_log_offset += interrupt_log_idx;
 	interrupt_log_idx = 0;
+}
+
+void ps2_gpio_interrupt_log_scl_timeout(struct k_work *item)
+{
+	// Called if there is no interrupt for
+	// PS2_GPIO_INTERRUPT_LOG_SCL_TIMEOUT ms
+	ps2_gpio_interrupt_log_print();
+}
+
+char *ps2_gpio_interrupt_log_get_mode_str() {
+	struct ps2_gpio_data *data = &ps2_gpio_data;
+
+	if(data->mode == PS2_GPIO_MODE_READ) {
+		return "r";
+	} else if(data->mode == PS2_GPIO_MODE_WRITE) {
+		return "w";
+	} else {
+		return "?";
+	}
 }
 
 void ps2_gpio_interrupt_log_get_pos_str(int pos,
@@ -559,46 +615,6 @@ void ps2_gpio_interrupt_log_get_pos_str(int pos,
 	} else {
 		strncpy(pos_str, pos_names[pos], pos_str_size - 1);
 	}
-}
-
-char *ps2_gpio_interrupt_log_get_mode_str() {
-	struct ps2_gpio_data *data = &ps2_gpio_data;
-
-	if(data->mode == PS2_GPIO_MODE_READ) {
-		return "r";
-	} else if(data->mode == PS2_GPIO_MODE_WRITE) {
-		return "w";
-	} else {
-		return "?";
-	}
-}
-
-void ps2_gpio_interrupt_log_print()
-{
-	LOG_INF("===== Interrupt Log =====");
-	for(int i = 0; i < interrupt_log_idx; i++) {
-		struct interrupt_log *l = &interrupt_log[i];
-		char pos_str[50];
-
-		ps2_gpio_interrupt_log_get_pos_str(l->pos, pos_str, sizeof(pos_str));
-
-		LOG_INF(
-			"%d - %" PRIu64 ": %s "
-			"(mode=%s, pos=%s, scl=%d, sda=%d)" ,
-			interrupt_log_offset + i + 1, l->uptime_ticks, l->msg,
-			 ps2_gpio_interrupt_log_get_mode_str(), pos_str, l->scl, l->sda
-		);
-		k_sleep(K_MSEC(30));
-	}
-	LOG_INF("======== End Log ========");
-}
-
-void ps2_gpio_interrupt_log_scl_timeout(struct k_work *item)
-{
-	// Called if there is no interrupt for
-	// PS2_GPIO_INTERRUPT_LOG_SCL_TIMEOUT ms
-	ps2_gpio_interrupt_log_print();
-	ps2_gpio_interrupt_log_clear();
 }
 
 #else
@@ -1242,7 +1258,7 @@ void ps2_gpio_scl_interrupt_handler(const struct device *dev,
 
 #if IS_ENABLED(CONFIG_PS2_GPIO_INTERRUPT_LOG_ENABLED)
 	k_work_schedule_for_queue(
-		&ps2_gpio_work_queue,
+		&ps2_gpio_work_queue_cb,
 		&interrupt_log_scl_timout,
 		PS2_GPIO_INTERRUPT_LOG_SCL_TIMEOUT
 	);
@@ -1447,6 +1463,10 @@ static int ps2_gpio_init(const struct device *dev)
 #if IS_ENABLED(CONFIG_PS2_GPIO_INTERRUPT_LOG_ENABLED)
     k_work_init_delayable(
 		&interrupt_log_scl_timout, ps2_gpio_interrupt_log_scl_timeout
+	);
+	k_work_init(
+		&interrupt_log_print_worker,
+	 	ps2_gpio_interrupt_log_print_worker
 	);
 #endif /* IS_ENABLED(CONFIG_PS2_GPIO_INTERRUPT_LOG_ENABLED) */
 
