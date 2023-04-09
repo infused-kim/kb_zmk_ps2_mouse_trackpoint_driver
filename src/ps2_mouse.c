@@ -447,8 +447,12 @@ void zmk_ps2_mouse_activity_process_cmd(zmk_ps2_mouse_packet_mode packet_mode,
         x_delta, y_delta
     );
 
-    if(x_delta > 150  ||
-       y_delta > 150 )
+    // If the mouse exceeds the allowed threshold of movement, it's probably
+    // a mistransmission or misalignment.
+    // But we only do this check if there was prior movement that wasn't reset
+    // in `zmk_ps2_mouse_activity_cmd_timout`.
+    if((data->move_speed.x != 0 && data->move_speed.y != 0) &&
+       (x_delta > 150  || y_delta > 150))
     {
         LOG_WRN(
             "Detected malformed packet with "
