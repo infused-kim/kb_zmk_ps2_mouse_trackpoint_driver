@@ -887,7 +887,7 @@ int zmk_ps2_reset(const struct device *ps2_device) {
     );
     if(resp.err) {
         LOG_ERR(
-            "Could not send reset cmd: %s", resp.err_msg
+            "Could not send reset cmd"
         );
     }
 
@@ -906,7 +906,7 @@ int zmk_ps2_get_secondary_id(uint8_t *resp_byte_1,
     );
     if(resp.err) {
         LOG_ERR(
-            "Could not get secondary id: %s", resp.err_msg
+            "Could not get secondary id"
         );
         return resp.err;
     }
@@ -939,7 +939,7 @@ int zmk_ps2_set_sampling_rate(uint8_t sampling_rate)
     );
     if(resp.err) {
         LOG_ERR(
-            "Could not set sample rate to %d: %s", sampling_rate, resp.err_msg
+            "Could not set sample rate to %d", sampling_rate
         );
         return resp.err;
     }
@@ -1002,7 +1002,7 @@ int zmk_ps2_get_device_id(uint8_t *device_id)
     );
     if(resp.err) {
         LOG_ERR(
-            "Could not get device id: %s", resp.err_msg
+            "Could not get device id"
         );
         return resp.err;
     }
@@ -1137,8 +1137,7 @@ int zmk_ps2_tp_get_config_byte(uint8_t *config_byte)
     );
     if(resp.err) {
         LOG_ERR(
-            "Could not read trackpoint config byte: %s",
-            resp.err_msg
+            "Could not read trackpoint config byte"
         );
         return resp.err;
     }
@@ -1187,8 +1186,8 @@ int zmk_ps2_tp_set_config_option(int config_bit, bool enabled, char *descr)
     );
     if(resp.err) {
         LOG_ERR(
-            "Could not set trackpoint %s to %s: %s",
-            descr, enabled ? "enabled" : "disabled", resp.err_msg
+            "Could not set trackpoint %s to %s",
+            descr, enabled ? "enabled" : "disabled"
         );
         return resp.err;
     }
@@ -1251,8 +1250,7 @@ int zmk_ps2_tp_sensitivity_get(float *sensitivity)
     );
     if(resp.err) {
         LOG_ERR(
-            "Could not get trackpoint sensitivity: %s",
-            resp.err_msg
+            "Could not get trackpoint sensitivity"
         );
         return resp.err;
     }
@@ -1295,7 +1293,7 @@ int zmk_ps2_tp_sensitivity_set(float sensitivity)
     );
     if(resp.err) {
         LOG_ERR(
-            "Could not set sensitivity to %f: %s", sensitivity, resp.err_msg
+            "Could not set sensitivity to %f", sensitivity
         );
         return resp.err;
     }
@@ -1338,8 +1336,7 @@ int zmk_ps2_tp_negative_inertia_get(uint8_t *neg_inertia)
     );
     if(resp.err) {
         LOG_ERR(
-            "Could not get trackpoint negative inertia: %s",
-            resp.err_msg
+            "Could not get trackpoint negative inertia"
         );
         return resp.err;
     }
@@ -1377,8 +1374,8 @@ int zmk_ps2_tp_neg_inertia_set(int neg_inertia)
     );
     if(resp.err) {
         LOG_ERR(
-            "Could not set negative inertia to %d: %s",
-            neg_inertia, resp.err_msg
+            "Could not set negative inertia to %d",
+            neg_inertia
         );
         return resp.err;
     }
@@ -1421,8 +1418,7 @@ int zmk_ps2_tp_value6_upper_plateau_speed_get(uint8_t *value6)
     );
     if(resp.err) {
         LOG_ERR(
-            "Could not get trackpoint value6 upper plateau speed: %s",
-            resp.err_msg
+            "Could not get trackpoint value6 upper plateau speed"
         );
         return resp.err;
     }
@@ -1460,8 +1456,8 @@ int zmk_ps2_tp_value6_upper_plateau_speed_set(int value6)
     );
     if(resp.err) {
         LOG_ERR(
-            "Could not set value6 upper plateau speed to %d: %s",
-            value6, resp.err_msg
+            "Could not set value6 upper plateau speed to %d",
+            value6
         );
         return resp.err;
     }
@@ -1504,8 +1500,7 @@ int zmk_ps2_tp_pts_threshold_get(uint8_t *pts_threshold)
     );
     if(resp.err) {
         LOG_ERR(
-            "Could not get trackpoint press-to-select threshold: %s",
-            resp.err_msg
+            "Could not get trackpoint press-to-select threshold"
         );
         return resp.err;
     }
@@ -1545,8 +1540,8 @@ int zmk_ps2_tp_pts_threshold_set(int pts_threshold)
     );
     if(resp.err) {
         LOG_ERR(
-            "Could not set press-to-select threshold to %d: %s",
-            pts_threshold, resp.err_msg
+            "Could not set press-to-select threshold to %d",
+            pts_threshold
         );
         return resp.err;
     }
