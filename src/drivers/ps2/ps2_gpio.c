@@ -84,7 +84,7 @@ LOG_MODULE_REGISTER(ps2_gpio);
 // clock. It's supposed to start immediately, but some devices
 // need much longer if you are asking them to interrupt an
 // ongoing read.
-#define PS2_GPIO_TIMING_SCL_INHIBITION_RESP_MAX 1000
+#define PS2_GPIO_TIMING_SCL_INHIBITION_RESP_MAX 10000
 
 // Writes start with us inhibiting the line and then respond
 // with 11 bits (start bit included in inhibition time).
