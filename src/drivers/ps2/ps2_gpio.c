@@ -26,12 +26,21 @@ LOG_MODULE_REGISTER(ps2_gpio);
 #define PS2_GPIO_WRITE_MAX_RETRY 3
 #define PS2_GPIO_READ_MAX_RETRY 3
 
-// Custom queue for background PS/2 processing work at high priority
-#define PS2_GPIO_WORK_QUEUE_PRIORITY 1
+// Custom queue for background PS/2 processing work at low priority
+// We purposefully want this to be a fairly low priority, because
+// this queue is used while we wait to start a write.
+// If the system is very busy with interrupts and other threads, then we
+// want to wait until that is over so that our write interrupts don't get
+// missed.
+#define PS2_GPIO_WORK_QUEUE_PRIORITY 10
 #define PS2_GPIO_WORK_QUEUE_STACK_SIZE 1024
 
-// Custom queue for calling the zephyr ps/2 callback at lower priority
-#define PS2_GPIO_WORK_QUEUE_CB_PRIORITY 5
+// Custom queue for calling the zephyr ps/2 callback.
+// We don't want to hand it off to that API in an ISR since that callback
+// could be using blocking functions.
+// But we also don't want to hand it off at a low priority, since the PS/2
+// packets must be dealt with quickly. So we use a fairly high priority.
+#define PS2_GPIO_WORK_QUEUE_CB_PRIORITY 2
 #define PS2_GPIO_WORK_QUEUE_CB_STACK_SIZE 1024
 
 /*
