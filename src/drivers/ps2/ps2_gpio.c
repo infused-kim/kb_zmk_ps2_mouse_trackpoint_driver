@@ -203,6 +203,8 @@ struct ps2_gpio_data {
 	bool write_awaits_resp;
 	uint8_t write_awaits_resp_byte;
 	struct k_sem write_awaits_resp_sem;
+
+	struct k_work resend_cmd_work;
 };
 
 
@@ -251,7 +253,7 @@ static struct k_work_q ps2_gpio_work_queue_cb;
  * Function Definitions
  */
 
-int ps2_gpio_write_byte_async(uint8_t byte);
+int ps2_gpio_write_byte(uint8_t byte);
 
 /*
  * Helpers functions
@@ -460,12 +462,22 @@ void ps2_gpio_data_queue_add(uint8_t byte)
 	k_fifo_alloc_put(&data->data_queue, byte_heap);
 }
 
-
-void ps2_gpio_send_cmd_resend()
+void ps2_gpio_send_cmd_resend_worker(struct k_work *item)
 {
 	uint8_t cmd = 0xfe;
 	// LOG_DBG("Requesting resend of data with command: 0x%x", cmd);
-	ps2_gpio_write_byte_async(cmd);
+	ps2_gpio_write_byte(cmd);
+}
+
+void ps2_gpio_send_cmd_resend()
+{
+	struct ps2_gpio_data *data = &ps2_gpio_data;
+
+    if (k_is_in_isr()) {
+    	k_work_submit_to_queue(&ps2_gpio_work_queue, &data->resend_cmd_work);
+    } else {
+        ps2_gpio_send_cmd_resend_worker(NULL);
+    }
 }
 
 
@@ -872,10 +884,9 @@ void ps2_gpio_read_finish()
  * Writing PS2 data
  */
 
-int ps2_gpio_write_byte(uint8_t byte);
 int ps2_gpio_write_byte_await_response(uint8_t byte);
 int ps2_gpio_write_byte_blocking(uint8_t byte);
-// ps2_gpio_write_byte_async (defined above helper functions)
+int ps2_gpio_write_byte_start(uint8_t byte);
 void ps2_gpio_write_inhibition_wait(struct k_work *item);
 void ps2_gpio_write_interrupt_handler();
 void ps2_gpio_write_finish(bool successful, char *descr);
@@ -1000,13 +1011,13 @@ int ps2_gpio_write_byte_blocking(uint8_t byte)
 
 	// LOG_DBG("ps2_gpio_write_byte_blocking called with byte=0x%x", byte);
 
-	err = ps2_gpio_write_byte_async(byte);
+	err = ps2_gpio_write_byte_start(byte);
     if (err) {
 		LOG_ERR("Could not initiate writing of byte.");
 		return PS2_GPIO_E_WRITE_TRANSMIT;
 	}
 
-	// The async `write_byte_async` function takes the only available semaphor.
+	// The async `write_byte_start` function takes the only available semaphor.
 	// This causes the `k_sem_take` call below to block until
 	// `ps2_gpio_write_finish` gives it back.
 	err = k_sem_take(&data->write_lock, PS2_GPIO_TIMEOUT_WRITE_BLOCKING);
@@ -1034,11 +1045,11 @@ int ps2_gpio_write_byte_blocking(uint8_t byte)
 	return err;
 }
 
-int ps2_gpio_write_byte_async(uint8_t byte) {
+int ps2_gpio_write_byte_start(uint8_t byte) {
 	struct ps2_gpio_data *data = &ps2_gpio_data;
 	int err;
 
-	LOG_DBG("ps2_gpio_write_byte_async called with byte=0x%x", byte);
+	LOG_DBG("ps2_gpio_write_byte_start called with byte=0x%x", byte);
 
 	if(data->mode == PS2_GPIO_MODE_WRITE)
 	{
@@ -1056,7 +1067,7 @@ int ps2_gpio_write_byte_async(uint8_t byte) {
 	// It is released in `ps2_gpio_write_finish`.
 	err = k_sem_take(&data->write_lock, K_NO_WAIT);
     if (err != 0 && err != -EBUSY) {
-		LOG_ERR("ps2_gpio_write_byte_async could not take semaphore: %d", err);
+		LOG_ERR("ps2_gpio_write_byte_start could not take semaphore: %d", err);
 
 		return err;
 	}
@@ -1158,7 +1169,7 @@ void ps2_gpio_write_interrupt_handler()
 	if(data->cur_write_pos == PS2_GPIO_POS_START)
 	{
 		// This should not be happening, because the PS2_GPIO_POS_START bit
-		// is sent in ps2_gpio_write_byte_async during inhibition
+		// is sent in ps2_gpio_write_byte_start during inhibition
 		LOG_PS2_INT("Write interrupt", NULL);
 		return;
 	}
@@ -1508,6 +1519,7 @@ static int ps2_gpio_init(const struct device *dev)
 #endif /* IS_ENABLED(CONFIG_PS2_GPIO_INTERRUPT_LOG_ENABLED) */
 
 	k_work_init(&data->callback_work, ps2_gpio_read_callback_work_handler);
+	k_work_init(&data->resend_cmd_work, ps2_gpio_send_cmd_resend_worker);
 
 	return 0;
 }
