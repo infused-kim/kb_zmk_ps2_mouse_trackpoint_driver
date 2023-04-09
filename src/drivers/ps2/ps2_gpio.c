@@ -905,6 +905,9 @@ int ps2_gpio_write_byte(uint8_t byte)
 {
 	int err;
 
+	LOG_DBG("\n");
+	LOG_DBG("START WRITE: 0x%x", byte);
+
 	for(int i = 0; i < PS2_GPIO_WRITE_MAX_RETRY; i++) {
 		if(i > 0) {
 			LOG_WRN(
@@ -916,7 +919,12 @@ int ps2_gpio_write_byte(uint8_t byte)
 		err = ps2_gpio_write_byte_await_response(byte);
 
 		if(err == 0) {
-			// Successful
+			if(i > 0) {
+				LOG_WRN(
+					"Successfully wrote 0x%x on try #%d of %d...",
+					byte, i + 1, PS2_GPIO_WRITE_MAX_RETRY
+				);
+			}
 			break;
 		} else if(err == PS2_GPIO_E_WRITE_FAILURE) {
 			// Write failed and the device requested to stop trying
@@ -924,6 +932,8 @@ int ps2_gpio_write_byte(uint8_t byte)
 			break;
 		}
 	}
+
+	LOG_DBG("END WRITE: 0x%x\n", byte);
 
 	return err;
 }
