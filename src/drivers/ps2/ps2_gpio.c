@@ -1035,10 +1035,18 @@ int ps2_gpio_write_byte_blocking(uint8_t byte)
 	// `ps2_gpio_write_finish` gives it back.
 	err = k_sem_take(&data->write_lock, PS2_GPIO_TIMEOUT_WRITE_BLOCKING);
     if (err) {
+
+		// This usually means the controller is busy with other interrupts,
+		// timed out processing the interrupts and even the scl timeout
+		// delayable wasn't called due to the delay.
+		//
+		// So we abort the write and try again.
 		LOG_ERR(
 			"Blocking write failed due to semaphore timeout for byte "
 			"0x%x: %d", byte, err
 		);
+
+		ps2_gpio_write_finish(false, "semaphore timeout");
 		return PS2_GPIO_E_WRITE_TRANSMIT;
 	}
 
