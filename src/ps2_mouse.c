@@ -6,10 +6,10 @@
 
 #define DT_DRV_COMPAT zmk_ps2_mouse
 
-#include <device.h>
-#include <devicetree.h>
-#include <drivers/ps2.h>
-#include <sys/util.h>
+#include <zephyr/device.h>
+#include <zephyr/devicetree.h>
+#include <zephyr/drivers/ps2.h>
+#include <zephyr/sys/util.h>
 #include <zmk/hid.h>
 #include <zmk/endpoints.h>
 #include <dt-bindings/zmk/mouse.h>
@@ -18,12 +18,12 @@
 #include <dt-bindings/zmk/mouse.h>
 #include <dt-bindings/zmk/keys.h>
 #include <zmk/events/mouse_tick.h>
-#include <drivers/gpio.h>
+#include <zephyr/drivers/gpio.h>
 #include <stdlib.h>
 
 // #if DT_HAS_COMPAT_STATUS_OKAY(DT_DRV_COMPAT)
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
@@ -150,8 +150,7 @@ typedef enum
 
 struct zmk_ps2_mouse_config {
 	const struct device *ps2_device;
-	const char *rst_gpio_name;
-	gpio_pin_t rst_pin;
+	struct gpio_dt_spec rst_gpio;
 };
 
 struct zmk_ps2_mouse_packet {
@@ -201,11 +200,13 @@ static const struct zmk_ps2_mouse_config zmk_ps2_mouse_config = {
     .ps2_device = DEVICE_DT_GET(DT_INST_PHANDLE(0, ps2_device)),
 
 #if DT_INST_NODE_HAS_PROP(0, rst_gpios)
-    .rst_gpio_name = DT_INST_GPIO_LABEL(0, rst_gpios),
-    .rst_pin = DT_INST_GPIO_PIN(0, rst_gpios),
+	.rst_gpio = GPIO_DT_SPEC_INST_GET(0, rst_gpios),
 #else
-    .rst_gpio_name = NULL,
-    .rst_pin = 0,
+    .rst_gpio = {
+        .port = NULL,
+        .pin = 0,
+        .dt_flags = 0,
+    },
 #endif
 
 };
@@ -1744,24 +1745,20 @@ int zmk_ps2_init_to_power_on_reset()
     struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
 	const struct zmk_ps2_mouse_config *config = &zmk_ps2_mouse_config;
 
-    if(config->rst_gpio_name == NULL) {
+    if(config->rst_gpio.port == NULL) {
         return 0;
     }
 
     LOG_INF("Performing Power-On-Reset...");
 
     if(data->rst_gpio == NULL) {
-        data->rst_gpio = device_get_binding(config->rst_gpio_name);
-        if (!data->rst_gpio) {
-            LOG_ERR("Failed Power-On-Reset: Failed to get RST GPIO device...");
-            return -EINVAL;
-        }
+        data->rst_gpio = config->rst_gpio.port;
     }
 
     //  Set reset pin low...
 	int err = gpio_pin_configure(
 		data->rst_gpio,
-		config->rst_pin,
+		config->rst_gpio.pin,
 		(GPIO_OUTPUT_HIGH)
 	);
 	if (err) {
@@ -1776,7 +1773,7 @@ int zmk_ps2_init_to_power_on_reset()
     k_sleep(PS2_MOUSE_POWER_ON_RESET_TIME);
 
     // Set pin high
-    err = gpio_pin_set(data->rst_gpio, config->rst_pin, 0);
+    err = gpio_pin_set(data->rst_gpio, config->rst_gpio.pin, 0);
 	if (err) {
 		LOG_ERR(
             "Failed Power-On-Reset: Failed to set RST GPIO pin to "
