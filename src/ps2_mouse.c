@@ -165,7 +165,7 @@ struct zmk_ps2_mouse_packet {
 };
 
 struct zmk_ps2_mouse_data {
-	const struct device *rst_gpio;	/* GPIO used for Power-On-Reset line */
+	struct gpio_dt_spec rst_gpio;	/* GPIO used for Power-On-Reset line */
 
     K_THREAD_STACK_MEMBER(thread_stack, PS2_MOUSE_THREAD_STACK_SIZE);
     struct k_thread thread;
@@ -212,7 +212,6 @@ static const struct zmk_ps2_mouse_config zmk_ps2_mouse_config = {
 };
 
 static struct zmk_ps2_mouse_data zmk_ps2_mouse_data = {
-    .rst_gpio = NULL,
     .packet_mode = PS2_MOUSE_PACKET_MODE_PS2_DEFAULT,
     .cmd_idx = 0,
     .prev_packet = {
@@ -1745,20 +1744,23 @@ int zmk_ps2_init_to_power_on_reset()
     struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
 	const struct zmk_ps2_mouse_config *config = &zmk_ps2_mouse_config;
 
+    // Check if the optional rst-gpios setting was set
     if(config->rst_gpio.port == NULL) {
         return 0;
     }
 
     LOG_INF("Performing Power-On-Reset...");
 
-    if(data->rst_gpio == NULL) {
-        data->rst_gpio = config->rst_gpio.port;
+    if(data->rst_gpio.port == NULL) {
+        data->rst_gpio = config->rst_gpio;
+
+        // Overwrite any user-provided flags from the devicetree
+        data->rst_gpio.dt_flags = 0;
     }
 
     //  Set reset pin low...
-	int err = gpio_pin_configure(
-		data->rst_gpio,
-		config->rst_gpio.pin,
+	int err = gpio_pin_configure_dt(
+		&data->rst_gpio,
 		(GPIO_OUTPUT_HIGH)
 	);
 	if (err) {
@@ -1773,7 +1775,7 @@ int zmk_ps2_init_to_power_on_reset()
     k_sleep(PS2_MOUSE_POWER_ON_RESET_TIME);
 
     // Set pin high
-    err = gpio_pin_set(data->rst_gpio, config->rst_gpio.pin, 0);
+    err = gpio_pin_set_dt(&data->rst_gpio, 0);
 	if (err) {
 		LOG_ERR(
             "Failed Power-On-Reset: Failed to set RST GPIO pin to "
