@@ -656,36 +656,36 @@ void zmk_ps2_mouse_activity_click_buttons(bool button_l,
     // Check hid.c and zmk_hid_mouse_buttons_press() for more info.
 
     if(button_l == true && data->button_l_is_held == false) {
-        LOG_DBG("Pressing button_l");
+        LOG_INF("Pressing button_l");
         zmk_hid_mouse_button_press(PS2_MOUSE_BUTTON_L_IDX);
         data->button_l_is_held = true;
         should_send_report = true;
     } else if(button_l == false && data->button_l_is_held == true) {
-        LOG_DBG("Releasing button_l");
+        LOG_INF("Releasing button_l");
         zmk_hid_mouse_button_release(PS2_MOUSE_BUTTON_L_IDX);
         data->button_l_is_held = false;
         should_send_report = true;
     }
 
     if(button_m == true && data->button_m_is_held == false) {
-        LOG_DBG("Pressing button_m");
+        LOG_INF("Pressing button_m");
         zmk_hid_mouse_button_press(PS2_MOUSE_BUTTON_M_IDX);
         data->button_m_is_held = true;
         should_send_report = true;
     } else if(button_m == false && data->button_m_is_held == true) {
-        LOG_DBG("Releasing button_m");
+        LOG_INF("Releasing button_m");
         zmk_hid_mouse_button_release(PS2_MOUSE_BUTTON_M_IDX);
         data->button_m_is_held = false;
         should_send_report = true;
     }
 
     if(button_r == true && data->button_r_is_held == false) {
-        LOG_DBG("Pressing button_r");
+        LOG_INF("Pressing button_r");
         zmk_hid_mouse_button_press(PS2_MOUSE_BUTTON_R_IDX);
         data->button_r_is_held = true;
         should_send_report = true;
     } else if(button_r == false && data->button_r_is_held == true) {
-        LOG_DBG("Releasing button_r");
+        LOG_INF("Releasing button_r");
         zmk_hid_mouse_button_release(PS2_MOUSE_BUTTON_R_IDX);
         data->button_r_is_held = false;
         should_send_report = true;
