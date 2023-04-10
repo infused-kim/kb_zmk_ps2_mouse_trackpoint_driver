@@ -480,7 +480,7 @@ void zmk_ps2_mouse_activity_process_cmd(zmk_ps2_mouse_packet_mode packet_mode,
             packet.scroll, packet.button_l, packet.button_m, packet.button_r,
             x_delta, y_delta
         );
-        // zmk_ps2_mouse_activity_abort_cmd();
+        zmk_ps2_mouse_activity_abort_cmd();
         return;
     }
 
