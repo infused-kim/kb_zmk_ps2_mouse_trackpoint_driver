@@ -1289,6 +1289,14 @@ void ps2_gpio_write_finish(bool successful, char *descr)
 		);
 
 		data->cur_write_status = PS2_GPIO_WRITE_STATUS_FAILURE;
+
+		// Make sure the scl callback is enabled
+		// It's possible that all threads are busy,
+		// write_inhibition_wait doesn't get called in time
+		// and the semaphore times out.
+		// In that case we want to make sure the interrupt
+		// callback is enabled again.
+		ps2_gpio_set_scl_callback_enabled(true);
 	}
 
 	data->mode = PS2_GPIO_MODE_READ;
