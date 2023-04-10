@@ -470,7 +470,15 @@ void ps2_gpio_send_cmd_resend()
 	struct ps2_gpio_data *data = &ps2_gpio_data;
 
     if (k_is_in_isr()) {
-    	k_work_submit_to_queue(&ps2_gpio_work_queue, &data->resend_cmd_work);
+
+		// It's important to submit this on the cb queue and not on the
+		// same queue as the inhibition delay.
+		// Otherwise the queue will be blocked by the semaphore and the
+		// inhibition delay worker will never be called.
+    	k_work_submit_to_queue(
+			&ps2_gpio_work_queue_cb,
+			&data->resend_cmd_work
+		);
     } else {
         ps2_gpio_send_cmd_resend_worker(NULL);
     }
