@@ -190,6 +190,7 @@ struct ps2_gpio_data {
 	uint8_t cur_read_byte;
 	int cur_read_pos;
 	int cur_read_try;
+	uint32_t last_read_cycle_cnt;
 	struct k_work_delayable read_scl_timout;
 
 	ps2_gpio_write_status cur_write_status;
@@ -685,6 +686,21 @@ void ps2_gpio_read_finish();
 void ps2_gpio_read_interrupt_handler()
 {
 	struct ps2_gpio_data *data = &ps2_gpio_data;
+
+	uint32_t cur_read_cycle_cnt = k_cycle_get_32();
+	uint32_t last_read_cycle_cnt = data->last_read_cycle_cnt;
+
+	data->last_read_cycle_cnt = cur_read_cycle_cnt;
+
+	if(data->cur_read_pos > 0) {
+		uint32_t prev_cycle_delta_us = k_cyc_to_us_floor32(
+			cur_read_cycle_cnt - last_read_cycle_cnt
+		);
+
+		if(prev_cycle_delta_us > PS2_GPIO_TIMING_SCL_CYCLE_MAX) {
+			ps2_gpio_read_abort(true, "missed interrupt");
+		}
+	}
 
 	k_work_cancel_delayable(&data->read_scl_timout);
 
