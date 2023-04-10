@@ -510,6 +510,7 @@ zmk_ps2_mouse_activity_parse_cmd_buffer(zmk_ps2_mouse_packet_mode packet_mode,
     packet.button_m = PS2_GPIO_GET_BIT(cmd_state, 2);
     packet.overflow_x = PS2_GPIO_GET_BIT(cmd_state, 6);
     packet.overflow_y = PS2_GPIO_GET_BIT(cmd_state, 7);
+    packet.scroll = 0;
 
     // The coordinates are delivered as a signed 9bit integers.
     // But a PS/2 packet is only 8 bits, so the most significant
@@ -539,8 +540,6 @@ zmk_ps2_mouse_activity_parse_cmd_buffer(zmk_ps2_mouse_packet_mode packet_mode,
     // scroll wheel. It is a signed number with the rango of
     // -8 to +7.
     if(packet_mode == PS2_MOUSE_PACKET_MODE_SCROLL) {
-        packet.scroll = 0x0;
-
         PS2_GPIO_SET_BIT(
             packet.scroll,
             PS2_GPIO_GET_BIT(cmd_extra, 0),
@@ -582,9 +581,12 @@ void zmk_ps2_mouse_activity_move_mouse(int16_t mov_x, int16_t mov_y)
 
 void zmk_ps2_mouse_activity_scroll(int8_t scroll_y)
 {
-    struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
+    if(scroll_y > 0) {
+        LOG_INF("Mouse scrolled by: %d", scroll_y);
 
-    data->scroll_speed.y += scroll_y;
+        struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
+        data->scroll_speed.y += scroll_y;
+    }
 }
 
 // Called using k_timer data->mouse_timer every x ms as configured with
