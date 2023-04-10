@@ -7,13 +7,13 @@
 #define DT_DRV_COMPAT gpio_ps2
 
 #include <errno.h>
-#include <device.h>
-#include <drivers/ps2.h>
-#include <drivers/gpio.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/ps2.h>
+#include <zephyr/drivers/gpio.h>
 
 // #if DT_HAS_COMPAT_STATUS_OKAY(DT_DRV_COMPAT)
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 
 #define LOG_LEVEL CONFIG_PS2_LOG_LEVEL
 LOG_MODULE_REGISTER(ps2_gpio);
@@ -162,11 +162,8 @@ typedef enum
 } ps2_gpio_write_status;
 
 struct ps2_gpio_config {
-	const char *scl_gpio_name;
-	gpio_pin_t scl_pin;
-
-	const char *sda_gpio_name;
-	gpio_pin_t sda_pin;
+	struct gpio_dt_spec scl_gpio;
+	struct gpio_dt_spec sda_gpio;
 };
 
 struct ps2_gpio_data {
@@ -211,11 +208,8 @@ struct ps2_gpio_data {
 
 
 static const struct ps2_gpio_config ps2_gpio_config = {
-    .scl_gpio_name = DT_INST_GPIO_LABEL(0, scl_gpios),
-    .scl_pin = DT_INST_GPIO_PIN(0, scl_gpios),
-
-    .sda_gpio_name = DT_INST_GPIO_LABEL(0, sda_gpios),
-    .sda_pin = DT_INST_GPIO_PIN(0, sda_gpios),
+	.scl_gpio	= GPIO_DT_SPEC_INST_GET(0, scl_gpios),	\
+	.sda_gpio	= GPIO_DT_SPEC_INST_GET(0, sda_gpios),	\
 };
 
 static struct ps2_gpio_data ps2_gpio_data = {
@@ -271,7 +265,7 @@ int ps2_gpio_get_scl()
 {
 	const struct ps2_gpio_data *data = &ps2_gpio_data;
 	const struct ps2_gpio_config *config = &ps2_gpio_config;
-	int rc = gpio_pin_get(data->scl_gpio, config->scl_pin);
+	int rc = gpio_pin_get(data->scl_gpio, config->scl_gpio.pin);
 
 	return rc;
 }
@@ -280,7 +274,7 @@ int ps2_gpio_get_sda()
 {
 	const struct ps2_gpio_data *data = &ps2_gpio_data;
 	const struct ps2_gpio_config *config = &ps2_gpio_config;
-	int rc = gpio_pin_get(data->sda_gpio, config->sda_pin);
+	int rc = gpio_pin_get(data->sda_gpio, config->sda_gpio.pin);
 
 	return rc;
 }
@@ -291,7 +285,7 @@ void ps2_gpio_set_scl(int state)
 	const struct ps2_gpio_config *config = &ps2_gpio_config;
 
 	// LOG_INF("Setting scl to %d", state);
-	gpio_pin_set(data->scl_gpio, config->scl_pin, state);
+	gpio_pin_set(data->scl_gpio, config->scl_gpio.pin, state);
 }
 
 void ps2_gpio_set_sda(int state)
@@ -300,7 +294,7 @@ void ps2_gpio_set_sda(int state)
 	const struct ps2_gpio_config *config = &ps2_gpio_config;
 
 	// LOG_INF("Seting sda to %d", state);
-	gpio_pin_set(data->sda_gpio, config->sda_pin, state);
+	gpio_pin_set(data->sda_gpio, config->sda_gpio.pin, state);
 }
 
 int ps2_gpio_set_scl_callback_enabled(bool enabled)
@@ -338,7 +332,7 @@ int ps2_gpio_configure_pin_scl(gpio_flags_t flags, char *descr)
 
 	err = gpio_pin_configure(
 		data->scl_gpio,
-		config->scl_pin,
+		config->scl_gpio.pin,
 		flags
 	);
 	if (err) {
@@ -372,7 +366,7 @@ int ps2_gpio_configure_pin_sda(gpio_flags_t flags, char *descr)
 
 	err = gpio_pin_configure(
 		data->sda_gpio,
-		config->sda_pin,
+		config->sda_gpio.pin,
 		flags
 	);
 	if (err) {
@@ -1438,18 +1432,14 @@ int ps2_gpio_configure_scl_pin(struct ps2_gpio_data *data,
 	int err;
 
 	// Configure PIN
-	data->scl_gpio = device_get_binding(config->scl_gpio_name);
-	if (!data->scl_gpio) {
-		LOG_ERR("failed to get SCL GPIO device");
-		return -EINVAL;
-	}
+	data->scl_gpio = config->scl_gpio.port;
 
 	ps2_gpio_configure_pin_scl_input();
 
 	// Interrupt for clock line
 	err = gpio_pin_interrupt_configure(
 		data->scl_gpio,
-		config->scl_pin,
+		config->scl_gpio.pin,
 		(GPIO_INT_EDGE_FALLING)
 	);
 	if (err) {
@@ -1463,7 +1453,7 @@ int ps2_gpio_configure_scl_pin(struct ps2_gpio_data *data,
 	gpio_init_callback(
 		&data->scl_cb_data,
 		ps2_gpio_scl_interrupt_handler,
-		BIT(config->scl_pin)
+		BIT(config->scl_gpio.pin)
 	);
 
 	ps2_gpio_set_scl_callback_enabled(true);
@@ -1474,11 +1464,7 @@ int ps2_gpio_configure_scl_pin(struct ps2_gpio_data *data,
 int ps2_gpio_configure_sda_pin(struct ps2_gpio_data *data,
 							   const struct ps2_gpio_config *config)
 {
-	data->sda_gpio = device_get_binding(config->sda_gpio_name);
-	if (!data->sda_gpio) {
-		LOG_ERR("failed to get SDA GPIO device");
-		return -EINVAL;
-	}
+	data->sda_gpio = config->sda_gpio.port;
 
 	ps2_gpio_configure_pin_sda_input();
 
