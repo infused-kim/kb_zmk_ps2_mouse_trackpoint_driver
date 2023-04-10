@@ -78,10 +78,10 @@ LOG_MODULE_REGISTER(ps2_gpio);
 // If there are higher priority threads, it will be delayed and might stay
 // inhibitied much longer. So we account for that delay and add a maximum
 // allowed delay.
-#define PS2_GPIO_TIMING_SCL_INHIBITION_TIMER_DELAY_MAX 200
+#define PS2_GPIO_TIMING_SCL_INHIBITION_TIMER_DELAY_MAX 1000
 
-// After inhibiting the clock, the device starts sending the
-// clock. It's supposed to start immediately, but some devices
+// After inhibiting and releasing the clock, the device starts sending
+// the clock. It's supposed to start immediately, but some devices
 // need much longer if you are asking them to interrupt an
 // ongoing read.
 #define PS2_GPIO_TIMING_SCL_INHIBITION_RESP_MAX 10000
