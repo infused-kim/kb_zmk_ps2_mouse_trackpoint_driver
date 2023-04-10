@@ -168,8 +168,8 @@ struct ps2_gpio_config {
 
 struct ps2_gpio_data {
 	const struct device *dev;
-	const struct device *scl_gpio;	/* GPIO used for PS2 SCL line */
-	const struct device *sda_gpio;	/* GPIO used for PS2 SDA line */
+	struct gpio_dt_spec scl_gpio;	/* GPIO used for PS2 SCL line */
+	struct gpio_dt_spec sda_gpio;	/* GPIO used for PS2 SDA line */
 
 	// Interrupt callback
 	struct gpio_callback scl_cb_data;
@@ -213,9 +213,6 @@ static const struct ps2_gpio_config ps2_gpio_config = {
 };
 
 static struct ps2_gpio_data ps2_gpio_data = {
-	.scl_gpio = NULL,
-	.sda_gpio = NULL,
-
 	.callback_byte = 0x0,
     .callback_isr = NULL,
     .resend_callback_isr = NULL,
@@ -264,8 +261,7 @@ int ps2_gpio_write_byte(uint8_t byte);
 int ps2_gpio_get_scl()
 {
 	const struct ps2_gpio_data *data = &ps2_gpio_data;
-	const struct ps2_gpio_config *config = &ps2_gpio_config;
-	int rc = gpio_pin_get(data->scl_gpio, config->scl_gpio.pin);
+	int rc = gpio_pin_get_dt(&data->scl_gpio);
 
 	return rc;
 }
@@ -273,8 +269,7 @@ int ps2_gpio_get_scl()
 int ps2_gpio_get_sda()
 {
 	const struct ps2_gpio_data *data = &ps2_gpio_data;
-	const struct ps2_gpio_config *config = &ps2_gpio_config;
-	int rc = gpio_pin_get(data->sda_gpio, config->sda_gpio.pin);
+	int rc = gpio_pin_get_dt(&data->sda_gpio);
 
 	return rc;
 }
@@ -282,19 +277,17 @@ int ps2_gpio_get_sda()
 void ps2_gpio_set_scl(int state)
 {
 	const struct ps2_gpio_data *data = &ps2_gpio_data;
-	const struct ps2_gpio_config *config = &ps2_gpio_config;
 
 	// LOG_INF("Setting scl to %d", state);
-	gpio_pin_set(data->scl_gpio, config->scl_gpio.pin, state);
+	gpio_pin_set_dt(&data->scl_gpio, state);
 }
 
 void ps2_gpio_set_sda(int state)
 {
 	const struct ps2_gpio_data *data = &ps2_gpio_data;
-	const struct ps2_gpio_config *config = &ps2_gpio_config;
 
 	// LOG_INF("Seting sda to %d", state);
-	gpio_pin_set(data->sda_gpio, config->sda_gpio.pin, state);
+	gpio_pin_set_dt(&data->sda_gpio, state);
 }
 
 int ps2_gpio_set_scl_callback_enabled(bool enabled)
@@ -303,7 +296,7 @@ int ps2_gpio_set_scl_callback_enabled(bool enabled)
 	int err;
 
 	if(enabled) {
-		err = gpio_add_callback(data->scl_gpio, &data->scl_cb_data);
+		err = gpio_add_callback(data->scl_gpio.port, &data->scl_cb_data);
 		if (err) {
 			LOG_ERR(
 				"failed to enable interrupt callback on "
@@ -311,7 +304,7 @@ int ps2_gpio_set_scl_callback_enabled(bool enabled)
 			);
 		}
 	} else {
-		err = gpio_remove_callback(data->scl_gpio, &data->scl_cb_data);
+		err = gpio_remove_callback(data->scl_gpio.port, &data->scl_cb_data);
 		if (err) {
 			LOG_ERR(
 				"failed to disable interrupt callback on "
@@ -327,12 +320,10 @@ int ps2_gpio_set_scl_callback_enabled(bool enabled)
 int ps2_gpio_configure_pin_scl(gpio_flags_t flags, char *descr)
 {
 	struct ps2_gpio_data *data = &ps2_gpio_data;
-	const struct ps2_gpio_config *config = &ps2_gpio_config;
 	int err;
 
-	err = gpio_pin_configure(
-		data->scl_gpio,
-		config->scl_gpio.pin,
+	err = gpio_pin_configure_dt(
+		&data->scl_gpio,
 		flags
 	);
 	if (err) {
@@ -361,12 +352,10 @@ int ps2_gpio_configure_pin_scl_output()
 int ps2_gpio_configure_pin_sda(gpio_flags_t flags, char *descr)
 {
 	struct ps2_gpio_data *data = &ps2_gpio_data;
-	const struct ps2_gpio_config *config = &ps2_gpio_config;
 	int err;
 
-	err = gpio_pin_configure(
-		data->sda_gpio,
-		config->sda_gpio.pin,
+	err = gpio_pin_configure_dt(
+		&data->sda_gpio,
 		flags
 	);
 	if (err) {
@@ -1431,15 +1420,17 @@ int ps2_gpio_configure_scl_pin(struct ps2_gpio_data *data,
 {
 	int err;
 
-	// Configure PIN
-	data->scl_gpio = config->scl_gpio.port;
+	// Make pin info accessible through the data struct
+	data->scl_gpio = config->scl_gpio;
+
+	// Overwrite any user-provided flags from the devicetree
+	data->scl_gpio.dt_flags = 0;
 
 	ps2_gpio_configure_pin_scl_input();
 
 	// Interrupt for clock line
-	err = gpio_pin_interrupt_configure(
-		data->scl_gpio,
-		config->scl_gpio.pin,
+	err = gpio_pin_interrupt_configure_dt(
+		&data->scl_gpio,
 		(GPIO_INT_EDGE_FALLING)
 	);
 	if (err) {
@@ -1453,7 +1444,7 @@ int ps2_gpio_configure_scl_pin(struct ps2_gpio_data *data,
 	gpio_init_callback(
 		&data->scl_cb_data,
 		ps2_gpio_scl_interrupt_handler,
-		BIT(config->scl_gpio.pin)
+		BIT(data->scl_gpio.pin)
 	);
 
 	ps2_gpio_set_scl_callback_enabled(true);
@@ -1464,7 +1455,11 @@ int ps2_gpio_configure_scl_pin(struct ps2_gpio_data *data,
 int ps2_gpio_configure_sda_pin(struct ps2_gpio_data *data,
 							   const struct ps2_gpio_config *config)
 {
-	data->sda_gpio = config->sda_gpio.port;
+	// Make pin info accessible through the data struct
+	data->sda_gpio = config->sda_gpio;
+
+	// Overwrite any user-provided flags from the devicetree
+	data->scl_gpio.dt_flags = 0;
 
 	ps2_gpio_configure_pin_sda_input();
 
