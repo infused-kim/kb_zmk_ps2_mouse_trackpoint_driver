@@ -390,6 +390,8 @@ void zmk_ps2_mouse_activity_abort_cmd() {
 
     data->cmd_idx = 0;
     ps2_write(ps2_device, PS2_MOUSE_CMD_RESEND[0]);
+
+    zmk_ps2_mouse_activity_reset_cmd_buffer();
 }
 
 // Called if the PS/2 driver encounters a transmission error and asks the
