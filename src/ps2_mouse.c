@@ -392,6 +392,21 @@ void zmk_ps2_mouse_activity_abort_cmd() {
     ps2_write(ps2_device, PS2_MOUSE_CMD_RESEND[0]);
 }
 
+// Called if the PS/2 driver encounters a transmission error and asks the
+// device to resend the packet.
+// The device will resend all bytes of the packet. So we need to reset our
+// buffer.
+void zmk_ps2_mouse_activity_resend_callback(const struct device *ps2_device)
+{
+    struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
+
+    LOG_WRN(
+        "Mouse movement cmd had transmission error on idx=%d", data->cmd_idx
+    );
+
+    zmk_ps2_mouse_activity_reset_cmd_buffer();
+}
+
 // Called if no new byte arrives within
 // PS2_MOUSE_TIMEOUT_CMD_BUFFER
 void zmk_ps2_mouse_activity_cmd_timout(struct k_work *item)
@@ -1666,7 +1681,11 @@ static void zmk_ps2_mouse_init_thread(int dev_ptr, int unused) {
 
     // Configure read callback
 	LOG_DBG("Configuring ps2 callback...");
-    err = ps2_config(config->ps2_device, &zmk_ps2_mouse_activity_callback);
+    err = ps2_config(
+        config->ps2_device,
+        &zmk_ps2_mouse_activity_callback,
+        &zmk_ps2_mouse_activity_resend_callback
+    );
     if(err) {
         LOG_ERR("Could not configure ps2 interface: %d", err);
         return ;
