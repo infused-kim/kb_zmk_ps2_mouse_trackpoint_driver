@@ -1283,6 +1283,8 @@ int zmk_ps2_tp_sensitivity_get(float *sensitivity)
 
 int zmk_ps2_tp_sensitivity_set(float sensitivity)
 {
+    struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
+
     if(sensitivity < PS2_MOUSE_CMD_TP_SET_SENSITIVITY_MIN ||
        sensitivity > PS2_MOUSE_CMD_TP_SET_SENSITIVITY_MAX)
     {
@@ -1312,6 +1314,8 @@ int zmk_ps2_tp_sensitivity_set(float sensitivity)
         );
         return resp.err;
     }
+
+    data->tp_sensitivity = sensitivity;
 
     return 0;
 }
@@ -1366,6 +1370,8 @@ int zmk_ps2_tp_negative_inertia_get(uint8_t *neg_inertia)
 
 int zmk_ps2_tp_neg_inertia_set(int neg_inertia)
 {
+    struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
+
     if(neg_inertia < PS2_MOUSE_CMD_TP_SET_NEG_INERTIA_MIN ||
        neg_inertia > PS2_MOUSE_CMD_TP_SET_NEG_INERTIA_MAX)
     {
@@ -1394,6 +1400,8 @@ int zmk_ps2_tp_neg_inertia_set(int neg_inertia)
         );
         return resp.err;
     }
+
+    data->tp_neg_inertia = neg_inertia;
 
     return 0;
 }
@@ -1448,6 +1456,8 @@ int zmk_ps2_tp_value6_upper_plateau_speed_get(uint8_t *value6)
 
 int zmk_ps2_tp_value6_upper_plateau_speed_set(int value6)
 {
+    struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
+
     if(value6 < PS2_MOUSE_CMD_TP_SET_VALUE6_UPPER_PLATEAU_SPEED_MIN ||
        value6 > PS2_MOUSE_CMD_TP_SET_VALUE6_UPPER_PLATEAU_SPEED_MAX)
     {
@@ -1476,6 +1486,8 @@ int zmk_ps2_tp_value6_upper_plateau_speed_set(int value6)
         );
         return resp.err;
     }
+
+    data->tp_value6 = value6;
 
     return 0;
 }
@@ -1532,6 +1544,8 @@ int zmk_ps2_tp_pts_threshold_get(uint8_t *pts_threshold)
 
 int zmk_ps2_tp_pts_threshold_set(int pts_threshold)
 {
+    struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
+
     if(pts_threshold < PS2_MOUSE_CMD_TP_SET_PTS_THRESHOLD_MIN ||
        pts_threshold > PS2_MOUSE_CMD_TP_SET_PTS_THRESHOLD_MAX)
     {
@@ -1560,6 +1574,8 @@ int zmk_ps2_tp_pts_threshold_set(int pts_threshold)
         );
         return resp.err;
     }
+
+    data->tp_pts_threshold = pts_threshold;
 
     return 0;
 }
