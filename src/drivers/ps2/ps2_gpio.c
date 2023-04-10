@@ -918,18 +918,23 @@ bool ps2_gpio_get_byte_parity(uint8_t byte);
 // ack bit.
 #define PS2_GPIO_E_WRITE_TRANSMIT 1
 
+// Returned when the semaphore times out. Theoretically this shouldn't be
+// happening. But it can happen if the same thread is used for both the
+// semaphore wait and the inhibition timeout.
+#define PS2_GPIO_E_WRITE_SEM_TIMEOUT 2
+
 // Returned when the write finished seemingly successful, but the
-// device didn't send a response in time
-#define PS2_GPIO_E_WRITE_RESPONSE 2
+// device didn't send a response in time.
+#define PS2_GPIO_E_WRITE_RESPONSE 3
 
 // Returned when the write finished seemingly successful, but the
 // device responded with 0xfe (request to resend) and we ran out of
 // retry attempts.
-#define PS2_GPIO_E_WRITE_RESEND 3
+#define PS2_GPIO_E_WRITE_RESEND 4
 
 // Returned when the write finished seemingly successful, but the
 // device responded with 0xfc (failure / cancel).
-#define PS2_GPIO_E_WRITE_FAILURE 4
+#define PS2_GPIO_E_WRITE_FAILURE 5
 
 
 int ps2_gpio_write_byte(uint8_t byte)
@@ -1054,7 +1059,7 @@ int ps2_gpio_write_byte_blocking(uint8_t byte)
 		);
 
 		ps2_gpio_write_finish(false, "semaphore timeout");
-		return PS2_GPIO_E_WRITE_TRANSMIT;
+		return PS2_GPIO_E_WRITE_SEM_TIMEOUT;
 	}
 
 	if(data->cur_write_status == PS2_GPIO_WRITE_STATUS_SUCCESS) {
