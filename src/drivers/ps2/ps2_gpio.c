@@ -23,7 +23,7 @@ LOG_MODULE_REGISTER(ps2_gpio);
  * Settings
  */
 
-#define PS2_GPIO_WRITE_MAX_RETRY 3
+#define PS2_GPIO_WRITE_MAX_RETRY 5
 #define PS2_GPIO_READ_MAX_RETRY 3
 
 // Custom queue for background PS/2 processing work at low priority
