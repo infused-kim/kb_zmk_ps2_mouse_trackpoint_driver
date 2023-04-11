@@ -494,14 +494,12 @@ void zmk_ps2_mouse_activity_process_cmd(zmk_ps2_mouse_packet_mode packet_mode,
         return;
     }
 
+    zmk_ps2_mouse_activity_click_buttons(
+        packet.button_l, packet.button_m, packet.button_r
+    );
+
     zmk_ps2_mouse_activity_move_mouse(packet.mov_x, packet.mov_y);
     zmk_ps2_mouse_activity_scroll(packet.scroll);
-
-    #if IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_ENABLE_CLICKING)
-        zmk_ps2_mouse_activity_click_buttons(
-            packet.button_l, packet.button_m, packet.button_r
-        );
-    #endif /* IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_ENABLE_CLICKING) */
 
     data->prev_packet = packet;
 }
@@ -659,53 +657,113 @@ void zmk_ps2_mouse_activity_click_buttons(bool button_l,
                                           bool button_r)
 {
     struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
-    bool should_send_report = false;
 
     // TODO: Integrate this with the proper button mask instead
     // of hardcoding the mouse button indeces.
     // Check hid.c and zmk_hid_mouse_buttons_press() for more info.
 
+    int buttons_pressed = 0;
+    int buttons_released = 0;
+
+    // First we check which mouse button press states have changed
+    bool button_l_pressed = false;
+    bool button_l_released = false;
     if(button_l == true && data->button_l_is_held == false) {
-        LOG_INF("Pressing button_l");
-        zmk_hid_mouse_button_press(PS2_MOUSE_BUTTON_L_IDX);
-        data->button_l_is_held = true;
-        should_send_report = true;
+        LOG_INF("Pressed button_l");
+
+        button_l_pressed = true;
+        buttons_pressed++;
     } else if(button_l == false && data->button_l_is_held == true) {
         LOG_INF("Releasing button_l");
-        zmk_hid_mouse_button_release(PS2_MOUSE_BUTTON_L_IDX);
-        data->button_l_is_held = false;
-        should_send_report = true;
+
+        button_l_released = true;
+        buttons_released++;
     }
 
+    bool button_m_released = false;
+    bool button_m_pressed = false;
     if(button_m == true && data->button_m_is_held == false) {
         LOG_INF("Pressing button_m");
-        zmk_hid_mouse_button_press(PS2_MOUSE_BUTTON_M_IDX);
-        data->button_m_is_held = true;
-        should_send_report = true;
+
+        button_m_pressed = true;
+        buttons_pressed++;
     } else if(button_m == false && data->button_m_is_held == true) {
         LOG_INF("Releasing button_m");
-        zmk_hid_mouse_button_release(PS2_MOUSE_BUTTON_M_IDX);
-        data->button_m_is_held = false;
-        should_send_report = true;
+
+        button_m_released = true;
+        buttons_released++;
     }
 
+    bool button_r_released = false;
+    bool button_r_pressed = false;
     if(button_r == true && data->button_r_is_held == false) {
         LOG_INF("Pressing button_r");
-        zmk_hid_mouse_button_press(PS2_MOUSE_BUTTON_R_IDX);
-        data->button_r_is_held = true;
-        should_send_report = true;
+
+        button_r_pressed = true;
+        buttons_pressed++;
     } else if(button_r == false && data->button_r_is_held == true) {
         LOG_INF("Releasing button_r");
-        zmk_hid_mouse_button_release(PS2_MOUSE_BUTTON_R_IDX);
-        data->button_r_is_held = false;
-        should_send_report = true;
+
+        button_r_released = true;
+        buttons_released++;
     }
 
-    // Since mouse clicks generate far few events than movement,
-    // we send them right away instead of using the timer.
-    if(should_send_report) {
-        zmk_endpoints_send_mouse_report();
+    // Then we check if this is likely a transmission error
+    if(buttons_pressed > 1 || buttons_released > 1) {
+        LOG_WRN(
+            "Ignoring button presses: Received %d button presses "
+            "and %d button releases in one packet. "
+            "Probably tranmission error.",
+            buttons_pressed, buttons_released
+        );
+
+        zmk_ps2_mouse_activity_abort_cmd();
+        return;
     }
+
+    #if IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_ENABLE_CLICKING)
+
+        // If it wasn't, we actually send the events.
+        if(buttons_pressed > 0 || buttons_released > 0) {
+
+            // Left button
+            if(button_l_pressed) {
+
+                zmk_hid_mouse_button_press(PS2_MOUSE_BUTTON_L_IDX);
+                data->button_l_is_held = true;
+            } else if(button_l_released) {
+
+                zmk_hid_mouse_button_release(PS2_MOUSE_BUTTON_L_IDX);
+                data->button_l_is_held = false;
+            }
+
+            // Middle Button
+            if(button_m_pressed) {
+
+                zmk_hid_mouse_button_press(PS2_MOUSE_BUTTON_M_IDX);
+                data->button_m_is_held = true;
+            } else if(button_m_released) {
+
+                zmk_hid_mouse_button_release(PS2_MOUSE_BUTTON_M_IDX);
+                data->button_m_is_held = false;
+            }
+
+            // Right button
+            if(button_r_pressed) {
+
+                zmk_hid_mouse_button_press(PS2_MOUSE_BUTTON_R_IDX);
+                data->button_r_is_held = true;
+            } else if(button_r_released) {
+
+                zmk_hid_mouse_button_release(PS2_MOUSE_BUTTON_R_IDX);
+                data->button_r_is_held = false;
+            }
+
+            // Since mouse clicks generate far few events than movement,
+            // we send them right away instead of using the timer.
+            zmk_endpoints_send_mouse_report();
+        }
+    #endif /* IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_ENABLE_CLICKING) */
 }
 
 
