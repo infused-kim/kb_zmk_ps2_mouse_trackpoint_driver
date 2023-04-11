@@ -6,20 +6,22 @@
 
 #define DT_DRV_COMPAT zmk_ps2_mouse
 
+#include <stdlib.h>
+
+#include <dt-bindings/zmk/keys.h>
+#include <dt-bindings/zmk/mouse.h>
+
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
+#include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/ps2.h>
 #include <zephyr/sys/util.h>
-#include <zmk/hid.h>
-#include <zmk/endpoints.h>
-#include <dt-bindings/zmk/mouse.h>
-#include <zmk/events/mouse_move_state_changed.h>
+
 #include <zmk/behavior_queue.h>
-#include <dt-bindings/zmk/mouse.h>
-#include <dt-bindings/zmk/keys.h>
+#include <zmk/endpoints.h>
 #include <zmk/events/mouse_tick.h>
-#include <zephyr/drivers/gpio.h>
-#include <stdlib.h>
+#include <zmk/events/mouse_move_state_changed.h>
+#include <zmk/hid.h>
 
 #if DT_HAS_COMPAT_STATUS_OKAY(DT_DRV_COMPAT)
 
