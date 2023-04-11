@@ -21,7 +21,7 @@
 #include <zephyr/drivers/gpio.h>
 #include <stdlib.h>
 
-// #if DT_HAS_COMPAT_STATUS_OKAY(DT_DRV_COMPAT)
+#if DT_HAS_COMPAT_STATUS_OKAY(DT_DRV_COMPAT)
 
 #include <zephyr/logging/log.h>
 
@@ -1927,4 +1927,4 @@ DEVICE_DT_INST_DEFINE(
 	NULL
 );
 
-// #endif /* DT_HAS_COMPAT_STATUS_OKAY(DT_DRV_COMPAT) */
+#endif /* DT_HAS_COMPAT_STATUS_OKAY(DT_DRV_COMPAT) */
