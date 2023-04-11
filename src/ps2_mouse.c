@@ -464,6 +464,16 @@ void zmk_ps2_mouse_activity_process_cmd(zmk_ps2_mouse_packet_mode packet_mode,
         x_delta, y_delta
     );
 
+    if(packet.overflow_x == 1 && packet.overflow_y == 1) {
+        LOG_WRN(
+            "Detected overflow in both x and y. "
+            "Probably mistransmission. Aborting..."
+        );
+
+        zmk_ps2_mouse_activity_abort_cmd();
+        return;
+    }
+
     // If the mouse exceeds the allowed threshold of movement, it's probably
     // a mistransmission or misalignment.
     // But we only do this check if there was prior movement that wasn't reset
