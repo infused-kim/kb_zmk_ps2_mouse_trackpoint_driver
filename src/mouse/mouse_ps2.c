@@ -37,7 +37,7 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 // Mouse activity packets are at least three bytes.
 // This defines how much time between bytes can pass before
 // we give up on the packet and start fresh.
-#define MOUSE_PS2_TIMEOUT_CMD_BUFFER K_MSEC(500)
+#define MOUSE_PS2_TIMEOUT_ACTIVITY_PACKET K_MSEC(500)
 
 /*
  * PS/2 Defines
@@ -182,10 +182,10 @@ struct zmk_mouse_ps2_data {
     struct k_thread thread;
 
     zmk_mouse_ps2_packet_mode packet_mode;
-    uint8_t cmd_buffer[4];
-    int cmd_idx;
+    uint8_t packet_buffer[4];
+    int packet_idx;
     struct zmk_mouse_ps2_packet prev_packet;
-    struct k_work_delayable cmd_buffer_timeout;
+    struct k_work_delayable packet_buffer_timeout;
 
     // Stores the x and y coordinates between reporting to the os
     struct vector2d move_speed;
@@ -225,7 +225,7 @@ static const struct zmk_mouse_ps2_config zmk_mouse_ps2_config = {
 
 static struct zmk_mouse_ps2_data zmk_mouse_ps2_data = {
     .packet_mode = MOUSE_PS2_PACKET_MODE_PS2_DEFAULT,
-    .cmd_idx = 0,
+    .packet_idx = 0,
     .prev_packet = {
         .button_l = false,
         .button_r = false,
@@ -286,24 +286,27 @@ int zmk_mouse_ps2_settings_save();
  * Mouse Activity Packet Reading
  */
 
-void zmk_mouse_ps2_activity_process_cmd(zmk_mouse_ps2_packet_mode packet_mode,
-                                        uint8_t cmd_state,
-                                        uint8_t cmd_x,
-                                        uint8_t cmd_y,
-                                        uint8_t cmd_extra);
+void zmk_mouse_ps2_activity_process_cmd(
+    zmk_mouse_ps2_packet_mode packet_mode,
+    uint8_t packet_state,
+    uint8_t packet_x,
+    uint8_t packet_y,
+    uint8_t packet_extra
+);
 void zmk_mouse_ps2_activity_abort_cmd();
 void zmk_mouse_ps2_activity_move_mouse(int16_t mov_x, int16_t mov_y);
 void zmk_mouse_ps2_activity_scroll(int8_t scroll_y);
 void zmk_mouse_ps2_activity_click_buttons(bool button_l,
                                           bool button_m,
                                           bool button_r);
-void zmk_mouse_ps2_activity_reset_cmd_buffer();
-struct zmk_mouse_ps2_packet
-zmk_mouse_ps2_activity_parse_cmd_buffer(zmk_mouse_ps2_packet_mode packet_mode,
-                                        uint8_t cmd_state,
-                                        uint8_t cmd_x,
-                                        uint8_t cmd_y,
-                                        uint8_t cmd_extra);
+void zmk_mouse_ps2_activity_reset_packet_buffer();
+struct zmk_mouse_ps2_packet zmk_mouse_ps2_activity_parse_packet_buffer(
+    zmk_mouse_ps2_packet_mode packet_mode,
+    uint8_t packet_state,
+    uint8_t packet_x,
+    uint8_t packet_y,
+    uint8_t packet_extra
+);
 
 
 // Called by the PS/2 driver whenver the mouse sends a byte and
@@ -313,13 +316,13 @@ void zmk_mouse_ps2_activity_callback(const struct device *ps2_device,
 {
     struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
 
-    k_work_cancel_delayable(&data->cmd_buffer_timeout);
+    k_work_cancel_delayable(&data->packet_buffer_timeout);
 
     // LOG_DBG("Received mouse movement data: 0x%x", byte);
 
-    data->cmd_buffer[data->cmd_idx] = byte;
+    data->packet_buffer[data->packet_idx] = byte;
 
-    if(data->cmd_idx == 0) {
+    if(data->packet_idx == 0) {
 
         // Bit 3 of the first command byte should always be 1
         // If it is not, then we are definitely out of alignment.
@@ -331,29 +334,29 @@ void zmk_mouse_ps2_activity_callback(const struct device *ps2_device,
             zmk_mouse_ps2_activity_abort_cmd();
             return;
         }
-    } else if(data->cmd_idx == 1) {
+    } else if(data->packet_idx == 1) {
         // Do nothing
     } else if(
         (data->packet_mode == MOUSE_PS2_PACKET_MODE_PS2_DEFAULT &&
-         data->cmd_idx == 2) ||
+         data->packet_idx == 2) ||
         (data->packet_mode == MOUSE_PS2_PACKET_MODE_SCROLL &&
-         data->cmd_idx == 3)
+         data->packet_idx == 3)
     ) {
 
         zmk_mouse_ps2_activity_process_cmd(
             data->packet_mode,
-            data->cmd_buffer[0],
-            data->cmd_buffer[1],
-            data->cmd_buffer[2],
-            data->cmd_buffer[3]
+            data->packet_buffer[0],
+            data->packet_buffer[1],
+            data->packet_buffer[2],
+            data->packet_buffer[3]
         );
-        zmk_mouse_ps2_activity_reset_cmd_buffer();
+        zmk_mouse_ps2_activity_reset_packet_buffer();
         return;
     }
 
-    data->cmd_idx += 1;
+    data->packet_idx += 1;
 
-	k_work_schedule(&data->cmd_buffer_timeout, MOUSE_PS2_TIMEOUT_CMD_BUFFER);
+	k_work_schedule(&data->packet_buffer_timeout, MOUSE_PS2_TIMEOUT_ACTIVITY_PACKET);
 }
 
 void zmk_mouse_ps2_activity_abort_cmd() {
@@ -365,10 +368,10 @@ void zmk_mouse_ps2_activity_abort_cmd() {
         "PS/2 Mouse cmd buffer is out of aligment. Requesting resend."
     );
 
-    data->cmd_idx = 0;
+    data->packet_idx = 0;
     ps2_write(ps2_device, MOUSE_PS2_CMD_RESEND[0]);
 
-    zmk_mouse_ps2_activity_reset_cmd_buffer();
+    zmk_mouse_ps2_activity_reset_packet_buffer();
 }
 
 // Called if the PS/2 driver encounters a transmission error and asks the
@@ -380,52 +383,47 @@ void zmk_mouse_ps2_activity_resend_callback(const struct device *ps2_device)
     struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
 
     LOG_WRN(
-        "Mouse movement cmd had transmission error on idx=%d", data->cmd_idx
+        "Mouse movement cmd had transmission error on idx=%d", data->packet_idx
     );
 
-    zmk_mouse_ps2_activity_reset_cmd_buffer();
+    zmk_mouse_ps2_activity_reset_packet_buffer();
 }
 
 // Called if no new byte arrives within
-// MOUSE_PS2_TIMEOUT_CMD_BUFFER
-void zmk_mouse_ps2_activity_cmd_timout(struct k_work *item)
+// MOUSE_PS2_TIMEOUT_ACTIVITY_PACKET
+void zmk_mouse_ps2_activity_packet_timout(struct k_work *item)
 {
     struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
 
-    LOG_DBG("Mouse movement cmd timed out on idx=%d", data->cmd_idx);
+    LOG_DBG("Mouse movement cmd timed out on idx=%d", data->packet_idx);
 
     // Reset the cmd buffer in case we are out of alignment.
     // This way if the mouse ever gets out of alignment, the user
     // can reset it by just not moving it for a second.
-    zmk_mouse_ps2_activity_reset_cmd_buffer();
+    zmk_mouse_ps2_activity_reset_packet_buffer();
 }
 
-void zmk_mouse_ps2_activity_reset_cmd_buffer()
+void zmk_mouse_ps2_activity_reset_packet_buffer()
 {
     struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
 
-    data->cmd_idx = 0;
-    memset(data->cmd_buffer, 0x0, sizeof(data->cmd_buffer));
+    data->packet_idx = 0;
+    memset(data->packet_buffer, 0x0, sizeof(data->packet_buffer));
 }
 
-void zmk_mouse_ps2_activity_process_cmd(zmk_mouse_ps2_packet_mode packet_mode,
-                                        uint8_t cmd_state,
-                                        uint8_t cmd_x,
-                                        uint8_t cmd_y,
-                                        uint8_t cmd_extra)
+void zmk_mouse_ps2_activity_process_cmd(
+    zmk_mouse_ps2_packet_mode packet_mode,
+    uint8_t packet_state,
+    uint8_t packet_x,
+    uint8_t packet_y,
+    uint8_t packet_extra
+)
 {
     struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
-
-    LOG_DBG(
-        "zmk_mouse_ps2_activity_process_cmd "
-        "Got state=0x%x x=0x%x, y=0x%x, extra=0x%x",
-        cmd_state, cmd_x, cmd_y, cmd_extra
-    );
-
     struct zmk_mouse_ps2_packet packet;
-    packet = zmk_mouse_ps2_activity_parse_cmd_buffer(
+    packet = zmk_mouse_ps2_activity_parse_packet_buffer(
         packet_mode,
-        cmd_state, cmd_x, cmd_y, cmd_extra
+        packet_state, packet_x, packet_y, packet_extra
     );
 
     int x_delta = abs(data->prev_packet.mov_x - packet.mov_x);
@@ -453,8 +451,8 @@ void zmk_mouse_ps2_activity_process_cmd(zmk_mouse_ps2_packet_mode packet_mode,
 
     // If the mouse exceeds the allowed threshold of movement, it's probably
     // a mistransmission or misalignment.
-    // But we only do this check if there was prior movement that wasn't reset
-    // in `zmk_mouse_ps2_activity_cmd_timout`.
+    // But we only do this check if there was prior movement that wasn't
+    // reset in `zmk_mouse_ps2_activity_packet_timout`.
     if((data->move_speed.x != 0 && data->move_speed.y != 0) &&
        (x_delta > 150  || y_delta > 150))
     {
@@ -474,27 +472,27 @@ void zmk_mouse_ps2_activity_process_cmd(zmk_mouse_ps2_packet_mode packet_mode,
     zmk_mouse_ps2_activity_click_buttons(
         packet.button_l, packet.button_m, packet.button_r
     );
-
     zmk_mouse_ps2_activity_move_mouse(packet.mov_x, packet.mov_y);
     zmk_mouse_ps2_activity_scroll(packet.scroll);
 
     data->prev_packet = packet;
 }
 
-struct zmk_mouse_ps2_packet
-zmk_mouse_ps2_activity_parse_cmd_buffer(zmk_mouse_ps2_packet_mode packet_mode,
-                                        uint8_t cmd_state,
-                                        uint8_t cmd_x,
-                                        uint8_t cmd_y,
-                                        uint8_t cmd_extra)
+struct zmk_mouse_ps2_packet zmk_mouse_ps2_activity_parse_packet_buffer(
+    zmk_mouse_ps2_packet_mode packet_mode,
+    uint8_t packet_state,
+    uint8_t packet_x,
+    uint8_t packet_y,
+    uint8_t packet_extra
+)
 {
     struct zmk_mouse_ps2_packet packet;
 
-    packet.button_l = MOUSE_PS2_GET_BIT(cmd_state, 0);
-    packet.button_r = MOUSE_PS2_GET_BIT(cmd_state, 1);
-    packet.button_m = MOUSE_PS2_GET_BIT(cmd_state, 2);
-    packet.overflow_x = MOUSE_PS2_GET_BIT(cmd_state, 6);
-    packet.overflow_y = MOUSE_PS2_GET_BIT(cmd_state, 7);
+    packet.button_l = MOUSE_PS2_GET_BIT(packet_state, 0);
+    packet.button_r = MOUSE_PS2_GET_BIT(packet_state, 1);
+    packet.button_m = MOUSE_PS2_GET_BIT(packet_state, 2);
+    packet.overflow_x = MOUSE_PS2_GET_BIT(packet_state, 6);
+    packet.overflow_y = MOUSE_PS2_GET_BIT(packet_state, 7);
     packet.scroll = 0;
 
     // The coordinates are delivered as a signed 9bit integers.
@@ -517,8 +515,8 @@ zmk_mouse_ps2_activity_parse_cmd_buffer(zmk_mouse_ps2_packet_mode packet_mode,
     //
     // The code below creates a signed int and is from...
     // https://wiki.osdev.org/PS/2_Mouse
-    packet.mov_x = cmd_x - ((cmd_state << 4) & 0x100);
-    packet.mov_y = cmd_y - ((cmd_state << 3) & 0x100);
+    packet.mov_x = packet_x - ((packet_state << 4) & 0x100);
+    packet.mov_y = packet_y - ((packet_state << 3) & 0x100);
 
     // If packet mode scroll or scroll+5 buttons is used,
     // then the first 4 bit of the extra byte are used for the
@@ -527,20 +525,20 @@ zmk_mouse_ps2_activity_parse_cmd_buffer(zmk_mouse_ps2_packet_mode packet_mode,
     if(packet_mode == MOUSE_PS2_PACKET_MODE_SCROLL) {
         MOUSE_PS2_SET_BIT(
             packet.scroll,
-            MOUSE_PS2_GET_BIT(cmd_extra, 0),
+            MOUSE_PS2_GET_BIT(packet_extra, 0),
             0
         );
         MOUSE_PS2_SET_BIT(
             packet.scroll,
-            MOUSE_PS2_GET_BIT(cmd_extra, 1),
+            MOUSE_PS2_GET_BIT(packet_extra, 1),
             1
         );
         MOUSE_PS2_SET_BIT(
             packet.scroll,
-            MOUSE_PS2_GET_BIT(cmd_extra, 2),
+            MOUSE_PS2_GET_BIT(packet_extra, 2),
             2
         );
-        packet.scroll = cmd_extra - ((packet.scroll << 3) & 0x100);
+        packet.scroll = packet_extra - ((packet.scroll << 3) & 0x100);
     }
 
     return packet;
@@ -580,7 +578,7 @@ void zmk_mouse_ps2_tick_timer_cb(struct k_timer *dummy) {
     struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
 
     // LOG_DBG("Submitting mouse work to queue");
-    // Calls zmk_mouse_ps2_tick_timer_handler
+    // Calls zmk_mouse_ps2_tick_timer_handler on our work queue
     k_work_submit_to_queue(zmk_mouse_work_q(), &data->mouse_tick);
 }
 
@@ -2012,7 +2010,7 @@ static void zmk_mouse_ps2_init_thread(int dev_ptr, int unused) {
     );
     k_work_init(&data->mouse_tick, zmk_mouse_ps2_tick_timer_handler);
     k_work_init_delayable(
-        &data->cmd_buffer_timeout, zmk_mouse_ps2_activity_cmd_timout
+        &data->packet_buffer_timeout, zmk_mouse_ps2_activity_packet_timout
     );
 
 	return;
