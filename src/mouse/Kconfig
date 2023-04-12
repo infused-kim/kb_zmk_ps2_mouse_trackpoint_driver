@@ -1,6 +1,8 @@
 # Copyright (c) 2023 The ZMK Contributors
 # SPDX-License-Identifier: MIT
 
+DT_COMPAT_ZMK_PS2_MOUSE := zmk,mouse-ps2
+
 menuconfig ZMK_MOUSE_PS2
 	bool "Enable PS/2 mouse support"
 
