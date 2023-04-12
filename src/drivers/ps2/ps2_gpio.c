@@ -518,7 +518,7 @@ struct k_work interrupt_log_print_worker;
 void ps2_gpio_interrupt_log_add(char *msg, uint8_t *arg);
 void ps2_gpio_interrupt_log_print();
 void ps2_gpio_interrupt_log_clear();
-void strncat_hex(char *dst, uint8_t val, size_t dst_size);
+void ps2_gpio_strncat_hex(char *dst, uint8_t val, size_t dst_size);
 char *ps2_gpio_interrupt_log_get_mode_str();
 void ps2_gpio_interrupt_log_get_pos_str(int pos,
 										char *pos_str,
@@ -537,7 +537,7 @@ void ps2_gpio_interrupt_log_add(char *msg, uint8_t *arg)
     // va_end(arglist);
 	strncpy(l.msg, msg, sizeof(l.msg) - 1);
 	if(arg != NULL) {
-		strncat_hex(l.msg, *arg, sizeof(l.msg));
+		ps2_gpio_strncat_hex(l.msg, *arg, sizeof(l.msg));
 	}
 
 	l.scl = ps2_gpio_get_scl();
@@ -605,7 +605,7 @@ void ps2_gpio_interrupt_log_scl_timeout(struct k_work *item)
 	// PS2_GPIO_INTERRUPT_LOG_SCL_TIMEOUT ms
 	ps2_gpio_interrupt_log_print();
 
-void strncat_hex(char *dst, uint8_t val, size_t dst_size) {
+void ps2_gpio_strncat_hex(char *dst, uint8_t val, size_t dst_size) {
     const char hex_chars[] = "0123456789abcdef";
 	char val_hex[5];
 
