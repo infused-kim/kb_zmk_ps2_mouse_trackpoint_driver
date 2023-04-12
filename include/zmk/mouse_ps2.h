@@ -6,9 +6,6 @@
 
 #pragma once
 
-int zmk_ps2_set_sampling_rate_decr();
-int zmk_ps2_set_sampling_rate_incr();
-
 int zmk_ps2_tp_sensitivity_incr(int incr_amount);
 int zmk_ps2_tp_sensitivity_decr(int decr_amount);
 

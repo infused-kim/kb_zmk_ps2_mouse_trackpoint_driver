@@ -19,10 +19,6 @@ static int on_keymap_binding_pressed(struct zmk_behavior_binding *binding,
                                      struct zmk_behavior_binding_event event)
 {
     switch (binding->param1) {
-        case MS_SAMPLING_RATE_INCR:
-            return zmk_ps2_set_sampling_rate_incr();
-        case MS_SAMPLING_RATE_DECR:
-            return zmk_ps2_set_sampling_rate_decr();
 
         case MS_TP_SENSITIVITY_INCR:
             return zmk_ps2_tp_sensitivity_incr(INCREMENT_TP_SENSITIVITY);

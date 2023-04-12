@@ -1060,47 +1060,6 @@ int zmk_ps2_set_sampling_rate(uint8_t sampling_rate)
     return resp.err;
 }
 
-int zmk_ps2_set_sampling_rate_incr() {
-    struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
-
-    int next_rate = array_get_next_elem(
-        data->sampling_rate,
-        allowed_sampling_rates, sizeof(allowed_sampling_rates)
-    );
-    if(next_rate == -1) {
-        LOG_ERR(
-            "Could not increase sampling rate from %d. Already the max rate",
-            data->sampling_rate
-        );
-
-        return -1;
-    }
-
-    LOG_DBG("zmk_ps2_send_cmd_sampling_rate_incr setting %d", next_rate);
-
-    return zmk_ps2_set_sampling_rate(next_rate);
-}
-
-int zmk_ps2_set_sampling_rate_decr() {
-    struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
-
-    int prev_rate = array_get_prev_elem(
-        data->sampling_rate,
-        allowed_sampling_rates, sizeof(allowed_sampling_rates)
-    );
-    if(prev_rate == -1) {
-        LOG_ERR(
-            "Could not decrease sampling rate from %d. Already the min rate",
-            data->sampling_rate
-        );
-
-        return -1;
-    }
-
-    LOG_DBG("zmk_ps2_send_cmd_sampling_rate_decr setting %d", prev_rate);
-    return zmk_ps2_set_sampling_rate(prev_rate);
-}
-
 int zmk_ps2_get_device_id(uint8_t *device_id)
 {
 

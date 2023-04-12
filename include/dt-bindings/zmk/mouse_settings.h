@@ -5,9 +5,6 @@
  */
 #pragma once
 
-#define MS_SAMPLING_RATE_INCR 0
-#define MS_SAMPLING_RATE_DECR 1
-
 #define MS_TP_SENSITIVITY_INCR 10
 #define MS_TP_SENSITIVITY_DECR 11
 
