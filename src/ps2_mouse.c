@@ -8,13 +8,13 @@
 
 #include <stdlib.h>
 
-#include <dt-bindings/zmk/keys.h>
 #include <dt-bindings/zmk/mouse.h>
 
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/ps2.h>
+#include <zephyr/settings/settings.h>
 #include <zephyr/sys/util.h>
 
 #include <zmk/behavior_queue.h>
@@ -79,6 +79,7 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #define PS2_MOUSE_CMD_TP_SET_CONFIG_BYTE "\xe2\x81\x2c"
 #define PS2_MOUSE_CMD_TP_SET_CONFIG_BYTE_RESP_LEN 0
 
+#define PS2_MOUSE_ST_TP_SENSITIVITY "tp_sensitivity"
 #define PS2_MOUSE_CMD_TP_GET_SENSITIVITY "\xe2\x80\x4a"
 #define PS2_MOUSE_CMD_TP_GET_SENSITIVITY_RESP_LEN 1
 
@@ -88,6 +89,7 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #define PS2_MOUSE_CMD_TP_SET_SENSITIVITY_MAX 255
 #define PS2_MOUSE_CMD_TP_SET_SENSITIVITY_DEFAULT 128
 
+#define PS2_MOUSE_ST_TP_NEG_INERTIA "tp_neg_inertia"
 #define PS2_MOUSE_CMD_TP_GET_NEG_INERTIA "\xe2\x80\x4d"
 #define PS2_MOUSE_CMD_TP_GET_NEG_INERTIA_RESP_LEN 1
 
@@ -97,6 +99,7 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #define PS2_MOUSE_CMD_TP_SET_NEG_INERTIA_MAX 255
 #define PS2_MOUSE_CMD_TP_SET_NEG_INERTIA_DEFAULT 0x06
 
+#define PS2_MOUSE_ST_TP_VALUE6 "tp_value6"
 #define PS2_MOUSE_CMD_TP_GET_VALUE6_UPPER_PLATEAU_SPEED "\xe2\x80\x60"
 #define PS2_MOUSE_CMD_TP_GET_VALUE6_UPPER_PLATEAU_SPEED_RESP_LEN 1
 
@@ -106,6 +109,7 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #define PS2_MOUSE_CMD_TP_SET_VALUE6_UPPER_PLATEAU_SPEED_MAX 255
 #define PS2_MOUSE_CMD_TP_SET_VALUE6_UPPER_PLATEAU_SPEED_DEFAULT 0x61
 
+#define PS2_MOUSE_ST_TP_PTS_THRESHOLD "tp_pts_threshold"
 #define PS2_MOUSE_CMD_TP_GET_PTS_THRESHOLD "\xe2\x80\x5c"
 #define PS2_MOUSE_CMD_TP_GET_PTS_THRESHOLD_RESP_LEN 1
 
@@ -143,6 +147,8 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 /*
  * Global Variables
  */
+
+#define MOUSE_PS2_SETTINGS_SUBTREE "mouse_ps2"
 
 typedef enum
 {
@@ -189,6 +195,7 @@ struct zmk_ps2_mouse_data {
     bool button_r_is_held;
 
     bool activity_reporting_on;
+    bool is_trackpoint;
 
     uint8_t sampling_rate;
     uint8_t tp_sensitivity;
@@ -236,6 +243,7 @@ static struct zmk_ps2_mouse_data zmk_ps2_mouse_data = {
 
     // Data reporting is disabled on init
     .activity_reporting_on = false,
+    .is_trackpoint = false,
 
     // PS2 devices initialize with this rate
     .sampling_rate = PS2_MOUSE_CMD_SET_SAMPLING_RATE_DEFAULT,
@@ -254,6 +262,13 @@ static int allowed_sampling_rates[] = {
     100,
     200,
 };
+
+
+/*
+ * Function Definitions
+ */
+
+int zmk_mouse_ps2_settings_save();
 
 /*
  * Helpers
@@ -1401,7 +1416,7 @@ int zmk_ps2_tp_sensitivity_incr(int incr_amount)
     int err = zmk_ps2_tp_sensitivity_set(new_val);
     if(err == 0) {
 
-        zmk_mouse_ps2_save_settings();
+        zmk_mouse_ps2_settings_save();
     }
 
     return err;
@@ -1417,7 +1432,7 @@ int zmk_ps2_tp_sensitivity_decr(int decr_amount)
     int err = zmk_ps2_tp_sensitivity_set(new_val);
     if(err == 0) {
 
-        zmk_mouse_ps2_save_settings();
+        zmk_mouse_ps2_settings_save();
     }
 
     return err;
@@ -1493,6 +1508,10 @@ int zmk_ps2_tp_neg_inertia_incr(int incr_amount)
 
     LOG_INF("Setting negative inertia to %d", new_val);
     int err = zmk_ps2_tp_neg_inertia_set(new_val);
+    if(err == 0) {
+
+        zmk_mouse_ps2_settings_save();
+    }
 
     return err;
 }
@@ -1505,6 +1524,10 @@ int zmk_ps2_tp_neg_inertia_decr(int decr_amount)
 
     LOG_INF("Setting negative inertia to %d", new_val);
     int err = zmk_ps2_tp_neg_inertia_set(new_val);
+    if(err == 0) {
+
+        zmk_mouse_ps2_settings_save();
+    }
 
     return err;
 }
@@ -1579,6 +1602,10 @@ int zmk_ps2_tp_value6_upper_plateau_speed_incr(int incr_amount)
 
     LOG_INF("Setting value6 upper plateau speed to %d", new_val);
     int err = zmk_ps2_tp_value6_upper_plateau_speed_set(new_val);
+    if(err == 0) {
+
+        zmk_mouse_ps2_settings_save();
+    }
 
     return err;
 }
@@ -1591,6 +1618,10 @@ int zmk_ps2_tp_value6_upper_plateau_speed_decr(int decr_amount)
 
     LOG_INF("Setting value6 upper plateau speed to %d", new_val);
     int err = zmk_ps2_tp_value6_upper_plateau_speed_set(new_val);
+    if(err == 0) {
+
+        zmk_mouse_ps2_settings_save();
+    }
 
     return err;
 }
@@ -1667,6 +1698,10 @@ int zmk_ps2_tp_pts_threshold_incr(int incr_amount)
 
     LOG_INF("Setting press-to-select threshold to %d", new_val);
     int err = zmk_ps2_tp_pts_threshold_set(new_val);
+    if(err == 0) {
+
+        zmk_mouse_ps2_settings_save();
+    }
 
     return err;
 }
@@ -1679,8 +1714,173 @@ int zmk_ps2_tp_pts_threshold_decr(int decr_amount)
 
     LOG_INF("Setting press-to-select threshold to %d", new_val);
     int err = zmk_ps2_tp_pts_threshold_set(new_val);
+    if(err == 0) {
+
+        zmk_mouse_ps2_settings_save();
+    }
 
     return err;
+}
+
+/*
+ * State Saving
+ */
+
+#if IS_ENABLED(CONFIG_SETTINGS)
+
+struct k_work_delayable zmk_mouse_ps2_save_work;
+
+int zmk_mouse_ps2_settings_save_setting(char *setting_name,
+                                        const void *value,
+                                        size_t val_len)
+{
+    char setting_path[40];
+    snprintf(
+        setting_path,
+        sizeof(setting_path),
+        "%s/%s",
+        MOUSE_PS2_SETTINGS_SUBTREE,
+        setting_name
+    );
+
+    LOG_DBG("Saving setting to `%s`", setting_path);
+    int err = settings_save_one(setting_path, value, val_len);
+    if(err) {
+        LOG_ERR("Could not save setting to `%s`: %d", setting_path, err);
+    }
+
+    return err;
+}
+
+static void zmk_mouse_ps2_settings_save_work(struct k_work *work)
+{
+    struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
+
+    LOG_DBG("");
+
+    zmk_mouse_ps2_settings_save_setting(
+        PS2_MOUSE_ST_TP_SENSITIVITY,
+        &data->tp_sensitivity,
+        sizeof(data->tp_sensitivity)
+    );
+    zmk_mouse_ps2_settings_save_setting(
+        PS2_MOUSE_ST_TP_NEG_INERTIA,
+        &data->tp_neg_inertia,
+        sizeof(data->tp_neg_inertia)
+    );
+    zmk_mouse_ps2_settings_save_setting(
+        PS2_MOUSE_ST_TP_VALUE6,
+        &data->tp_value6,
+        sizeof(data->tp_value6)
+    );
+    zmk_mouse_ps2_settings_save_setting(
+        PS2_MOUSE_ST_TP_PTS_THRESHOLD,
+        &data->tp_pts_threshold,
+        sizeof(data->tp_pts_threshold)
+    );
+}
+#endif
+
+int zmk_mouse_ps2_settings_save() {
+    LOG_DBG("");
+
+#if IS_ENABLED(CONFIG_SETTINGS)
+    int ret = k_work_reschedule(
+        &zmk_mouse_ps2_save_work,
+        K_MSEC(CONFIG_ZMK_SETTINGS_SAVE_DEBOUNCE)
+    );
+    return MIN(ret, 0);
+#else
+    return 0;
+#endif
+}
+
+// This function is called when settings are loaded from flash by
+// `settings_load_subtree`.
+// It's called once for each PS/2 mouse setting that has been stored.
+static int zmk_mouse_ps2_settings_restore(const char *name,
+                                          size_t len,
+                                          settings_read_cb read_cb,
+                                          void *cb_arg)
+{
+    struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
+    uint8_t setting_val;
+
+    if (len != sizeof(setting_val)) {
+        LOG_ERR(
+            "Could not restore settings %s: Len mismatch",
+            name
+        );
+
+        return -EINVAL;
+    }
+
+    int rc = read_cb(cb_arg, &setting_val, sizeof(setting_val));
+    if (rc <= 0) {
+        LOG_ERR("Could not restore setting %s: %d", name, rc);
+        return -EINVAL;
+    }
+
+    if(data->is_trackpoint == false) {
+        LOG_INF(
+            "Mouse device is not a trackpoint. Not restoring setting %s.",
+            name
+        );
+
+        return 0;
+    }
+
+    LOG_INF("Restoring setting %s with value: %d", name, setting_val);
+
+    if(strcmp(name, PS2_MOUSE_ST_TP_SENSITIVITY) == 0) {
+
+        return zmk_ps2_tp_sensitivity_set(setting_val);
+    } else if(strcmp(name, PS2_MOUSE_ST_TP_NEG_INERTIA) == 0) {
+
+        return zmk_ps2_tp_neg_inertia_set(setting_val);
+    } else if(strcmp(name, PS2_MOUSE_ST_TP_VALUE6) == 0) {
+
+        return zmk_ps2_tp_value6_upper_plateau_speed_set(setting_val);
+    } else if(strcmp(name, PS2_MOUSE_ST_TP_PTS_THRESHOLD) == 0) {
+
+        return zmk_ps2_tp_pts_threshold_set(setting_val);
+    }
+
+    return -EINVAL;
+}
+
+
+struct settings_handler zmk_mouse_ps2_settings_conf = {
+    .name = MOUSE_PS2_SETTINGS_SUBTREE,
+    .h_set = zmk_mouse_ps2_settings_restore,
+};
+
+int zmk_mouse_ps2_settings_init() {
+#if IS_ENABLED(CONFIG_SETTINGS)
+    LOG_DBG("");
+
+    settings_subsys_init();
+
+    int err = settings_register(&zmk_mouse_ps2_settings_conf);
+    if (err) {
+        LOG_ERR(
+            "Failed to register the PS/2 mouse settings handler (err %d)",
+            err
+        );
+        return err;
+    }
+
+    k_work_init_delayable(
+        &zmk_mouse_ps2_save_work,
+        zmk_mouse_ps2_settings_save_work
+    );
+
+    // This will load the settings and then call
+    // `zmk_mouse_ps2_settings_restore`, which will set the settings
+    settings_load_subtree(MOUSE_PS2_SETTINGS_SUBTREE);
+#endif
+
+    return 0;
 }
 
 /*
@@ -1746,6 +1946,7 @@ static void zmk_ps2_mouse_init_thread(int dev_ptr, int unused) {
 
     if(zmk_ps2_is_device_trackpoint() == true) {
         LOG_INF("Device is a trackpoint");
+        data->is_trackpoint = true;
 
         #if IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_TP_TAP_TO_SELECT)
             LOG_INF("Enabling trackpoint press to select...");
@@ -1773,6 +1974,8 @@ static void zmk_ps2_mouse_init_thread(int dev_ptr, int unused) {
         LOG_INF("Enabling scroll mode.");
         zmk_ps2_set_packet_mode(PS2_MOUSE_PACKET_MODE_SCROLL);
     #endif /* IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_SCROLL) */
+
+    zmk_mouse_ps2_settings_init();
 
     // Configure read callback
 	LOG_DBG("Configuring ps2 callback...");
