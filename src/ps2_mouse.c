@@ -14,6 +14,7 @@
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/ps2.h>
+#include <zephyr/logging/log.h>
 #include <zephyr/settings/settings.h>
 #include <zephyr/sys/util.h>
 
@@ -23,8 +24,6 @@
 #include <zmk/events/mouse_move_state_changed.h>
 #include <zmk/hid.h>
 
-
-#include <zephyr/logging/log.h>
 
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
