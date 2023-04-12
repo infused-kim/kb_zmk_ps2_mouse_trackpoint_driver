@@ -1372,27 +1372,11 @@ int zmk_ps2_tp_sensitivity_set(int sensitivity)
     return 0;
 }
 
-int zmk_ps2_tp_sensitivity_incr(int incr_amount)
+int zmk_ps2_tp_sensitivity_change(int amount)
 {
     struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
 
-    int new_val = data->tp_sensitivity + incr_amount;
-
-    LOG_INF("Setting trackpoint sensitivity to %d", new_val);
-    int err = zmk_ps2_tp_sensitivity_set(new_val);
-    if(err == 0) {
-
-        zmk_mouse_ps2_settings_save();
-    }
-
-    return err;
-}
-
-int zmk_ps2_tp_sensitivity_decr(int decr_amount)
-{
-    struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
-
-    int new_val = data->tp_sensitivity - decr_amount;
+    int new_val = data->tp_sensitivity + amount;
 
     LOG_INF("Setting trackpoint sensitivity to %d", new_val);
     int err = zmk_ps2_tp_sensitivity_set(new_val);
@@ -1466,27 +1450,11 @@ int zmk_ps2_tp_neg_inertia_set(int neg_inertia)
     return 0;
 }
 
-int zmk_ps2_tp_neg_inertia_incr(int incr_amount)
+int zmk_ps2_tp_neg_inertia_change(int amount)
 {
     struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
 
-    int new_val = data->tp_neg_inertia + incr_amount;
-
-    LOG_INF("Setting negative inertia to %d", new_val);
-    int err = zmk_ps2_tp_neg_inertia_set(new_val);
-    if(err == 0) {
-
-        zmk_mouse_ps2_settings_save();
-    }
-
-    return err;
-}
-
-int zmk_ps2_tp_neg_inertia_decr(int decr_amount)
-{
-    struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
-
-    int new_val = data->tp_neg_inertia - decr_amount;
+    int new_val = data->tp_neg_inertia + amount;
 
     LOG_INF("Setting negative inertia to %d", new_val);
     int err = zmk_ps2_tp_neg_inertia_set(new_val);
@@ -1560,27 +1528,11 @@ int zmk_ps2_tp_value6_upper_plateau_speed_set(int value6)
     return 0;
 }
 
-int zmk_ps2_tp_value6_upper_plateau_speed_incr(int incr_amount)
+int zmk_ps2_tp_value6_upper_plateau_speed_change(int amount)
 {
     struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
 
-    int new_val = data->tp_value6 + incr_amount;
-
-    LOG_INF("Setting value6 upper plateau speed to %d", new_val);
-    int err = zmk_ps2_tp_value6_upper_plateau_speed_set(new_val);
-    if(err == 0) {
-
-        zmk_mouse_ps2_settings_save();
-    }
-
-    return err;
-}
-
-int zmk_ps2_tp_value6_upper_plateau_speed_decr(int decr_amount)
-{
-    struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
-
-    int new_val = data->tp_value6 - decr_amount;
+    int new_val = data->tp_value6 + amount;
 
     LOG_INF("Setting value6 upper plateau speed to %d", new_val);
     int err = zmk_ps2_tp_value6_upper_plateau_speed_set(new_val);
@@ -1656,11 +1608,11 @@ int zmk_ps2_tp_pts_threshold_set(int pts_threshold)
     return 0;
 }
 
-int zmk_ps2_tp_pts_threshold_incr(int incr_amount)
+int zmk_ps2_tp_pts_threshold_change(int amount)
 {
     struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
 
-    int new_val = data->tp_pts_threshold + incr_amount;
+    int new_val = data->tp_pts_threshold + amount;
 
     LOG_INF("Setting press-to-select threshold to %d", new_val);
     int err = zmk_ps2_tp_pts_threshold_set(new_val);
@@ -1672,21 +1624,6 @@ int zmk_ps2_tp_pts_threshold_incr(int incr_amount)
     return err;
 }
 
-int zmk_ps2_tp_pts_threshold_decr(int decr_amount)
-{
-    struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
-
-    int new_val = data->tp_pts_threshold - decr_amount;
-
-    LOG_INF("Setting press-to-select threshold to %d", new_val);
-    int err = zmk_ps2_tp_pts_threshold_set(new_val);
-    if(err == 0) {
-
-        zmk_mouse_ps2_settings_save();
-    }
-
-    return err;
-}
 
 /*
  * State Saving
