@@ -84,9 +84,9 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
 #define PS2_MOUSE_CMD_TP_SET_SENSITIVITY "\xe2\x81\x4a"
 #define PS2_MOUSE_CMD_TP_SET_SENSITIVITY_RESP_LEN 0
-#define PS2_MOUSE_CMD_TP_SET_SENSITIVITY_MIN 0.0
-#define PS2_MOUSE_CMD_TP_SET_SENSITIVITY_MAX 1.999
-#define PS2_MOUSE_CMD_TP_SET_SENSITIVITY_DEFAULT 1.0
+#define PS2_MOUSE_CMD_TP_SET_SENSITIVITY_MIN 0
+#define PS2_MOUSE_CMD_TP_SET_SENSITIVITY_MAX 255
+#define PS2_MOUSE_CMD_TP_SET_SENSITIVITY_DEFAULT 128
 
 #define PS2_MOUSE_CMD_TP_GET_NEG_INERTIA "\xe2\x80\x4d"
 #define PS2_MOUSE_CMD_TP_GET_NEG_INERTIA_RESP_LEN 1
@@ -191,7 +191,7 @@ struct zmk_ps2_mouse_data {
     bool activity_reporting_on;
 
     uint8_t sampling_rate;
-    float tp_sensitivity;
+    uint8_t tp_sensitivity;
     uint8_t tp_neg_inertia;
     uint8_t tp_value6;
     uint8_t tp_pts_threshold;
@@ -1328,7 +1328,7 @@ int zmk_ps2_tp_swap_xy_set(bool enabled)
     return err;
 }
 
-int zmk_ps2_tp_sensitivity_get(float *sensitivity)
+int zmk_ps2_tp_sensitivity_get(uint8_t *sensitivity)
 {
     struct zmk_ps2_send_cmd_resp resp = zmk_ps2_send_cmd(
         PS2_MOUSE_CMD_TP_GET_SENSITIVITY,
@@ -1347,15 +1347,14 @@ int zmk_ps2_tp_sensitivity_get(float *sensitivity)
     // Convert uint8_t to float
     // 0x80 (128) represents 1.0
     uint8_t sensitivity_int = resp.resp_buffer[0];
-    float sensitivity_float = sensitivity_int / 0x80;
-    *sensitivity = sensitivity_float;
+    *sensitivity = sensitivity_int;
 
-    LOG_DBG("Trackpoint sensitivity is %f", sensitivity_float);
+    LOG_DBG("Trackpoint sensitivity is %d", sensitivity_int);
 
     return 0;
 }
 
-int zmk_ps2_tp_sensitivity_set(float sensitivity)
+int zmk_ps2_tp_sensitivity_set(int sensitivity)
 {
     struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
 
@@ -1363,7 +1362,7 @@ int zmk_ps2_tp_sensitivity_set(float sensitivity)
        sensitivity > PS2_MOUSE_CMD_TP_SET_SENSITIVITY_MAX)
     {
         LOG_ERR(
-            "Invalid sensitivity value %f. Min: %f; Max: %f",
+            "Invalid sensitivity value %d. Min: %d; Max: %d",
             sensitivity,
             PS2_MOUSE_CMD_TP_SET_SENSITIVITY_MIN,
             PS2_MOUSE_CMD_TP_SET_SENSITIVITY_MAX
@@ -1371,20 +1370,18 @@ int zmk_ps2_tp_sensitivity_set(float sensitivity)
         return 1;
     }
 
-    // Convert float to byte arg
-    // 0x80 (128) represents 1.0
-    uint8_t sensitivity_arg = 0x80 * sensitivity;
+    uint8_t arg = sensitivity;
 
     struct zmk_ps2_send_cmd_resp resp = zmk_ps2_send_cmd(
         PS2_MOUSE_CMD_TP_SET_SENSITIVITY,
         sizeof(PS2_MOUSE_CMD_TP_SET_SENSITIVITY),
-        &sensitivity_arg,
+        &arg,
         PS2_MOUSE_CMD_TP_SET_SENSITIVITY_RESP_LEN,
         true
     );
     if(resp.err) {
         LOG_ERR(
-            "Could not set sensitivity to %f", sensitivity
+            "Could not set sensitivity to %d", sensitivity
         );
         return resp.err;
     }
@@ -1394,26 +1391,34 @@ int zmk_ps2_tp_sensitivity_set(float sensitivity)
     return 0;
 }
 
-int zmk_ps2_tp_sensitivity_incr(float incr_amount)
+int zmk_ps2_tp_sensitivity_incr(int incr_amount)
 {
     struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
 
-    float new_val = data->tp_sensitivity + incr_amount;
+    int new_val = data->tp_sensitivity + incr_amount;
 
-    LOG_INF("Setting trackpoint sensitivity to %f", new_val);
+    LOG_INF("Setting trackpoint sensitivity to %d", new_val);
     int err = zmk_ps2_tp_sensitivity_set(new_val);
+    if(err == 0) {
+
+        zmk_mouse_ps2_save_settings();
+    }
 
     return err;
 }
 
-int zmk_ps2_tp_sensitivity_decr(float decr_amount)
+int zmk_ps2_tp_sensitivity_decr(int decr_amount)
 {
     struct zmk_ps2_mouse_data *data = &zmk_ps2_mouse_data;
 
-    float new_val = data->tp_sensitivity - decr_amount;
+    int new_val = data->tp_sensitivity - decr_amount;
 
-    LOG_INF("Setting trackpoint sensitivity to %f", new_val);
+    LOG_INF("Setting trackpoint sensitivity to %d", new_val);
     int err = zmk_ps2_tp_sensitivity_set(new_val);
+    if(err == 0) {
+
+        zmk_mouse_ps2_save_settings();
+    }
 
     return err;
 }
@@ -1450,7 +1455,7 @@ int zmk_ps2_tp_neg_inertia_set(int neg_inertia)
        neg_inertia > PS2_MOUSE_CMD_TP_SET_NEG_INERTIA_MAX)
     {
         LOG_ERR(
-            "Invalid sensitivity value %d. Min: %d; Max: %d",
+            "Invalid negative inertia value %d. Min: %d; Max: %d",
             neg_inertia,
             PS2_MOUSE_CMD_TP_SET_NEG_INERTIA_MIN,
             PS2_MOUSE_CMD_TP_SET_NEG_INERTIA_MAX

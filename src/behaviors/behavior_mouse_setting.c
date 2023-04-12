@@ -8,7 +8,7 @@
 #include <zmk/mouse_ps2.h>
 #include <zmk/mouse.h>
 
-#define INCREMENT_TP_SENSITIVITY 0.1
+#define INCREMENT_TP_SENSITIVITY 10
 #define INCREMENT_TP_NEG_INERTIA 1
 #define INCREMENT_TP_VALUE6 5
 #define INCREMENT_TP_PTS_THRESHOLD 1
