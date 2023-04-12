@@ -21,30 +21,38 @@ static int on_keymap_binding_pressed(struct zmk_behavior_binding *binding,
     switch (binding->param1) {
 
         case MS_TP_SENSITIVITY_INCR:
-            return zmk_ps2_tp_sensitivity_change(INCREMENT_TP_SENSITIVITY);
+            return zmk_mouse_ps2_tp_sensitivity_change(
+                INCREMENT_TP_SENSITIVITY
+            );
         case MS_TP_SENSITIVITY_DECR:
-            return zmk_ps2_tp_sensitivity_change(-INCREMENT_TP_SENSITIVITY);
+            return zmk_mouse_ps2_tp_sensitivity_change(
+                -INCREMENT_TP_SENSITIVITY
+            );
 
         case MS_TP_NEG_INERTIA_INCR:
-            return zmk_ps2_tp_neg_inertia_change(INCREMENT_TP_NEG_INERTIA);
+            return zmk_mouse_ps2_tp_neg_inertia_change(
+                INCREMENT_TP_NEG_INERTIA
+            );
         case MS_TP_NEG_INERTIA_DECR:
-            return zmk_ps2_tp_neg_inertia_change(-INCREMENT_TP_NEG_INERTIA);
+            return zmk_mouse_ps2_tp_neg_inertia_change(
+                -INCREMENT_TP_NEG_INERTIA
+            );
 
         case MS_TP_VALUE6_INCR:
-            return zmk_ps2_tp_value6_upper_plateau_speed_change(
+            return zmk_mouse_ps2_tp_value6_upper_plateau_speed_change(
                 INCREMENT_TP_VALUE6
             );
         case MS_TP_VALUE6_DECR:
-            return zmk_ps2_tp_value6_upper_plateau_speed_change(
+            return zmk_mouse_ps2_tp_value6_upper_plateau_speed_change(
                 -INCREMENT_TP_VALUE6
             );
 
         case MS_TP_PTS_THRESHOLD_INCR:
-            return zmk_ps2_tp_pts_threshold_change(
+            return zmk_mouse_ps2_tp_pts_threshold_change(
                 INCREMENT_TP_PTS_THRESHOLD
             );
         case MS_TP_PTS_THRESHOLD_DECR:
-            return zmk_ps2_tp_pts_threshold_change(
+            return zmk_mouse_ps2_tp_pts_threshold_change(
                 -INCREMENT_TP_PTS_THRESHOLD
             );
     }
