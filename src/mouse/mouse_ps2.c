@@ -887,8 +887,6 @@ int zmk_mouse_ps2_activity_reporting_enable()
         return 0;
     }
 
-    LOG_INF("Enabling mouse activity reporting...");
-
     uint8_t cmd = MOUSE_PS2_CMD_ENABLE_REPORTING[0];
     int err = ps2_write(ps2_device, cmd);
     if(err) {
@@ -916,8 +914,6 @@ int zmk_mouse_ps2_activity_reporting_disable()
     if(data->activity_reporting_on == false) {
         return 0;
     }
-
-    LOG_INF("Disabling mouse activity reporting...");
 
     uint8_t cmd = MOUSE_PS2_CMD_DISABLE_REPORTING[0];
     int err = ps2_write(ps2_device, cmd);
