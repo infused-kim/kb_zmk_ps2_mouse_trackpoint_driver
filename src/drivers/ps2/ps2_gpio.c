@@ -181,6 +181,8 @@ struct ps2_gpio_data {
 	struct k_work callback_work;
 	uint8_t callback_byte;
 	ps2_callback_t callback_isr;
+	ps2_resend_callback_t resend_callback_isr;
+
 	bool callback_enabled;
 
 	// Queue for ps2_read()
@@ -222,6 +224,7 @@ static struct ps2_gpio_data ps2_gpio_data = {
 
 	.callback_byte = 0x0,
     .callback_isr = NULL,
+    .resend_callback_isr = NULL,
 	.callback_enabled = false,
 	.mode = PS2_GPIO_MODE_READ,
 
@@ -464,6 +467,16 @@ void ps2_gpio_data_queue_add(uint8_t byte)
 
 void ps2_gpio_send_cmd_resend_worker(struct k_work *item)
 {
+	struct ps2_gpio_data *data = &ps2_gpio_data;
+
+	// Notify the PS/2 device driver that we are requesting a resend.
+	// PS/2 devices don't just resend the last byte that was sent, but the
+	// entire command packet, which can be multiple bytes.
+	if(data->resend_callback_isr != NULL && data->callback_enabled) {
+
+		data->resend_callback_isr(data->dev);
+	}
+
 	uint8_t cmd = 0xfe;
 	// LOG_DBG("Requesting resend of data with command: 0x%x", cmd);
 	ps2_gpio_write_byte(cmd);
@@ -1320,16 +1333,23 @@ void ps2_gpio_scl_interrupt_handler(const struct device *dev,
 static int ps2_gpio_enable_callback(const struct device *dev);
 
 static int ps2_gpio_configure(const struct device *dev,
-			     ps2_callback_t callback_isr)
+			     ps2_callback_t callback_isr,
+				 ps2_resend_callback_t resend_callback_isr)
 {
 	struct ps2_gpio_data *data = dev->data;
 
-	if (!callback_isr) {
+	if (!callback_isr && !resend_callback_isr) {
 		return -EINVAL;
 	}
 
-	data->callback_isr = callback_isr;
-	ps2_gpio_enable_callback(dev);
+	if(callback_isr) {
+		data->callback_isr = callback_isr;
+		ps2_gpio_enable_callback(dev);
+	}
+
+	if(resend_callback_isr) {
+		data->resend_callback_isr = resend_callback_isr;
+	}
 
 	return 0;
 }
