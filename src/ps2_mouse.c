@@ -23,7 +23,6 @@
 #include <zmk/events/mouse_move_state_changed.h>
 #include <zmk/hid.h>
 
-#if DT_HAS_COMPAT_STATUS_OKAY(DT_DRV_COMPAT)
 
 #include <zephyr/logging/log.h>
 
@@ -2136,5 +2135,3 @@ DEVICE_DT_INST_DEFINE(
 	POST_KERNEL, 41,
 	NULL
 );
-
-#endif /* DT_HAS_COMPAT_STATUS_OKAY(DT_DRV_COMPAT) */

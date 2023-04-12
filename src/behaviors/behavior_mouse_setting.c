@@ -15,8 +15,6 @@
 
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
-#if DT_HAS_COMPAT_STATUS_OKAY(DT_DRV_COMPAT) && DT_HAS_COMPAT_STATUS_OKAY(zmk_ps2_mouse)
-
 static int on_keymap_binding_pressed(struct zmk_behavior_binding *binding,
                                      struct zmk_behavior_binding_event event)
 {
@@ -78,4 +76,3 @@ DEVICE_DT_INST_DEFINE(
     APPLICATION, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT,
     &zmk_behavior_mouse_setting_driver_api
 );
-#endif /* DT_HAS_COMPAT_STATUS_OKAY(DT_DRV_COMPAT) */
