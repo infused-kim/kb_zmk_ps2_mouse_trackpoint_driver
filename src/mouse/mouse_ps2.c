@@ -940,7 +940,9 @@ int zmk_ps2_activity_reporting_disable()
  * PS/2 Command Helpers
  */
 
-int array_get_elem_index(int elem, int *array, size_t array_size)
+int zmk_mouse_ps2_array_get_elem_index(int elem,
+                                       int *array,
+                                       size_t array_size)
 {
     int elem_index = -1;
     for(int i = 0; i < array_size; i++) {
@@ -953,9 +955,13 @@ int array_get_elem_index(int elem, int *array, size_t array_size)
     return elem_index;
 }
 
-int array_get_next_elem(int elem, int *array, size_t array_size)
+int zmk_mouse_ps2_array_get_next_elem(int elem,
+                                      int *array,
+                                      size_t array_size)
 {
-    int elem_index = array_get_elem_index(elem, array, array_size);
+    int elem_index = zmk_mouse_ps2_array_get_elem_index(
+        elem, array, array_size
+    );
     if(elem_index == -1) {
         return -1;
     }
@@ -968,9 +974,13 @@ int array_get_next_elem(int elem, int *array, size_t array_size)
     return array[next_index];
 }
 
-int array_get_prev_elem(int elem, int *array, size_t array_size)
+int zmk_mouse_ps2_array_get_prev_elem(int elem,
+                                      int *array,
+                                      size_t array_size)
 {
-    int elem_index = array_get_elem_index(elem, array, array_size);
+    int elem_index = zmk_mouse_ps2_array_get_elem_index(
+        elem, array, array_size
+    );
     if(elem_index == -1) {
         return -1;
     }
@@ -1032,7 +1042,7 @@ int zmk_ps2_set_sampling_rate(uint8_t sampling_rate)
 {
     struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
 
-    int rate_idx = array_get_elem_index(
+    int rate_idx = zmk_mouse_ps2_array_get_elem_index(
         sampling_rate,
         allowed_sampling_rates, sizeof(allowed_sampling_rates)
     );
@@ -1791,7 +1801,7 @@ int zmk_mouse_ps2_settings_init() {
  */
 
 static void zmk_mouse_ps2_init_thread(int dev_ptr, int unused);
-int zmk_ps2_init_to_power_on_reset();
+int zmk_ps2_init_power_on_reset();
 int zmk_ps2_init_wait_for_mouse(const struct device *dev);
 
 static int zmk_mouse_ps2_init(const struct device *dev)
@@ -1817,7 +1827,7 @@ static void zmk_mouse_ps2_init_thread(int dev_ptr, int unused) {
 	const struct zmk_mouse_ps2_config *config = dev->config;
     int err;
 
-    zmk_ps2_init_to_power_on_reset();
+    zmk_ps2_init_power_on_reset();
 
 	LOG_INF("Waiting for mouse to connect...");
     err = zmk_ps2_init_wait_for_mouse(dev);
