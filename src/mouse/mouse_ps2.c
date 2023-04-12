@@ -277,53 +277,10 @@ int zmk_mouse_ps2_settings_save();
  * Helpers
  */
 
-#define PS2_GPIO_GET_BIT(data, bit_pos) ( (data >> bit_pos) & 0x1 )
-#define PS2_GPIO_SET_BIT(data, bit_val, bit_pos) ( \
+#define MOUSE_PS2_GET_BIT(data, bit_pos) ( (data >> bit_pos) & 0x1 )
+#define MOUSE_PS2_SET_BIT(data, bit_val, bit_pos) ( \
 	data |= (bit_val) << bit_pos \
 )
-
-int array_get_elem_index(int elem, int *array, size_t array_size)
-{
-    int elem_index = -1;
-    for(int i = 0; i < array_size; i++) {
-        if(array[i] == elem) {
-            elem_index = i;
-            break;
-        }
-    }
-
-    return elem_index;
-}
-
-int array_get_next_elem(int elem, int *array, size_t array_size)
-{
-    int elem_index = array_get_elem_index(elem, array, array_size);
-    if(elem_index == -1) {
-        return -1;
-    }
-
-    int next_index = elem_index + 1;
-    if(next_index >= array_size) {
-        return -1;
-    }
-
-    return array[next_index];
-}
-
-int array_get_prev_elem(int elem, int *array, size_t array_size)
-{
-    int elem_index = array_get_elem_index(elem, array, array_size);
-    if(elem_index == -1) {
-        return -1;
-    }
-
-    int prev_index = elem_index - 1;
-    if(prev_index < 0 || prev_index >= array_size) {
-        return -1;
-    }
-
-    return array[prev_index];
-}
 
 /*
  * Mouse Activity Packet Reading
@@ -341,13 +298,13 @@ void zmk_mouse_ps2_activity_click_buttons(bool button_l,
                                           bool button_m,
                                           bool button_r);
 void zmk_mouse_ps2_activity_reset_cmd_buffer();
-
 struct zmk_mouse_ps2_packet
 zmk_mouse_ps2_activity_parse_cmd_buffer(zmk_mouse_ps2_packet_mode packet_mode,
                                         uint8_t cmd_state,
                                         uint8_t cmd_x,
                                         uint8_t cmd_y,
                                         uint8_t cmd_extra);
+
 
 // Called by the PS/2 driver whenver the mouse sends a byte and
 // reporting is enabled through `zmk_ps2_activity_reporting_enable`.
@@ -368,7 +325,7 @@ void zmk_mouse_ps2_activity_callback(const struct device *ps2_device,
         // If it is not, then we are definitely out of alignment.
         // So we ask the device to resend the entire 3-byte command
         // again.
-        int alignment_bit = PS2_GPIO_GET_BIT(byte, 3);
+        int alignment_bit = MOUSE_PS2_GET_BIT(byte, 3);
         if(alignment_bit != 1) {
 
             zmk_mouse_ps2_activity_abort_cmd();
@@ -533,11 +490,11 @@ zmk_mouse_ps2_activity_parse_cmd_buffer(zmk_mouse_ps2_packet_mode packet_mode,
 {
     struct zmk_mouse_ps2_packet packet;
 
-    packet.button_l = PS2_GPIO_GET_BIT(cmd_state, 0);
-    packet.button_r = PS2_GPIO_GET_BIT(cmd_state, 1);
-    packet.button_m = PS2_GPIO_GET_BIT(cmd_state, 2);
-    packet.overflow_x = PS2_GPIO_GET_BIT(cmd_state, 6);
-    packet.overflow_y = PS2_GPIO_GET_BIT(cmd_state, 7);
+    packet.button_l = MOUSE_PS2_GET_BIT(cmd_state, 0);
+    packet.button_r = MOUSE_PS2_GET_BIT(cmd_state, 1);
+    packet.button_m = MOUSE_PS2_GET_BIT(cmd_state, 2);
+    packet.overflow_x = MOUSE_PS2_GET_BIT(cmd_state, 6);
+    packet.overflow_y = MOUSE_PS2_GET_BIT(cmd_state, 7);
     packet.scroll = 0;
 
     // The coordinates are delivered as a signed 9bit integers.
@@ -568,19 +525,19 @@ zmk_mouse_ps2_activity_parse_cmd_buffer(zmk_mouse_ps2_packet_mode packet_mode,
     // scroll wheel. It is a signed number with the rango of
     // -8 to +7.
     if(packet_mode == MOUSE_PS2_PACKET_MODE_SCROLL) {
-        PS2_GPIO_SET_BIT(
+        MOUSE_PS2_SET_BIT(
             packet.scroll,
-            PS2_GPIO_GET_BIT(cmd_extra, 0),
+            MOUSE_PS2_GET_BIT(cmd_extra, 0),
             0
         );
-        PS2_GPIO_SET_BIT(
+        MOUSE_PS2_SET_BIT(
             packet.scroll,
-            PS2_GPIO_GET_BIT(cmd_extra, 1),
+            MOUSE_PS2_GET_BIT(cmd_extra, 1),
             1
         );
-        PS2_GPIO_SET_BIT(
+        MOUSE_PS2_SET_BIT(
             packet.scroll,
-            PS2_GPIO_GET_BIT(cmd_extra, 2),
+            MOUSE_PS2_GET_BIT(cmd_extra, 2),
             2
         );
         packet.scroll = cmd_extra - ((packet.scroll << 3) & 0x100);
@@ -980,6 +937,55 @@ int zmk_ps2_activity_reporting_disable()
     return 0;
 }
 
+
+/*
+ * PS/2 Command Helpers
+ */
+
+int array_get_elem_index(int elem, int *array, size_t array_size)
+{
+    int elem_index = -1;
+    for(int i = 0; i < array_size; i++) {
+        if(array[i] == elem) {
+            elem_index = i;
+            break;
+        }
+    }
+
+    return elem_index;
+}
+
+int array_get_next_elem(int elem, int *array, size_t array_size)
+{
+    int elem_index = array_get_elem_index(elem, array, array_size);
+    if(elem_index == -1) {
+        return -1;
+    }
+
+    int next_index = elem_index + 1;
+    if(next_index >= array_size) {
+        return -1;
+    }
+
+    return array[next_index];
+}
+
+int array_get_prev_elem(int elem, int *array, size_t array_size)
+{
+    int elem_index = array_get_elem_index(elem, array, array_size);
+    if(elem_index == -1) {
+        return -1;
+    }
+
+    int prev_index = elem_index - 1;
+    if(prev_index < 0 || prev_index >= array_size) {
+        return -1;
+    }
+
+    return array[prev_index];
+}
+
+
 /*
  * PS/2 Commands
  */
@@ -1264,7 +1270,7 @@ int zmk_ps2_tp_set_config_option(int config_bit, bool enabled, char *descr)
         return err;
     }
 
-    bool is_enabled = PS2_GPIO_GET_BIT(
+    bool is_enabled = MOUSE_PS2_GET_BIT(
         config_byte,
         config_bit
     );
@@ -1282,7 +1288,7 @@ int zmk_ps2_tp_set_config_option(int config_bit, bool enabled, char *descr)
         descr, enabled ? "enabled" : "disabled"
     );
 
-    PS2_GPIO_SET_BIT(config_byte, enabled, config_bit);
+    MOUSE_PS2_SET_BIT(config_byte, enabled, config_bit);
 
     struct zmk_ps2_send_cmd_resp resp = zmk_ps2_send_cmd(
         MOUSE_PS2_CMD_TP_SET_CONFIG_BYTE,
