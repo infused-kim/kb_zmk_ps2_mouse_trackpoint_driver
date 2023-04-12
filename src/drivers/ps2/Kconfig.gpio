@@ -1,8 +1,11 @@
 # Copyright (c) 2017 Linaro Ltd.
 # SPDX-License-Identifier: Apache-2.0
 
+DT_COMPAT_PS2_GPIO := gpio-ps2
+
 config PS2_GPIO
 	bool "GPIO bit banging PS/2 support"
+	default $(dt_compat_enabled,$(DT_COMPAT_PS2_GPIO))
 	help
 	  Enable software driven (bit banging) PS/2 support using GPIO pins
 

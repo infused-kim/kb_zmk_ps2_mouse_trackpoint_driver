@@ -10,9 +10,6 @@
 #include <zephyr/device.h>
 #include <zephyr/drivers/ps2.h>
 #include <zephyr/drivers/gpio.h>
-
-// #if DT_HAS_COMPAT_STATUS_OKAY(DT_DRV_COMPAT)
-
 #include <zephyr/logging/log.h>
 
 #define LOG_LEVEL CONFIG_PS2_LOG_LEVEL
@@ -1583,5 +1580,3 @@ DEVICE_DT_INST_DEFINE(
 	POST_KERNEL, CONFIG_PS2_INIT_PRIORITY,
 	&ps2_gpio_driver_api
 );
-
-// #endif /* DT_HAS_COMPAT_STATUS_OKAY(DT_DRV_COMPAT) */
