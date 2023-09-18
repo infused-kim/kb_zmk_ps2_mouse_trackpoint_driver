@@ -23,6 +23,8 @@ LOG_MODULE_REGISTER(ps2_uart);
 #define PS2_UART_WRITE_MAX_RETRY 5
 #define PS2_UART_READ_MAX_RETRY 3
 
+#define CONFIG_MY_UART_PERIPHERAL_RX_BUF_SIZE 20
+
 // Custom queue for background PS/2 processing work at low priority
 // We purposefully want this to be a fairly low priority, because
 // this queue is used while we wait to start a write.
@@ -44,6 +46,10 @@ LOG_MODULE_REGISTER(ps2_uart);
  * Driver Defines
  */
 
+#define PS2_UART_DATA_BITS UART_CFG_DATA_BITS_8
+#define PS2_UART_PARITY UART_CFG_PARITY_ODD
+#define PS2_UART_STOP_BITS UART_CFG_STOP_BITS_1
+
 // Timeout for blocking read using the zephyr PS2 ps2_read() function
 // This is not a matter of PS/2 timings, but a preference of how long we let
 // the user wait until we give up on reading.
@@ -60,6 +66,7 @@ typedef enum
 } ps2_uart_mode;
 
 struct ps2_uart_config {
+    const struct device *uart_dev;
 };
 
 struct ps2_uart_data {
@@ -81,12 +88,11 @@ struct ps2_uart_data {
 	ps2_uart_mode mode;
 
 	struct k_work resend_cmd_work;
-	struct k_work test_spi_work;
 };
 
 
 static const struct ps2_uart_config ps2_uart_config = {
-
+	.uart_dev = DEVICE_DT_GET(DT_INST_BUS(0)),
 };
 
 static struct ps2_uart_data ps2_uart_data = {
@@ -349,20 +355,59 @@ static const struct ps2_driver_api ps2_uart_driver_api = {
 };
 
 /*
- * PS/2 GPIO Driver Init
+ * PS/2 UART Interrupt Handling
  */
 
-void ps2_uart_test_spi(struct k_work *item)
-{
-	const struct ps2_uart_data *data = &ps2_uart_data;
-	const struct ps2_uart_config *config = &ps2_uart_config;
-	int err;
+void ps2_uart_process_received_byte(uint8_t byte);
 
+static void uart_int_handler(const struct device *uart_dev, void *user_data)
+{
+	uart_irq_update(uart_dev);
+    if (uart_irq_rx_ready(uart_dev))
+    {
+        uint8_t byte;
+        while (!uart_poll_in(uart_dev, &byte))
+        {
+			ps2_uart_process_received_byte(byte);
+        }
+    }
 }
+
+void ps2_uart_process_received_byte(uint8_t byte)
+{
+	struct ps2_uart_data *data = &ps2_uart_data;
+
+	LOG_INF("Received: 0x%x", byte);
+
+	// If no callback is set, we add the data to a fifo queue
+	// that can be read later with the read using `ps2_read`
+	if(data->callback_isr != NULL && data->callback_enabled) {
+
+		// Call callback from a worker to make sure the callback
+		// doesn't block the interrupt.
+		// Will call ps2_gpio_read_callback_work_handler
+		data->callback_byte = byte;
+    	k_work_submit_to_queue(&ps2_uart_work_queue_cb, &data->callback_work);
+	} else {
+		ps2_uart_data_queue_add(byte);
+	}
+}
+
+void ps2_uart_read_callback_work_handler(struct k_work *work)
+{
+	struct ps2_uart_data *data = &ps2_uart_data;
+
+	data->callback_isr(data->dev, data->callback_byte);
+	data->callback_byte = 0x0;
+}
+
+/*
+ * PS/2 UART Driver Init
+ */
 
 static int ps2_uart_init(const struct device *dev)
 {
-
+	int err;
 	struct ps2_uart_data *data = dev->data;
 	// const struct ps2_uart_config *config = dev->config;
 	// Set the ps2 device so we can retrieve it later for
@@ -395,14 +440,34 @@ static int ps2_uart_init(const struct device *dev)
         NULL
     );
 
-	k_work_init(&data->test_spi_work, ps2_uart_test_spi);
+	k_work_init(&data->callback_work, ps2_uart_read_callback_work_handler);
+
+
+    if (!device_is_ready(config->uart_dev))
+    {
+        LOG_ERR("UART device not ready");
+        return -ENODEV;
+    } else {
+		LOG_INF("UART device is ready");
+	}
+
+	struct uart_config uart_cfg;
+	err = uart_config_get(config->uart_dev, &uart_cfg);
+	if(err != 0) {
+		LOG_ERR("Could not retrieve UART config...");
+		return -ENODEV;
+	}
+
+	uart_cfg.data_bits = PS2_UART_DATA_BITS;
+	uart_cfg.stop_bits = PS2_UART_STOP_BITS;
+	uart_cfg.parity = PS2_UART_PARITY;
+
+	err = uart_configure(config->uart_dev, &uart_cfg);
 
 
 
-	// k_work_submit_to_queue(
-	// 	&ps2_uart_work_queue_cb,
-	// 	&data->test_spi_work
-	// );
+	uart_irq_callback_user_data_set(config->uart_dev, uart_int_handler, (void *)dev);
+    uart_irq_rx_enable(config->uart_dev);
 
 	return 0;
 }
