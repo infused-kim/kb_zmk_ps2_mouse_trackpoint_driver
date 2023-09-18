@@ -1,0 +1,13 @@
+# Copyright (c) 2017 Linaro Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
+DT_COMPAT_PS2_UART := uart-ps2
+
+config PS2_UART
+	bool "GPIO bit banging PS/2 support through UART"
+	default $(dt_compat_enabled,$(DT_COMPAT_PS2_UART))
+	select CONFIG_SERIAL
+	select CONFIG_UART_ASYNC_API
+	select CONFIG_UART_USE_RUNTIME_CONFIGURE
+	help
+	  Enable software driven (bit banging) PS/2 support using UART on GPIO pins

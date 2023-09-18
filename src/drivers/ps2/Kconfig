@@ -4,5 +4,6 @@
 if PS2
 
 rsource "Kconfig.gpio"
+rsource "Kconfig.uart"
 
 endif # PS2
