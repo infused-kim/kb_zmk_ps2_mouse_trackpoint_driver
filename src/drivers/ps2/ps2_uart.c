@@ -11,7 +11,6 @@
 #include <zephyr/drivers/ps2.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/uart.h>
-#include <zephyr/drivers/pinctrl.h>
 #include <zephyr/logging/log.h>
 
 #include <hal/nrf_uarte.h>
@@ -66,7 +65,6 @@ typedef enum
 
 struct ps2_uart_config {
     const struct device *uart_dev;
-	const struct pinctrl_dev_config *pcfg;
 };
 
 struct ps2_uart_data {
@@ -93,7 +91,6 @@ struct ps2_uart_data {
 
 static const struct ps2_uart_config ps2_uart_config = {
 	.uart_dev = DEVICE_DT_GET(DT_INST_BUS(0)),
-	.pcfg = PINCTRL_DT_DEV_CONFIG_GET(DT_NODELABEL(uart0)),
 };
 
 static struct ps2_uart_data ps2_uart_data = {
@@ -364,7 +361,6 @@ K_MUTEX_DEFINE(write_mutex);
 
 int ps2_uart_write_byte(uint8_t byte)
 {
-	const struct ps2_uart_config *config = &ps2_uart_config;
 	int err;
 
 	LOG_DBG("\n");
@@ -373,23 +369,6 @@ int ps2_uart_write_byte(uint8_t byte)
 	err = 0;
 
 	k_mutex_lock(&write_mutex, K_FOREVER);
-
-	LOG_INF("Switching pinctrl state");
-	err = pinctrl_apply_state(
-		config->pcfg,
-		PINCTRL_STATE_SLEEP
-	);
-	if (err < 0) {
-		LOG_ERR("Could not switch pinctrl state: %d", err);
-		return err;
-	}
-
-	LOG_INF("Result for switching pinctrl state: %d", err);
-
-	LOG_INF("Calling uart_poll_out");
-	uart_poll_out(config->uart_dev, byte);
-	LOG_INF("Finished calling uart_poll_out");
-
 
 	LOG_DBG("END WRITE: 0x%x\n", byte);
 
