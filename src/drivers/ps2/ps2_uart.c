@@ -13,6 +13,8 @@
 #include <zephyr/drivers/uart.h>
 #include <zephyr/logging/log.h>
 
+#include <hal/nrf_uarte.h>
+
 #define LOG_LEVEL CONFIG_PS2_LOG_LEVEL
 LOG_MODULE_REGISTER(ps2_uart);
 
@@ -247,7 +249,9 @@ void ps2_uart_send_cmd_resend()
  * Reading PS2 data
  */
 void ps2_uart_read_interrupt_handler();
+static int ps2_uart_read_err_check(const struct device *dev);
 void ps2_uart_read_process_received_byte(uint8_t byte);
+const char *ps2_uart_read_get_error_str(int err);
 
 void ps2_uart_read_interrupt_handler(const struct device *uart_dev,
 									 void *user_data)
@@ -261,8 +265,42 @@ void ps2_uart_read_interrupt_handler(const struct device *uart_dev,
 		return;
 	}
 
+	err = ps2_uart_read_err_check(uart_dev);
+	if(err != 0) {
+		const char *err_str = ps2_uart_read_get_error_str(err);
+		LOG_ERR(
+			"UART RX detected error for byte 0x%x: %s (%d)",
+			byte, err_str, err
+		);
+	}
+
 	ps2_uart_read_process_received_byte(byte);
 }
+
+static int ps2_uart_read_err_check(const struct device *dev)
+{
+	// TOOD: Make this function only work if nrf52 is used
+	int err = uart_err_check(dev);
+
+	// In the config we enabled even parity, because nrf52 does
+	// not support odd parity.
+	// But PS/2 uses odd parity. This should generate a parity error on
+	// every reception.
+	// If the parity error doesn't happen, it means the transfer had an
+	// actual even parity, which we consider an error.
+	if((err & NRF_UARTE_ERROR_PARITY_MASK) == 0) {
+		err =  UART_ERROR_PARITY;
+	} else if(err & NRF_UARTE_ERROR_OVERRUN_MASK) {
+		err = UART_ERROR_OVERRUN;
+	} else if(err & NRF_UARTE_ERROR_FRAMING_MASK) {
+		err = UART_ERROR_FRAMING;
+	} else if(err & NRF_UARTE_ERROR_BREAK_MASK) {
+		err = UART_BREAK;
+	} else { // No errors
+		err = 0;
+	}
+
+	return err;
 }
 
 void ps2_uart_read_process_received_byte(uint8_t byte)
@@ -285,6 +323,25 @@ void ps2_uart_read_process_received_byte(uint8_t byte)
 		);
 	} else {
 		ps2_uart_data_queue_add(byte);
+	}
+}
+
+const char *ps2_uart_read_get_error_str(int err)
+{
+	switch (err)
+	{
+	case UART_ERROR_OVERRUN:
+		return "Overrun error";
+	case UART_ERROR_PARITY:
+		return "Parity error";
+	case UART_ERROR_FRAMING:
+		return "Framing error";
+	case UART_BREAK:
+		return "Break interrupt";
+	case UART_ERROR_COLLISION:
+		return "Collision error";
+	default:
+		return "Unknown error";
 	}
 }
 
@@ -501,7 +558,7 @@ static int ps2_uart_init_uart(void)
 
 	// PS/2 uses odd parity, but nrf52840 doesn't support
 	// odd parity. Despite that, setting none works.
-	uart_cfg.parity = UART_CFG_PARITY_NONE;
+	uart_cfg.parity = UART_CFG_PARITY_EVEN;
 
 	err = uart_configure(config->uart_dev, &uart_cfg);
 	if(err != 0) {
@@ -516,6 +573,7 @@ static int ps2_uart_init_uart(void)
 	);
 
 	uart_irq_rx_enable(config->uart_dev);
+	uart_irq_err_enable(config->uart_dev);
 
 	return 0;
 }
