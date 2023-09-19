@@ -11,12 +11,19 @@
 #include <zephyr/drivers/ps2.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/uart.h>
+#include <zephyr/drivers/pinctrl.h>
 #include <zephyr/logging/log.h>
 
 #include <hal/nrf_uarte.h>
 
 #define LOG_LEVEL CONFIG_PS2_LOG_LEVEL
 LOG_MODULE_REGISTER(ps2_uart);
+
+/*
+ * Pin Control
+ */
+
+PINCTRL_DT_DEFINE(DT_INST_BUS(0));
 
 /*
  * Settings
@@ -45,6 +52,30 @@ LOG_MODULE_REGISTER(ps2_uart);
 #define PS2_UART_WORK_QUEUE_CB_STACK_SIZE 1024
 
 /*
+ * PS/2 Defines
+ */
+
+#define PS2_UART_POS_START 0
+#define PS2_UART_POS_DATA_FIRST 1
+#define PS2_UART_POS_DATA_LAST 8
+
+// 1-8 are the data bits
+#define PS2_UART_POS_PARITY 9
+#define PS2_UART_POS_STOP 10
+#define PS2_UART_POS_ACK 11  // Write mode only
+
+#define PS2_UART_TIMING_SCL_CYCLE_LEN 69
+
+
+// The minimum time needed to inhibit clock to start a write
+// is 100us, but we triple it just in case.
+#define PS2_UART_TIMING_SCL_INHIBITION_MIN 100
+#define PS2_UART_TIMING_SCL_INHIBITION ( \
+	1 * PS2_UART_TIMING_SCL_INHIBITION_MIN + 10 \
+)
+
+
+/*
  * Driver Defines
  */
 
@@ -65,12 +96,16 @@ typedef enum
 
 struct ps2_uart_config {
     const struct device *uart_dev;
+	struct gpio_dt_spec scl_gpio;
+	struct gpio_dt_spec sda_gpio;
+	const struct pinctrl_dev_config *pcfg;
 };
 
 struct ps2_uart_data {
 	const struct device *dev;
-	struct gpio_dt_spec scl_gpio;	/* GPIO used for PS2 SCL line */
-	struct gpio_dt_spec sda_gpio;	/* GPIO used for PS2 SDA line */
+
+	// SCL GPIO callback for writing
+	struct gpio_callback scl_cb_data;
 
 	// PS2 driver interface callback
 	struct k_work callback_work;
@@ -83,14 +118,19 @@ struct ps2_uart_data {
 	// Queue for ps2_read()
 	struct k_fifo data_queue;
 
+	// Write byte
+	uint8_t cur_write_byte;
+
 	ps2_uart_mode mode;
 
 	struct k_work resend_cmd_work;
 };
 
-
 static const struct ps2_uart_config ps2_uart_config = {
 	.uart_dev = DEVICE_DT_GET(DT_INST_BUS(0)),
+	.scl_gpio	= GPIO_DT_SPEC_INST_GET(0, scl_gpios),
+	.sda_gpio	= GPIO_DT_SPEC_INST_GET(0, sda_gpios),
+	.pcfg = PINCTRL_DT_DEV_CONFIG_GET(DT_INST_BUS(0)),
 };
 
 static struct ps2_uart_data ps2_uart_data = {
@@ -129,6 +169,190 @@ int ps2_uart_write_byte(uint8_t byte);
 	data |= (bit_val) << bit_pos \
 )
 
+int ps2_uart_get_scl()
+{
+	const struct ps2_uart_config *config = &ps2_uart_config;
+	int rc = gpio_pin_get_dt(&config->scl_gpio);
+
+	return rc;
+}
+
+int ps2_uart_get_sda()
+{
+	const struct ps2_uart_config *config = &ps2_uart_config;
+	int rc = gpio_pin_get_dt(&config->sda_gpio);
+
+	return rc;
+}
+
+void ps2_uart_set_scl(int state)
+{
+	const struct ps2_uart_config *config = &ps2_uart_config;
+
+	LOG_INF("Setting scl to %d", state);
+	gpio_pin_set_dt(&config->scl_gpio, state);
+}
+
+void ps2_uart_set_sda(int state)
+{
+	const struct ps2_uart_config *config = &ps2_uart_config;
+
+	LOG_INF("Seting sda to %d", state);
+	gpio_pin_set_dt(&config->sda_gpio, state);
+}
+
+int ps2_uart_configure_pin_scl(gpio_flags_t flags, char *descr)
+{
+	struct ps2_uart_config *config = (struct ps2_uart_config *) &ps2_uart_config;
+	int err;
+
+	err = gpio_pin_configure_dt(
+		&config->scl_gpio,
+		flags
+	);
+	if (err) {
+		LOG_ERR("failed to configure SCL GPIO pin to %s (err %d)", descr, err);
+	}
+
+	return err;
+}
+
+int ps2_uart_configure_pin_scl_input()
+{
+	return ps2_uart_configure_pin_scl(
+		(GPIO_INPUT),
+		"input"
+	);
+}
+
+int ps2_uart_configure_pin_scl_output()
+{
+	return ps2_uart_configure_pin_scl(
+		(GPIO_OUTPUT_HIGH),
+		"output"
+	);
+}
+
+int ps2_uart_set_scl_callback_enabled(bool enabled)
+{
+	struct ps2_uart_data *data = &ps2_uart_data;
+	struct ps2_uart_config *config = (struct ps2_uart_config *) &ps2_uart_config;
+	int err;
+	return 0;
+
+	if(enabled) {
+		err = gpio_add_callback(config->scl_gpio.port, &data->scl_cb_data);
+		if (err) {
+			LOG_ERR(
+				"failed to enable interrupt callback on "
+				"SCL GPIO pin (err %d)", err
+			);
+		}
+	} else {
+		err = gpio_remove_callback(config->scl_gpio.port, &data->scl_cb_data);
+		if (err) {
+			LOG_ERR(
+				"failed to disable interrupt callback on "
+				"SCL GPIO pin (err %d)", err
+			);
+		}
+	}
+
+	return err;
+}
+
+int ps2_uart_configure_pin_sda(gpio_flags_t flags, char *descr)
+{
+	struct ps2_uart_config *config = (struct ps2_uart_config *) &ps2_uart_config;
+	int err;
+
+	err = gpio_pin_configure_dt(
+		&config->sda_gpio,
+		flags
+	);
+	if (err) {
+		LOG_ERR("failed to configure SDA GPIO pin to %s (err %d)", descr, err);
+	}
+
+	return err;
+}
+
+int ps2_uart_configure_pin_sda_input()
+{
+	return ps2_uart_configure_pin_sda(
+		(GPIO_INPUT),
+		"input"
+	);
+}
+
+int ps2_uart_configure_pin_sda_output()
+{
+	return ps2_uart_configure_pin_sda(
+		(GPIO_OUTPUT_HIGH),
+		"output"
+	);
+}
+
+static int ps2_uart_set_mode_read()
+{
+	struct ps2_uart_data *data = &ps2_uart_data;
+	const struct ps2_uart_config *config = &ps2_uart_config;
+	int err;
+
+	// Configure data and clock lines for input
+	// ps2_uart_configure_pin_scl_input();
+	// ps2_uart_configure_pin_sda_input();
+
+	// Set the SDA pin for the uart device
+	err = pinctrl_apply_state(
+		config->pcfg,
+		PINCTRL_STATE_DEFAULT
+	);
+	if (err < 0) {
+		LOG_ERR("Could not switch pinctrl state to DEFAULT: %d", err);
+		return err;
+	}
+
+	// Make sure SCL interrupt is disabled
+	ps2_uart_set_scl_callback_enabled(false);
+
+	// Enable UART interrupt
+	uart_irq_rx_enable(config->uart_dev);
+
+	data->mode = PS2_UART_MODE_READ;
+
+	return err;
+}
+
+static int ps2_uart_set_mode_write()
+{
+	struct ps2_uart_data *data = &ps2_uart_data;
+	const struct ps2_uart_config *config = &ps2_uart_config;
+	int err;
+
+	// Disable UART interrupt
+	uart_irq_rx_disable(config->uart_dev);
+
+	// Set pincntrl with unused pins so that we can control the pins
+	// through GPIO
+	err = pinctrl_apply_state(
+		config->pcfg,
+		PINCTRL_STATE_SLEEP
+	);
+	if (err < 0) {
+		LOG_ERR("Could not switch pinctrl state to OFF: %d", err);
+		return err;
+	}
+
+	// Configure data and clock lines for output
+	ps2_uart_configure_pin_scl_output();
+	ps2_uart_configure_pin_sda_output();
+
+	data->mode = PS2_UART_MODE_WRITE;
+
+	return err;
+}
+
 void log_binary(uint8_t value) {
 	char binary_str[9];
 
@@ -138,7 +362,7 @@ void log_binary(uint8_t value) {
 
     binary_str[8] = '\0';
 
-	LOG_INF("Received Value: %s", binary_str);
+	LOG_INF("Binary Value of 0x%x: %s", value, binary_str);
 }
 
 bool ps2_uart_get_byte_parity(uint8_t byte)
@@ -315,7 +539,7 @@ void ps2_uart_read_process_received_byte(uint8_t byte)
 
 		// Call callback from a worker to make sure the callback
 		// doesn't block the interrupt.
-		// Will call ps2_gpio_read_callback_work_handler
+		// Will call ps2_uart_read_callback_work_handler
 		data->callback_byte = byte;
     	k_work_submit_to_queue(
 			&ps2_uart_work_queue_cb,
@@ -362,19 +586,181 @@ K_MUTEX_DEFINE(write_mutex);
 int ps2_uart_write_byte(uint8_t byte)
 {
 	int err;
+	struct ps2_uart_data *data = &ps2_uart_data;
 
-	LOG_DBG("\n");
-	LOG_DBG("START WRITE: 0x%x", byte);
+	if(byte == 0xf4) {
+		LOG_ERR("Aborting write of 0xf4");
+		return -1;
+	}
+
+	byte = 0xaa;
+
+	LOG_INF("\n");
+	LOG_INF("START WRITE: 0x%x", byte);
+	log_binary(byte);
 
 	err = 0;
 
 	k_mutex_lock(&write_mutex, K_FOREVER);
 
-	LOG_DBG("END WRITE: 0x%x\n", byte);
+	err = ps2_uart_set_mode_write();
+	if(err != 0) {
+		LOG_ERR("Could not configure driver for write mode: %d", err);
+		return err;
+	}
+
+	// Set the write byte so it can be used in
+	// the downstream write function that is called
+	// from the SCL interrupt
+	data->cur_write_byte = byte;
+
+	LOG_INF("Starting inhibition of line");
+
+
+	// Inhibit the line by setting clock low and data high for 100us
+	ps2_uart_set_scl(0);
+	// ps2_uart_set_sda(1);
+	k_busy_wait(200);
+
+	// Set data to value of start bit
+	ps2_uart_set_sda(0);
+	k_busy_wait(200);
+
+	// Release the clock line and configure it as input
+	// This let's the device take control of the clock again
+	ps2_uart_set_scl(1);
+	ps2_uart_configure_pin_scl_input();
+
+	// We need to wait for the first SCL clock
+	// Execution continues once it arrives in
+	// `ps2_uart_write_scl_interrupt_handler`
+	// ps2_uart_set_scl_callback_enabled(true);
+
+
+	for(int i = PS2_UART_POS_DATA_FIRST; i <= PS2_UART_POS_STOP; i++) {
+
+		if(i >= PS2_UART_POS_DATA_FIRST && i <= PS2_UART_POS_DATA_LAST) {
+
+			int data_pos = i - PS2_UART_POS_DATA_FIRST;
+			bool data_bit = PS2_UART_GET_BIT(
+				data->cur_write_byte,
+				data_pos
+			);
+
+			ps2_uart_set_sda(data_bit);
+		} else if(i == PS2_UART_POS_PARITY) {
+
+			bool byte_parity = ps2_uart_get_byte_parity(data->cur_write_byte);
+
+			ps2_uart_set_sda(byte_parity);
+		} else if(i == PS2_UART_POS_STOP) {
+
+			ps2_uart_set_sda(1);
+
+			// Give control over data pin back to device after sending
+			// the stop bit so that we can receive the ack bit from the
+			// device
+			ps2_uart_configure_pin_sda_input();
+		} else {
+			LOG_ERR("UART unknown TX bit number: %d", i);
+		}
+
+		// Sleep for the cycle length
+		k_busy_wait(PS2_UART_TIMING_SCL_CYCLE_LEN);
+	}
+
+	// Check Ack
+	int ack_val = ps2_uart_get_sda();
+	int ret = -1;
+
+	if(ack_val == 0) {
+		LOG_INF("Write was successful on ack: ");
+		ret = 0;
+	} else {
+		LOG_ERR("Write failed on ack");
+		ret = -1;
+	}
+
+	err = ps2_uart_set_mode_read();
+	if(err != 0) {
+		LOG_ERR("Could not configure driver for read mode: %d", err);
+		return;
+	}
+
+	LOG_DBG("END WRITE: 0x%x\n", data->cur_write_byte);
+	data->cur_write_byte = 0x0;
 
 	k_mutex_unlock(&write_mutex);
 
-	return err;
+	return 0;
+}
+
+void ps2_uart_write_scl_interrupt_handler(const struct device *dev,
+						   				  struct gpio_callback *cb,
+						   				  uint32_t pins)
+{
+	struct ps2_uart_data *data = &ps2_uart_data;
+	int err;
+
+	LOG_INF("Inside ps2_uart_write_scl_interrupt_handler");
+	// Disable the SCL interrupt again.
+	// From here we will just time things
+	ps2_uart_set_scl_callback_enabled(false);
+
+	for(int i = PS2_UART_POS_DATA_FIRST; i <= PS2_UART_POS_STOP; i++) {
+
+		if(i >= PS2_UART_POS_DATA_FIRST && i <= PS2_UART_POS_DATA_LAST) {
+
+			int data_pos = i - PS2_UART_POS_DATA_FIRST;
+			bool data_bit = PS2_UART_GET_BIT(
+				data->cur_write_byte,
+				data_pos
+			);
+
+			ps2_uart_set_sda(data_bit);
+		} else if(i == PS2_UART_POS_PARITY) {
+
+			bool byte_parity = ps2_uart_get_byte_parity(data->cur_write_byte);
+
+			ps2_uart_set_sda(byte_parity);
+		} else if(i == PS2_UART_POS_STOP) {
+
+			ps2_uart_set_sda(1);
+
+			// Give control over data pin back to device after sending
+			// the stop bit so that we can receive the ack bit from the
+			// device
+			ps2_uart_configure_pin_sda_input();
+		} else {
+			LOG_ERR("UART unknown TX bit number: %d", i);
+		}
+
+		// Sleep for the cycle length
+		k_busy_wait(PS2_UART_TIMING_SCL_CYCLE_LEN);
+	}
+
+	// Check Ack
+	int ack_val = ps2_uart_get_sda();
+	int ret = -1;
+
+	if(ack_val == 0) {
+		LOG_INF("Write was successful on ack: ");
+		ret = 0;
+	} else {
+		LOG_ERR("Write failed on ack");
+		ret = -1;
+	}
+
+	err = ps2_uart_set_mode_read();
+	if(err != 0) {
+		LOG_ERR("Could not configure driver for read mode: %d", err);
+		return;
+	}
+
+	LOG_DBG("END WRITE: 0x%x\n", data->cur_write_byte);
+	data->cur_write_byte = 0x0;
+
+	k_mutex_unlock(&write_mutex);
 }
 
 /*
@@ -445,7 +831,10 @@ int ps2_uart_read(const struct device *dev, uint8_t *value)
 
 static int ps2_uart_write(const struct device *dev, uint8_t value)
 {
-	return ps2_uart_write_byte(value);
+	int ret;
+	ret = ps2_uart_write_byte(value);
+	//ret = -1;
+	return ret;
 }
 
 static int ps2_uart_disable_callback(const struct device *dev)
@@ -574,6 +963,19 @@ static int ps2_uart_init_uart(void)
 
 	uart_irq_rx_enable(config->uart_dev);
 	uart_irq_err_enable(config->uart_dev);
+
+	gpio_init_callback(
+		&data->scl_cb_data,
+		ps2_uart_write_scl_interrupt_handler,
+		BIT(config->scl_gpio.pin)
+	);
+	ps2_uart_set_scl_callback_enabled(false);
+
+	err = ps2_uart_set_mode_read();
+	if(err != 0) {
+		LOG_ERR("Could not initialize in UART mode read: %d", err);
+		return err;
+	}
 
 	return 0;
 }
