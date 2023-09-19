@@ -46,10 +46,6 @@ LOG_MODULE_REGISTER(ps2_uart);
  * Driver Defines
  */
 
-#define PS2_UART_DATA_BITS UART_CFG_DATA_BITS_8
-#define PS2_UART_PARITY UART_CFG_PARITY_ODD
-#define PS2_UART_STOP_BITS UART_CFG_STOP_BITS_1
-
 // Timeout for blocking read using the zephyr PS2 ps2_read() function
 // This is not a matter of PS/2 timings, but a preference of how long we let
 // the user wait until we give up on reading.
@@ -246,6 +242,61 @@ void ps2_uart_send_cmd_resend()
     }
 }
 
+
+/*
+ * Reading PS2 data
+ */
+void ps2_uart_read_interrupt_handler();
+void ps2_uart_read_process_received_byte(uint8_t byte);
+
+void ps2_uart_read_interrupt_handler(const struct device *uart_dev,
+									 void *user_data)
+{
+	int err;
+	uint8_t byte;
+
+	int byte_len = uart_fifo_read(uart_dev, &byte, 1);
+	if(byte_len < 1) {
+		LOG_ERR("UART read failed with error: %d", byte_len);
+		return;
+	}
+
+	ps2_uart_read_process_received_byte(byte);
+}
+}
+
+void ps2_uart_read_process_received_byte(uint8_t byte)
+{
+	struct ps2_uart_data *data = &ps2_uart_data;
+
+	LOG_INF("UART Received: 0x%x", byte);
+
+	// If no callback is set, we add the data to a fifo queue
+	// that can be read later with the read using `ps2_read`
+	if(data->callback_isr != NULL && data->callback_enabled) {
+
+		// Call callback from a worker to make sure the callback
+		// doesn't block the interrupt.
+		// Will call ps2_gpio_read_callback_work_handler
+		data->callback_byte = byte;
+    	k_work_submit_to_queue(
+			&ps2_uart_work_queue_cb,
+			&data->callback_work
+		);
+	} else {
+		ps2_uart_data_queue_add(byte);
+	}
+}
+
+void ps2_uart_read_callback_work_handler(struct k_work *work)
+{
+	struct ps2_uart_data *data = &ps2_uart_data;
+
+	data->callback_isr(data->dev, data->callback_byte);
+	data->callback_byte = 0x0;
+}
+
+
 /*
  * Writing PS2 data
  */
@@ -268,6 +319,27 @@ int ps2_uart_write_byte(uint8_t byte)
 
 	return err;
 }
+
+/*
+ * UART Interrupt Handling
+ */
+
+static void ps2_uart_interrupt_handler(const struct device *uart_dev,
+									   void *user_data)
+{
+	int err;
+
+	err = uart_irq_update(uart_dev);
+	if(err != 1) {
+		LOG_ERR("uart_irq_update returned: %d", err);
+		return;
+	}
+
+	while (uart_irq_rx_ready(uart_dev)) {
+		ps2_uart_read_interrupt_handler(uart_dev, user_data);
+    }
+}
+
 
 /*
  * Zephyr PS/2 driver interface
@@ -354,56 +426,11 @@ static const struct ps2_driver_api ps2_uart_driver_api = {
 	.enable_callback = ps2_uart_enable_callback,
 };
 
-/*
- * PS/2 UART Interrupt Handling
- */
-
-void ps2_uart_process_received_byte(uint8_t byte);
-
-static void uart_int_handler(const struct device *uart_dev, void *user_data)
-{
-	uart_irq_update(uart_dev);
-    if (uart_irq_rx_ready(uart_dev))
-    {
-        uint8_t byte;
-        while (!uart_poll_in(uart_dev, &byte))
-        {
-			ps2_uart_process_received_byte(byte);
-        }
-    }
-}
-
-void ps2_uart_process_received_byte(uint8_t byte)
-{
-	struct ps2_uart_data *data = &ps2_uart_data;
-
-	LOG_INF("Received: 0x%x", byte);
-
-	// If no callback is set, we add the data to a fifo queue
-	// that can be read later with the read using `ps2_read`
-	if(data->callback_isr != NULL && data->callback_enabled) {
-
-		// Call callback from a worker to make sure the callback
-		// doesn't block the interrupt.
-		// Will call ps2_gpio_read_callback_work_handler
-		data->callback_byte = byte;
-    	k_work_submit_to_queue(&ps2_uart_work_queue_cb, &data->callback_work);
-	} else {
-		ps2_uart_data_queue_add(byte);
-	}
-}
-
-void ps2_uart_read_callback_work_handler(struct k_work *work)
-{
-	struct ps2_uart_data *data = &ps2_uart_data;
-
-	data->callback_isr(data->dev, data->callback_byte);
-	data->callback_byte = 0x0;
-}
 
 /*
  * PS/2 UART Driver Init
  */
+static int ps2_uart_init_uart(void);
 
 static int ps2_uart_init(const struct device *dev)
 {
@@ -414,10 +441,7 @@ static int ps2_uart_init(const struct device *dev)
 	// the ps2 callback
 	data->dev = dev;
 
-	const struct ps2_uart_config *config = dev->config;
-
 	LOG_INF("Inside ps2_uart_init");
-
 
 	// Init fifo for synchronous read operations
 	k_fifo_init(&data->data_queue);
@@ -442,6 +466,19 @@ static int ps2_uart_init(const struct device *dev)
 
 	k_work_init(&data->callback_work, ps2_uart_read_callback_work_handler);
 
+	err = ps2_uart_init_uart();
+	if(err != 0) {
+		return err;
+	}
+
+	return 0;
+}
+
+static int ps2_uart_init_uart(void)
+{
+	struct ps2_uart_data *data = &ps2_uart_data;
+	struct ps2_uart_config *config = (struct ps2_uart_config *) &ps2_uart_config;
+	int err;
 
     if (!device_is_ready(config->uart_dev))
     {
@@ -458,16 +495,27 @@ static int ps2_uart_init(const struct device *dev)
 		return -ENODEV;
 	}
 
-	uart_cfg.data_bits = PS2_UART_DATA_BITS;
-	uart_cfg.stop_bits = PS2_UART_STOP_BITS;
-	uart_cfg.parity = PS2_UART_PARITY;
+	uart_cfg.data_bits = UART_CFG_DATA_BITS_8;
+	uart_cfg.stop_bits = UART_CFG_STOP_BITS_1;
+	uart_cfg.flow_ctrl = UART_CFG_FLOW_CTRL_NONE;
+
+	// PS/2 uses odd parity, but nrf52840 doesn't support
+	// odd parity. Despite that, setting none works.
+	uart_cfg.parity = UART_CFG_PARITY_NONE;
 
 	err = uart_configure(config->uart_dev, &uart_cfg);
+	if(err != 0) {
+		LOG_ERR("Could not configure UART device: %d", err);
+		return -EINVAL;
+	}
 
+	uart_irq_callback_user_data_set(
+		config->uart_dev,
+		ps2_uart_interrupt_handler,
+		(void *)data->dev
+	);
 
-
-	uart_irq_callback_user_data_set(config->uart_dev, uart_int_handler, (void *)dev);
-    uart_irq_rx_enable(config->uart_dev);
+	uart_irq_rx_enable(config->uart_dev);
 
 	return 0;
 }
