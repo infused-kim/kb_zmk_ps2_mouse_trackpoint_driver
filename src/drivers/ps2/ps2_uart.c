@@ -238,7 +238,8 @@ int ps2_uart_set_scl_callback_enabled(bool enabled)
 	struct ps2_uart_data *data = &ps2_uart_data;
 	struct ps2_uart_config *config = (struct ps2_uart_config *) &ps2_uart_config;
 	int err;
-	return 0;
+
+	LOG_INF("Setting ps2_uart_set_scl_callback_enabled: %d", enabled);
 
 	if(enabled) {
 		err = gpio_add_callback(config->scl_gpio.port, &data->scl_cb_data);
@@ -583,17 +584,17 @@ void ps2_uart_read_callback_work_handler(struct k_work *work)
  */
 K_MUTEX_DEFINE(write_mutex);
 
+bool has_written = false;
 int ps2_uart_write_byte(uint8_t byte)
 {
 	int err;
 	struct ps2_uart_data *data = &ps2_uart_data;
 
-	if(byte == 0xf4) {
-		LOG_ERR("Aborting write of 0xf4");
+	if(has_written == true) {
+		LOG_ERR("Prevented subsequent writes");
 		return -1;
 	}
-
-	byte = 0xaa;
+	has_written = true;
 
 	LOG_INF("\n");
 	LOG_INF("START WRITE: 0x%x", byte);
@@ -620,11 +621,11 @@ int ps2_uart_write_byte(uint8_t byte)
 	// Inhibit the line by setting clock low and data high for 100us
 	ps2_uart_set_scl(0);
 	// ps2_uart_set_sda(1);
-	k_busy_wait(200);
+	k_busy_wait(500);
 
 	// Set data to value of start bit
 	ps2_uart_set_sda(0);
-	k_busy_wait(200);
+	k_busy_wait(500);
 
 	// Release the clock line and configure it as input
 	// This let's the device take control of the clock again
@@ -634,61 +635,7 @@ int ps2_uart_write_byte(uint8_t byte)
 	// We need to wait for the first SCL clock
 	// Execution continues once it arrives in
 	// `ps2_uart_write_scl_interrupt_handler`
-	// ps2_uart_set_scl_callback_enabled(true);
-
-
-	for(int i = PS2_UART_POS_DATA_FIRST; i <= PS2_UART_POS_STOP; i++) {
-
-		if(i >= PS2_UART_POS_DATA_FIRST && i <= PS2_UART_POS_DATA_LAST) {
-
-			int data_pos = i - PS2_UART_POS_DATA_FIRST;
-			bool data_bit = PS2_UART_GET_BIT(
-				data->cur_write_byte,
-				data_pos
-			);
-
-			ps2_uart_set_sda(data_bit);
-		} else if(i == PS2_UART_POS_PARITY) {
-
-			bool byte_parity = ps2_uart_get_byte_parity(data->cur_write_byte);
-
-			ps2_uart_set_sda(byte_parity);
-		} else if(i == PS2_UART_POS_STOP) {
-
-			ps2_uart_set_sda(1);
-
-			// Give control over data pin back to device after sending
-			// the stop bit so that we can receive the ack bit from the
-			// device
-			ps2_uart_configure_pin_sda_input();
-		} else {
-			LOG_ERR("UART unknown TX bit number: %d", i);
-		}
-
-		// Sleep for the cycle length
-		k_busy_wait(PS2_UART_TIMING_SCL_CYCLE_LEN);
-	}
-
-	// Check Ack
-	int ack_val = ps2_uart_get_sda();
-	int ret = -1;
-
-	if(ack_val == 0) {
-		LOG_INF("Write was successful on ack: ");
-		ret = 0;
-	} else {
-		LOG_ERR("Write failed on ack");
-		ret = -1;
-	}
-
-	err = ps2_uart_set_mode_read();
-	if(err != 0) {
-		LOG_ERR("Could not configure driver for read mode: %d", err);
-		return;
-	}
-
-	LOG_DBG("END WRITE: 0x%x\n", data->cur_write_byte);
-	data->cur_write_byte = 0x0;
+	ps2_uart_set_scl_callback_enabled(true);
 
 	k_mutex_unlock(&write_mutex);
 
@@ -964,11 +911,25 @@ static int ps2_uart_init_uart(void)
 	uart_irq_rx_enable(config->uart_dev);
 	uart_irq_err_enable(config->uart_dev);
 
+	// Interrupt for clock line
 	gpio_init_callback(
 		&data->scl_cb_data,
 		ps2_uart_write_scl_interrupt_handler,
 		BIT(config->scl_gpio.pin)
 	);
+
+	err = gpio_pin_interrupt_configure_dt(
+		&config->scl_gpio,
+		(GPIO_INT_EDGE_FALLING)
+	);
+	if (err) {
+		LOG_ERR(
+			"failed to configure interrupt on "
+			"SCL GPIO pin (err %d)", err
+		);
+		return err;
+	}
+
 	ps2_uart_set_scl_callback_enabled(false);
 
 	err = ps2_uart_set_mode_read();
