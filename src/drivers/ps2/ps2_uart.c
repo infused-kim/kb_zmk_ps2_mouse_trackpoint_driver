@@ -32,8 +32,6 @@ PINCTRL_DT_DEFINE(DT_INST_BUS(0));
 #define PS2_UART_WRITE_MAX_RETRY 5
 #define PS2_UART_READ_MAX_RETRY 3
 
-#define CONFIG_MY_UART_PERIPHERAL_RX_BUF_SIZE 20
-
 // Custom queue for background PS/2 processing work at low priority
 // We purposefully want this to be a fairly low priority, because
 // this queue is used while we wait to start a write.
@@ -68,6 +66,11 @@ PINCTRL_DT_DEFINE(DT_INST_BUS(0));
 // The minimum time needed to inhibit clock to start a write
 // is 100us, but we triple it just in case.
 #define PS2_UART_TIMING_SCL_INHIBITION_MIN 100
+
+
+// Theoretically, only 100us is required, but practically, trackponts
+// seem to respond to a total duration of 1,000 us the best.
+// This is also the duration my USB to PS/2 adapter is using.
 #define PS2_UART_TIMING_SCL_INHIBITION ( \
 	5 * PS2_UART_TIMING_SCL_INHIBITION_MIN \
 )
@@ -532,7 +535,7 @@ void ps2_uart_read_process_received_byte(uint8_t byte)
 {
 	struct ps2_uart_data *data = &ps2_uart_data;
 
-	LOG_INF("UART Received: 0x%x", byte);
+	LOG_DBG("UART Received: 0x%x", byte);
 
 	// If no callback is set, we add the data to a fifo queue
 	// that can be read later with the read using `ps2_read`
@@ -608,12 +611,11 @@ int ps2_uart_write_byte(uint8_t byte)
 
 	// Inhibit the line by setting clock low and data high for 100us
 	ps2_uart_set_scl(0);
-	// ps2_uart_set_sda(1);
-	k_busy_wait(500);
+	k_busy_wait(PS2_UART_TIMING_SCL_INHIBITION);
 
 	// Set data to value of start bit
 	ps2_uart_set_sda(0);
-	k_busy_wait(500);
+	k_busy_wait(PS2_UART_TIMING_SCL_INHIBITION);
 
 	// Release the clock line and configure it as input
 	// This let's the device take control of the clock again
@@ -630,6 +632,21 @@ int ps2_uart_write_byte(uint8_t byte)
 	return 0;
 }
 
+// The nrf52 is too slow to process all SCL interrupts, so we
+// try to avoid them as much as possible.
+//
+// But, after we initiate the write transmission with SCL and SDA LOW,
+// the PS/2 device doesn't always respond right away. It can take as
+// much as 5,000us for it to start sending the clock for the
+// transmission.
+//
+// Once it does start sending the clock the cycles are pretty
+// consistently between 67 and 70us (at least on the trackpoints I
+// tested).
+//
+// So, we use a GPIO interrupt to wait for the first clock cycle and
+// then use delays to send the actual data at the same rate as the
+// UART baud rate.
 void ps2_uart_write_scl_interrupt_handler(const struct device *dev,
 						   				  struct gpio_callback *cb,
 						   				  uint32_t pins)
@@ -638,7 +655,7 @@ void ps2_uart_write_scl_interrupt_handler(const struct device *dev,
 	int err;
 
 	// Disable the SCL interrupt again.
-	// From here we will just time things
+	// From here we will just use time delays.
 	ps2_uart_set_scl_callback_enabled(false);
 
 	for(int i = PS2_UART_POS_DATA_FIRST; i <= PS2_UART_POS_STOP; i++) {
