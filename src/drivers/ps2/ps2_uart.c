@@ -189,7 +189,6 @@ void ps2_uart_set_scl(int state)
 {
 	const struct ps2_uart_config *config = &ps2_uart_config;
 
-	LOG_INF("Setting scl to %d", state);
 	gpio_pin_set_dt(&config->scl_gpio, state);
 }
 
@@ -197,7 +196,7 @@ void ps2_uart_set_sda(int state)
 {
 	const struct ps2_uart_config *config = &ps2_uart_config;
 
-	LOG_INF("Seting sda to %d", state);
+	// LOG_INF("Seting sda to %d", state);
 	gpio_pin_set_dt(&config->sda_gpio, state);
 }
 
@@ -239,23 +238,31 @@ int ps2_uart_set_scl_callback_enabled(bool enabled)
 	struct ps2_uart_config *config = (struct ps2_uart_config *) &ps2_uart_config;
 	int err;
 
-	LOG_INF("Setting ps2_uart_set_scl_callback_enabled: %d", enabled);
+	// LOG_INF("Setting ps2_uart_set_scl_callback_enabled: %d", enabled);
 
 	if(enabled) {
-		err = gpio_add_callback(config->scl_gpio.port, &data->scl_cb_data);
+		err = gpio_pin_interrupt_configure_dt(
+			&config->scl_gpio,
+			(GPIO_INT_EDGE_FALLING)
+		);
 		if (err) {
 			LOG_ERR(
-				"failed to enable interrupt callback on "
+				"failed to enable interrupt on "
 				"SCL GPIO pin (err %d)", err
 			);
+			return err;
 		}
 	} else {
-		err = gpio_remove_callback(config->scl_gpio.port, &data->scl_cb_data);
+		err = gpio_pin_interrupt_configure_dt(
+			&config->scl_gpio,
+			(GPIO_INT_DISABLE)
+		);
 		if (err) {
 			LOG_ERR(
-				"failed to disable interrupt callback on "
+				"failed to disable interrupt on "
 				"SCL GPIO pin (err %d)", err
 			);
+			return err;
 		}
 	}
 
@@ -584,17 +591,10 @@ void ps2_uart_read_callback_work_handler(struct k_work *work)
  */
 K_MUTEX_DEFINE(write_mutex);
 
-bool has_written = false;
 int ps2_uart_write_byte(uint8_t byte)
 {
 	int err;
 	struct ps2_uart_data *data = &ps2_uart_data;
-
-	if(has_written == true) {
-		LOG_ERR("Prevented subsequent writes");
-		return -1;
-	}
-	has_written = true;
 
 	LOG_INF("\n");
 	LOG_INF("START WRITE: 0x%x", byte);
@@ -614,9 +614,6 @@ int ps2_uart_write_byte(uint8_t byte)
 	// the downstream write function that is called
 	// from the SCL interrupt
 	data->cur_write_byte = byte;
-
-	LOG_INF("Starting inhibition of line");
-
 
 	// Inhibit the line by setting clock low and data high for 100us
 	ps2_uart_set_scl(0);
@@ -649,7 +646,6 @@ void ps2_uart_write_scl_interrupt_handler(const struct device *dev,
 	struct ps2_uart_data *data = &ps2_uart_data;
 	int err;
 
-	LOG_INF("Inside ps2_uart_write_scl_interrupt_handler");
 	// Disable the SCL interrupt again.
 	// From here we will just time things
 	ps2_uart_set_scl_callback_enabled(false);
@@ -691,7 +687,7 @@ void ps2_uart_write_scl_interrupt_handler(const struct device *dev,
 	int ret = -1;
 
 	if(ack_val == 0) {
-		LOG_INF("Write was successful on ack: ");
+		LOG_INF("Write was successful");
 		ret = 0;
 	} else {
 		LOG_ERR("Write failed on ack");
@@ -918,16 +914,12 @@ static int ps2_uart_init_uart(void)
 		BIT(config->scl_gpio.pin)
 	);
 
-	err = gpio_pin_interrupt_configure_dt(
-		&config->scl_gpio,
-		(GPIO_INT_EDGE_FALLING)
-	);
+	err = gpio_add_callback(config->scl_gpio.port, &data->scl_cb_data);
 	if (err) {
 		LOG_ERR(
-			"failed to configure interrupt on "
+			"failed to enable interrupt callback on "
 			"SCL GPIO pin (err %d)", err
 		);
-		return err;
 	}
 
 	ps2_uart_set_scl_callback_enabled(false);
