@@ -2046,6 +2046,6 @@ DEVICE_DT_INST_DEFINE(
 	&zmk_mouse_ps2_init,
 	NULL,
 	&zmk_mouse_ps2_data, &zmk_mouse_ps2_config,
-	POST_KERNEL, 41,
+	POST_KERNEL, 91,
 	NULL
 );
