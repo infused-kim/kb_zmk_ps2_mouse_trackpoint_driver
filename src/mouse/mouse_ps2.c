@@ -439,6 +439,8 @@ void zmk_mouse_ps2_activity_process_cmd(
         x_delta, y_delta
     );
 
+
+#if IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_ENABLE_ERROR_MITIGATION)
     if(packet.overflow_x == 1 && packet.overflow_y == 1) {
         LOG_WRN(
             "Detected overflow in both x and y. "
@@ -468,6 +470,7 @@ void zmk_mouse_ps2_activity_process_cmd(
         zmk_mouse_ps2_activity_abort_cmd();
         return;
     }
+#endif
 
     zmk_mouse_ps2_activity_click_buttons(
         packet.button_l, packet.button_m, packet.button_r
