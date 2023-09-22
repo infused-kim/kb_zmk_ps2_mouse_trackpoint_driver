@@ -55,6 +55,7 @@ PINCTRL_DT_DEFINE(DT_INST_BUS(0));
 
 #define PS2_UART_POS_START 0
 #define PS2_UART_POS_DATA_FIRST 1
+#define PS2_UART_POS_DATA_SECOND 2
 #define PS2_UART_POS_DATA_LAST 8
 #define PS2_UART_POS_PARITY 9
 #define PS2_UART_POS_STOP 10
@@ -102,8 +103,6 @@ struct ps2_uart_data {
 	// SCL GPIO callback for writing
 	struct gpio_callback scl_cb_data;
 
-	// PS2 driver interface callback
-	struct k_work callback_work;
 	uint8_t callback_byte;
 	ps2_callback_t callback_isr;
 	ps2_resend_callback_t resend_callback_isr;
@@ -115,8 +114,12 @@ struct ps2_uart_data {
 
 	// Write byte
 	uint8_t cur_write_byte;
+	uint64_t cur_write_interrupt_time;
 
+	struct k_work callback_work;
+	struct k_work write_scl_interrupt_work;
 	struct k_work resend_cmd_work;
+
 };
 
 static const struct ps2_uart_config ps2_uart_config = {
@@ -592,8 +595,8 @@ int ps2_uart_write_byte(uint8_t byte)
 	int err;
 	struct ps2_uart_data *data = &ps2_uart_data;
 
-	LOG_INF("\n");
-	LOG_INF("START WRITE: 0x%x", byte);
+	// LOG_INF("\n");
+	// LOG_INF("START WRITE: 0x%x", byte);
 	log_binary(byte);
 
 	k_mutex_lock(&write_mutex, K_FOREVER);
@@ -652,17 +655,59 @@ void ps2_uart_write_scl_interrupt_handler(const struct device *dev,
 						   				  uint32_t pins)
 {
 	struct ps2_uart_data *data = &ps2_uart_data;
-	int err;
+	LOG_INF("Inside ps2_uart_write_scl_interrupt_handler");
+
+	// Record time when the interrupt was called
+	// We use this to calculate how long to wait in the next
+	// background thread.
+	data->cur_write_interrupt_time = k_uptime_ticks();
+
+	// Set the first data bit
+	bool data_bit = PS2_UART_GET_BIT(
+		data->cur_write_byte,
+		0
+	);
+
+	ps2_uart_set_sda(data_bit);
 
 	// Disable the SCL interrupt again.
 	// From here we will just use time delays.
 	ps2_uart_set_scl_callback_enabled(false);
 
-	for(int i = PS2_UART_POS_DATA_FIRST; i <= PS2_UART_POS_STOP; i++) {
 
-		if(i >= PS2_UART_POS_DATA_FIRST && i <= PS2_UART_POS_DATA_LAST) {
+	// We don't want to block the interrupt with all of our delays
+	// So we process the data sending in another worker.
+	k_work_submit_to_queue(
+		&ps2_uart_work_queue_cb,
+		&data->write_scl_interrupt_work
+	);
+}
 
-			int data_pos = i - PS2_UART_POS_DATA_FIRST;
+void ps2_uart_write_scl_interrupt_worker(struct k_work *item)
+{
+	struct ps2_uart_data *data = &ps2_uart_data;
+	int err;
+
+	LOG_INF("Inside ps2_uart_write_scl_interrupt_worker");
+
+	uint64_t ticks_since_interrupt = (
+		k_uptime_ticks() - data->cur_write_interrupt_time
+	);
+	uint64_t remaining_wait = (
+		PS2_UART_TIMING_SCL_CYCLE_LEN
+			- k_cyc_to_us_floor64(ticks_since_interrupt)
+	);
+	if(remaining_wait > 0) {
+		k_busy_wait(remaining_wait);
+	}
+
+	LOG_INF("Waited for %lld", remaining_wait);
+
+	for(int i = PS2_UART_POS_DATA_SECOND; i <= PS2_UART_POS_STOP; i++) {
+
+		if(i >= PS2_UART_POS_DATA_SECOND && i <= PS2_UART_POS_DATA_LAST) {
+
+			int data_pos = i - PS2_UART_POS_DATA_SECOND;
 			bool data_bit = PS2_UART_GET_BIT(
 				data->cur_write_byte,
 				data_pos
@@ -840,7 +885,8 @@ static int ps2_uart_init(const struct device *dev)
         NULL
     );
 
-	k_work_init(&data->callback_work, ps2_uart_read_callback_work_handler);
+	k_work_init(&data->write_scl_interrupt_work, ps2_uart_send_cmd_resend_worker);
+	k_work_init(&data->callback_work, ps2_uart_write_scl_interrupt_worker);
 
 	err = ps2_uart_init_uart();
 	if(err != 0) {
