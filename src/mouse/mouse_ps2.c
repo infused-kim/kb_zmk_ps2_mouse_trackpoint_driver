@@ -352,7 +352,9 @@ void zmk_mouse_ps2_activity_callback(const struct device *ps2_device,
         int alignment_bit = MOUSE_PS2_GET_BIT(byte, 3);
         if(alignment_bit != 1) {
 
-            zmk_mouse_ps2_activity_abort_cmd();
+            zmk_mouse_ps2_activity_abort_cmd(
+                "Bit 3 of packet is 0 instead of 1"
+            );
             return;
         }
     } else if(data->packet_idx == 1) {
@@ -380,13 +382,14 @@ void zmk_mouse_ps2_activity_callback(const struct device *ps2_device,
 	k_work_schedule(&data->packet_buffer_timeout, MOUSE_PS2_TIMEOUT_ACTIVITY_PACKET);
 }
 
-void zmk_mouse_ps2_activity_abort_cmd() {
+void zmk_mouse_ps2_activity_abort_cmd(char *reason) {
     struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
     const struct zmk_mouse_ps2_config *config = &zmk_mouse_ps2_config;
     const struct device *ps2_device = config->ps2_device;
 
     LOG_ERR(
-        "PS/2 Mouse cmd buffer is out of aligment. Requesting resend."
+        "PS/2 Mouse cmd buffer is out of aligment. Requesting resend: %s",
+        reason
     );
 
     data->packet_idx = 0;
@@ -468,7 +471,7 @@ void zmk_mouse_ps2_activity_process_cmd(
             "Probably mistransmission. Aborting..."
         );
 
-        zmk_mouse_ps2_activity_abort_cmd();
+        zmk_mouse_ps2_activity_abort_cmd("Overflow in both x and y");
         return;
     }
 
@@ -488,7 +491,7 @@ void zmk_mouse_ps2_activity_process_cmd(
             packet.scroll, packet.button_l, packet.button_m, packet.button_r,
             x_delta, y_delta
         );
-        zmk_mouse_ps2_activity_abort_cmd();
+        zmk_mouse_ps2_activity_abort_cmd("Exceeds movement threshold.");
         return;
     }
 #endif
@@ -721,7 +724,7 @@ void zmk_mouse_ps2_activity_click_buttons(bool button_l,
             buttons_pressed, buttons_released
         );
 
-        zmk_mouse_ps2_activity_abort_cmd();
+        zmk_mouse_ps2_activity_abort_cmd("Multiple button presses");
         return;
     }
 
