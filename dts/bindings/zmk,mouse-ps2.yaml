@@ -13,3 +13,14 @@ properties:
     type: phandle-array
     required: false
     description: GPIO to which the RST pin of the device is connected and on which the Power-On-Reset will be performed.
+
+  layer-toggle:
+    type: int
+    required: false
+    description: The layer that should be toggled when the mouse is moved.
+
+  layer-toggle-timeout-ms:
+    type: int
+    default: 500
+    required: false
+    description: How many miliseconds of inactivity are required before the layer is toggled off again.
