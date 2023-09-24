@@ -60,6 +60,14 @@ PINCTRL_DT_DEFINE(DT_INST_BUS(0));
 #define PS2_UART_POS_STOP 10
 #define PS2_UART_POS_ACK 11  // Write mode only
 
+#define PS2_UART_RESP_ACK 0xfa
+#define PS2_UART_RESP_RESEND 0xfe
+#define PS2_UART_RESP_FAILURE 0xfc
+
+/*
+ * PS/2 Timings
+ */
+
 #define PS2_UART_TIMING_SCL_CYCLE_LEN 69
 
 
@@ -75,6 +83,41 @@ PINCTRL_DT_DEFINE(DT_INST_BUS(0));
 	5 * PS2_UART_TIMING_SCL_INHIBITION_MIN \
 )
 
+// PS2 uses a frequency between 10 kHz and 16.7 kHz. So clocks should arrive
+// within 60-100us.
+#define PS2_UART_TIMING_SCL_CYCLE_MIN 60
+#define PS2_UART_TIMING_SCL_CYCLE_MAX 100
+
+// After inhibiting and releasing the clock, the device starts sending
+// the clock. It's supposed to start immediately, but some devices
+// need much longer if you are asking them to interrupt an
+// ongoing read.
+#define PS2_UART_TIMING_SCL_INHIBITION_RESP_MAX 3000
+#define PS2_UART_TIMEOUT_WRITE_SCL_START K_USEC( \
+	PS2_UART_TIMING_SCL_INHIBITION_RESP_MAX \
+)
+
+// Writes start with us inhibiting the line and then respond
+// with 11 bits (start bit included in inhibition time).
+// To be conservative we give it another 2 cycles to complete
+#define PS2_UART_TIMING_WRITE_MAX_TIME ( \
+	PS2_UART_TIMING_SCL_INHIBITION \
+	+ PS2_UART_TIMING_SCL_INHIBITION_RESP_MAX \
+	+ 11 * PS2_UART_TIMING_SCL_CYCLE_MAX \
+	+ 2 * PS2_UART_TIMING_SCL_CYCLE_MAX \
+)
+
+// Reads are 11bit and we give it another 2 cycles to start and stop
+#define PS2_UART_TIMING_READ_MAX_TIME (\
+	11 * PS2_UART_TIMING_SCL_CYCLE_MAX \
+	+ 2 * PS2_UART_TIMING_SCL_CYCLE_MAX \
+)
+
+// Timeout for write_byte_await_response()
+// PS/2 spec says that device must respond within 20msec,
+// but real life devices take much longer. Especially if
+// you interrupt existing transmissions.
+#define PS2_UART_TIMEOUT_WRITE_AWAIT_RESPONSE K_MSEC(300)
 
 /*
  * Driver Defines
@@ -85,9 +128,23 @@ PINCTRL_DT_DEFINE(DT_INST_BUS(0));
 // the user wait until we give up on reading.
 #define PS2_UART_TIMEOUT_READ K_SECONDS(2)
 
+// Timeout for write_byte_blocking()
+#define PS2_UART_TIMEOUT_WRITE_BLOCKING K_USEC( \
+	PS2_UART_TIMING_WRITE_MAX_TIME \
+)
+
 /*
  * Global Variables
  */
+
+// Used to keep track of blocking write status
+typedef enum
+{
+    PS2_UART_WRITE_STATUS_INACTIVE,
+    PS2_UART_WRITE_STATUS_ACTIVE,
+	PS2_UART_WRITE_STATUS_SUCCESS,
+	PS2_UART_WRITE_STATUS_FAILURE,
+} ps2_uart_write_status;
 
 struct ps2_uart_config {
     const struct device *uart_dev;
@@ -114,7 +171,14 @@ struct ps2_uart_data {
 	struct k_fifo data_queue;
 
 	// Write byte
+	ps2_uart_write_status cur_write_status;
 	uint8_t cur_write_byte;
+	bool write_awaits_resp;
+	uint8_t write_awaits_resp_byte;
+	struct k_sem write_awaits_resp_sem;
+	struct k_sem write_lock;
+	struct k_work_delayable write_scl_timout;
+
 
 	struct k_work resend_cmd_work;
 };
@@ -131,6 +195,11 @@ static struct ps2_uart_data ps2_uart_data = {
     .callback_isr = NULL,
     .resend_callback_isr = NULL,
 	.callback_enabled = false,
+
+	.cur_write_status = PS2_UART_WRITE_STATUS_INACTIVE,
+	.cur_write_byte = 0x0,
+	.write_awaits_resp = false,
+	.write_awaits_resp_byte = 0x0,
 };
 
 K_THREAD_STACK_DEFINE(
@@ -540,6 +609,25 @@ void ps2_uart_read_process_received_byte(uint8_t byte)
 		);
 	}
 
+	// If write_byte_await_response() is waiting, we notify
+	// the blocked write process of whether it was a success or not.
+	if(data->write_awaits_resp) {
+		data->write_awaits_resp_byte = byte;
+		data->write_awaits_resp = false;
+		k_sem_give(&data->write_awaits_resp_sem);
+
+		// Don't send ack and err responses to the callback and read
+		// data queue.
+		// If it's an ack, the write process will return success.
+		// If it's an error, the write process will return failure.
+		if(byte == PS2_UART_RESP_ACK ||
+		   byte == PS2_UART_RESP_RESEND ||
+		   byte == PS2_UART_RESP_FAILURE) {
+
+			return;
+		}
+	}
+
 	// If no callback is set, we add the data to a fifo queue
 	// that can be read later with the read using `ps2_read`
 	if(data->callback_isr != NULL && data->callback_enabled) {
@@ -588,18 +676,205 @@ void ps2_uart_read_callback_work_handler(struct k_work *work)
 /*
  * Writing PS2 data
  */
+
+int ps2_uart_write_byte_await_response(uint8_t byte);
+int ps2_uart_write_byte_blocking(uint8_t byte);
+int ps2_uart_write_byte_start(uint8_t byte);
+void ps2_uart_write_scl_interrupt_handler(const struct device *dev,
+						   				  struct gpio_callback *cb,
+						   				  uint32_t pins);
+void ps2_uart_write_scl_timeout(struct k_work *item);
+void ps2_uart_write_finish(bool successful, char *descr);
+
+// Returned when there was an error writing to the PS2 device, such
+// as not getting a clock from the device or receiving an invalid
+// ack bit.
+#define PS2_UART_E_WRITE_TRANSMIT 1
+
+// Returned when the semaphore times out. Theoretically this shouldn't be
+// happening. But it can happen if the same thread is used for both the
+// semaphore wait and the inhibition timeout.
+#define PS2_UART_E_WRITE_SEM_TIMEOUT 2
+
+// Returned when the write finished seemingly successful, but the
+// device didn't send a response in time.
+#define PS2_UART_E_WRITE_RESPONSE 3
+
+// Returned when the write finished seemingly successful, but the
+// device responded with 0xfe (request to resend) and we ran out of
+// retry attempts.
+#define PS2_UART_E_WRITE_RESEND 4
+
+// Returned when the write finished seemingly successful, but the
+// device responded with 0xfc (failure / cancel).
+#define PS2_UART_E_WRITE_FAILURE 5
+
 K_MUTEX_DEFINE(write_mutex);
+
 
 int ps2_uart_write_byte(uint8_t byte)
 {
 	int err;
-	struct ps2_uart_data *data = &ps2_uart_data;
 
-	LOG_INF("\n");
-	LOG_INF("START WRITE: 0x%x", byte);
-	log_binary(byte);
+	LOG_DBG("\n");
+	LOG_INF("Writing: 0x%x", byte);
 
 	k_mutex_lock(&write_mutex, K_FOREVER);
+
+	for(int i = 0; i < PS2_UART_WRITE_MAX_RETRY; i++) {
+		if(i > 0) {
+			LOG_WRN(
+				"Attempting write re-try #%d of %d...",
+				i + 1, PS2_UART_WRITE_MAX_RETRY
+			);
+		}
+
+		err = ps2_uart_write_byte_await_response(byte);
+
+		if(err == 0) {
+			if(i > 0) {
+				LOG_WRN(
+					"Successfully wrote 0x%x on try #%d of %d...",
+					byte, i + 1, PS2_UART_WRITE_MAX_RETRY
+				);
+			}
+			break;
+		} else if(err == PS2_UART_E_WRITE_FAILURE) {
+			// Write failed and the device requested to stop trying
+			// to resend.
+			break;
+		}
+	}
+
+	LOG_DBG("END WRITE: 0x%x\n", byte);
+	k_mutex_unlock(&write_mutex);
+
+	return err;
+}
+
+// Writes the byte and blocks execution until we read the
+// response byte.
+// Returns failure if the write fails or the response is 0xfe/0xfc (error)
+// Returns success if the response is 0xfa (ack) or any value except of
+// 0xfe.
+// 0xfe, 0xfc and 0xfa are not passed on to the read data queue or callback.
+int ps2_uart_write_byte_await_response(uint8_t byte)
+{
+	struct ps2_uart_data *data = &ps2_uart_data;
+	int err;
+
+	err = ps2_uart_write_byte_blocking(byte);
+	if(err) {
+		return err;
+	}
+
+	data->write_awaits_resp = true;
+
+	err = k_sem_take(
+		&data->write_awaits_resp_sem, PS2_UART_TIMEOUT_WRITE_AWAIT_RESPONSE
+	);
+
+	uint8_t resp_byte = data->write_awaits_resp_byte;
+	data->write_awaits_resp_byte = 0x0;
+	data->write_awaits_resp = false;
+
+    if (err) {
+		LOG_WRN(
+			"Write response didn't arrive in time for byte "
+			"0x%x. Considering send a failure.", byte
+		);
+
+		return PS2_UART_E_WRITE_RESPONSE;
+	}
+
+	if(resp_byte == PS2_UART_RESP_RESEND ||
+	   resp_byte == PS2_UART_RESP_FAILURE) {
+		LOG_WRN(
+			"Write of 0x%x received error response: 0x%x",
+			byte, resp_byte
+		);
+	} else {
+		LOG_DBG(
+			"Write for byte 0x%x received response: 0x%x",
+			byte, resp_byte
+		);
+	}
+
+	// We fail the write since we got an error response
+	if(resp_byte == PS2_UART_RESP_RESEND) {
+
+		return PS2_UART_E_WRITE_RESEND;
+	} else if(resp_byte == PS2_UART_RESP_FAILURE) {
+
+		return PS2_UART_E_WRITE_FAILURE;
+	}
+
+	// Most of the time when a write was successful the device
+	// responds with an 0xfa (ack), but for some commands it doesn't.
+	// So we consider all non-0xfe and 0xfc responses as successful.
+	return 0;
+}
+
+int ps2_uart_write_byte_blocking(uint8_t byte)
+{
+	struct ps2_uart_data *data = &ps2_uart_data;
+	int err;
+
+	// LOG_DBG("ps2_uart_write_byte_blocking called with byte=0x%x", byte);
+
+	err = ps2_uart_write_byte_start(byte);
+    if (err) {
+		LOG_ERR("Could not initiate writing of byte.");
+		return PS2_UART_E_WRITE_TRANSMIT;
+	}
+
+	// The async `write_byte_start` function takes the only available semaphor.
+	// This causes the `k_sem_take` call below to block until
+	// `ps2_uart_write_finish` gives it back.
+	err = k_sem_take(&data->write_lock, PS2_UART_TIMEOUT_WRITE_BLOCKING);
+    if (err) {
+
+		// This usually means the controller is busy with other interrupts,
+		// timed out processing the interrupts and even the scl timeout
+		// delayable wasn't called due to the delay.
+		//
+		// So we abort the write and try again.
+		LOG_ERR(
+			"Blocking write failed due to semaphore timeout for byte "
+			"0x%x: %d", byte, err
+		);
+
+		return PS2_UART_E_WRITE_SEM_TIMEOUT;
+	}
+
+	if(data->cur_write_status == PS2_UART_WRITE_STATUS_SUCCESS) {
+		// LOG_DBG("Blocking write finished successfully for byte 0x%x", byte);
+		err = 0;
+	} else {
+		LOG_ERR(
+			"Blocking write finished with failure for byte 0x%x status: %d",
+			byte, data->cur_write_status
+		);
+		err = -data->cur_write_status;
+	}
+
+	data->cur_write_status = PS2_UART_WRITE_STATUS_INACTIVE;
+
+	return err;
+}
+
+int ps2_uart_write_byte_start(uint8_t byte) {
+	struct ps2_uart_data *data = &ps2_uart_data;
+	int err;
+
+	// Take semaphore so that when `ps2_uart_write_byte_blocking` attempts
+	// taking it, the process gets blocked.
+	err = k_sem_take(&data->write_lock, K_NO_WAIT);
+    if (err != 0 && err != -EBUSY) {
+		LOG_ERR("ps2_uart_write_byte_start could not take semaphore: %d", err);
+
+		return err;
+	}
 
 	err = ps2_uart_set_mode_write();
 	if(err != 0) {
@@ -630,10 +905,30 @@ int ps2_uart_write_byte(uint8_t byte)
 	// `ps2_uart_write_scl_interrupt_handler`
 	ps2_uart_set_scl_callback_enabled(true);
 
+	// And if the PS/2 device doesn't start the clock, we want to
+	// handle that error...
+	k_work_schedule_for_queue(
+		&ps2_uart_work_queue,
+		&data->write_scl_timout,
+		PS2_UART_TIMEOUT_WRITE_SCL_START
+	);
+
 	k_mutex_unlock(&write_mutex);
 
 	return 0;
 }
+
+void ps2_uart_write_scl_timeout(struct k_work *item)
+{
+	// Once we start a transmission we expect the device to
+	// to send a new clock/interrupt within
+	// PS2_UART_TIMEOUT_WRITE_SCL_START us.
+	// If we don't receive the next interrupt within that timeframe,
+	// we abort the write.
+
+	ps2_uart_write_finish(false, "scl timeout");
+}
+
 
 // The nrf52 is too slow to process all SCL interrupts, so we
 // try to avoid them as much as possible.
@@ -655,7 +950,9 @@ void ps2_uart_write_scl_interrupt_handler(const struct device *dev,
 						   				  uint32_t pins)
 {
 	struct ps2_uart_data *data = &ps2_uart_data;
-	int err;
+
+	// Cancel the SCL timeout
+	k_work_cancel_delayable(&data->write_scl_timout);
 
 	// Disable the SCL interrupt again.
 	// From here we will just use time delays.
@@ -695,14 +992,34 @@ void ps2_uart_write_scl_interrupt_handler(const struct device *dev,
 
 	// Check Ack
 	int ack_val = ps2_uart_get_sda();
-	int ret = -1;
 
 	if(ack_val == 0) {
-		LOG_INF("Write was successful");
-		ret = 0;
+		ps2_uart_write_finish(true, "successful ack");
 	} else {
-		LOG_ERR("Write failed on ack");
-		ret = -1;
+		// TODO: Properly handle write ack errors
+		LOG_WRN("Ack bit was invalid for write of 0x%x", data->cur_write_byte);
+		ps2_uart_write_finish(true, "failed ack");
+	}
+}
+
+void ps2_uart_write_finish(bool successful, char *descr)
+{
+	struct ps2_uart_data *data = &ps2_uart_data;
+	int err;
+
+	if(successful) {
+		LOG_DBG(
+			"Successfully wrote value 0x%x",
+			data->cur_write_byte
+		);
+		data->cur_write_status = PS2_UART_WRITE_STATUS_SUCCESS;
+	} else {  // Failure
+		LOG_ERR(
+			"Failed to write value 0x%x: %s",
+			data->cur_write_byte, descr
+		);
+
+		data->cur_write_status = PS2_UART_WRITE_STATUS_FAILURE;
 	}
 
 	err = ps2_uart_set_mode_read();
@@ -712,10 +1029,15 @@ void ps2_uart_write_scl_interrupt_handler(const struct device *dev,
 	}
 
 	LOG_DBG("END WRITE: 0x%x\n", data->cur_write_byte);
+
 	data->cur_write_byte = 0x0;
+
+	// Give the semaphore to allow write_byte_blocking to continue
+	k_sem_give(&data->write_lock);
 
 	k_mutex_unlock(&write_mutex);
 }
+
 
 /*
  * Zephyr PS/2 driver interface
@@ -844,6 +1166,14 @@ static int ps2_uart_init(const struct device *dev)
     );
 
 	k_work_init(&data->callback_work, ps2_uart_read_callback_work_handler);
+
+    k_work_init_delayable(&data->write_scl_timout, ps2_uart_write_scl_timeout);
+
+	// Init semaphore for blocking writes
+	k_sem_init(&data->write_lock, 0, 1);
+
+	// Init semaphore that waits for read after write
+	k_sem_init(&data->write_awaits_resp_sem, 0, 1);
 
 	err = ps2_uart_init_uart();
 	if(err != 0) {
