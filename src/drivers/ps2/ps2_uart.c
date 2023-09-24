@@ -484,22 +484,12 @@ static void ps2_uart_interrupt_handler(const struct device *uart_dev,
 void ps2_uart_read_interrupt_handler(const struct device *uart_dev,
 									 void *user_data)
 {
-	int err;
 	uint8_t byte;
 
 	int byte_len = uart_fifo_read(uart_dev, &byte, 1);
 	if(byte_len < 1) {
 		LOG_ERR("UART read failed with error: %d", byte_len);
 		return;
-	}
-
-	err = ps2_uart_read_err_check(uart_dev);
-	if(err != 0) {
-		const char *err_str = ps2_uart_read_get_error_str(err);
-		LOG_ERR(
-			"UART RX detected error for byte 0x%x: %s (%d)",
-			byte, err_str, err
-		);
 	}
 
 	ps2_uart_read_process_received_byte(byte);
@@ -534,8 +524,21 @@ static int ps2_uart_read_err_check(const struct device *dev)
 void ps2_uart_read_process_received_byte(uint8_t byte)
 {
 	struct ps2_uart_data *data = &ps2_uart_data;
+	const struct ps2_uart_config *config = &ps2_uart_config;
+
+	int err;
 
 	LOG_DBG("UART Received: 0x%x", byte);
+
+
+	err = ps2_uart_read_err_check(config->uart_dev);
+	if(err != 0) {
+		const char *err_str = ps2_uart_read_get_error_str(err);
+		LOG_ERR(
+			"UART RX detected error for byte 0x%x: %s (%d)",
+			byte, err_str, err
+		);
+	}
 
 	// If no callback is set, we add the data to a fifo queue
 	// that can be read later with the read using `ps2_read`
