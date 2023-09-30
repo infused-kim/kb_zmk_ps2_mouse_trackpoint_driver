@@ -237,7 +237,7 @@ static const struct zmk_mouse_ps2_config zmk_mouse_ps2_config = {
 	.layer_toggle_timout_ms = DT_INST_PROP_OR(
         0,
         layer_toggle_timout_ms,
-        500
+        250
     ),
 
 
@@ -791,14 +791,14 @@ void zmk_mouse_ps2_activity_toggle_layer()
             false
         );
         data->layer_enabled = true;
-    } else {
-
-        k_work_reschedule(
-            &data->layer_toggle_deactivation_delay,
-            K_MSEC(config->layer_toggle_timout_ms)
-        );
     }
 
+    // Deactivate the layer if no further movement within
+    // layer_toggle_timout_ms
+    k_work_reschedule(
+        &data->layer_toggle_deactivation_delay,
+        K_MSEC(config->layer_toggle_timout_ms)
+    );
 }
 
 void zmk_mouse_ps2_activity_deactivate_layer(struct k_work *item)
