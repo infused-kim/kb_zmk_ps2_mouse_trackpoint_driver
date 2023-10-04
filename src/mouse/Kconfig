@@ -3,8 +3,12 @@
 
 DT_COMPAT_ZMK_PS2_MOUSE := zmk,mouse-ps2
 
-menuconfig ZMK_MOUSE_PS2
-	bool "Enable PS/2 mouse support"
+config ZMK_MOUSE_PS2
+	bool
+	default $(dt_compat_enabled,$(DT_COMPAT_ZMK_PS2_MOUSE))
+    depends on (!ZMK_SPLIT || ZMK_SPLIT_ROLE_CENTRAL)
+	select ZMK_MOUSE
+    select PS2
 
 if ZMK_MOUSE_PS2
 
@@ -51,5 +55,9 @@ config ZMK_MOUSE_PS2_TP_SWAP_XY
 config ZMK_MOUSE_PS2_ENABLE_ERROR_MITIGATION
     bool "Swaps the x and y axis on the trackpoint. This is sets the swap settingin the trackpoint firmware and should therefore correctly impact the trackpoint algorithms. But this setting is not supported by all trackpoints."
 	default y
+
+config ZMK_MOUSE_PS2_SCROLL_MODE_INERTIA
+    int "The number of pixels the mouse has to move to send one scroll whell movement in scroll mode."
+	default 25
 
 endif # ZMK_MOUSE_PS2s

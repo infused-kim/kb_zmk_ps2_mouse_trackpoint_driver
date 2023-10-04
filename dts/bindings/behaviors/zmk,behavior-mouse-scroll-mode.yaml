@@ -1,0 +1,5 @@
+description: Mouse scroll
+
+compatible: "zmk,behavior-mouse-scroll-mode"
+
+include: zero_param.yaml
