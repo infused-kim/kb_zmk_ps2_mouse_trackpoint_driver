@@ -10,6 +10,7 @@
 #include <zephyr/device.h>
 #include <zephyr/drivers/ps2.h>
 #include <zephyr/drivers/gpio.h>
+#include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
 #define LOG_LEVEL CONFIG_PS2_LOG_LEVEL
@@ -695,8 +696,9 @@ void ps2_gpio_interrupt_log_scl_timeout(struct k_work *item)
 		// to send a new clock/interrupt within 100us.
 		// If we don't receive the next interrupt within that timeframe,
 		// we abort the read.
+		struct k_work_delayable *d_work = k_work_delayable_from_work(item);
 		struct ps2_gpio_data *data =
-			CONTAINER_OF(item, struct ps2_gpio_data, read_scl_timout);
+			CONTAINER_OF(d_work, struct ps2_gpio_data, read_scl_timout);
 
 		LOG_PS2_INT("Read SCL timeout", NULL);
 
@@ -1044,8 +1046,9 @@ void ps2_gpio_interrupt_log_scl_timeout(struct k_work *item)
 	{
 		LOG_PS2_INT("Inhibition timer finished", NULL);
 
+		struct k_work_delayable *d_work = k_work_delayable_from_work(item);
 		struct ps2_gpio_data *data =
-			CONTAINER_OF(item, struct ps2_gpio_data, write_inhibition_wait);
+			CONTAINER_OF(d_work, struct ps2_gpio_data, write_inhibition_wait);
 
 		// Enable the scl interrupt again
 		ps2_gpio_set_scl_callback_enabled(true);
