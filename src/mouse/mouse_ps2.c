@@ -16,14 +16,14 @@
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/ps2.h>
+#include <zephyr/dt-bindings/input/input-event-codes.h>
+#include <zephyr/input/input.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/settings/settings.h>
 #include <zephyr/sys/util.h>
 
 #include <zmk/behavior_queue.h>
 #include <zmk/endpoints.h>
-#include <zmk/events/mouse_tick.h>
-#include <zmk/events/mouse_move_state_changed.h>
 #include <zmk/hid.h>
 #include <zmk/keymap.h>
 
@@ -185,7 +185,13 @@ struct zmk_mouse_ps2_packet {
     bool button_r;
 };
 
+struct vector2d {
+    float x;
+    float y;
+};
+
 struct zmk_mouse_ps2_data {
+    const struct device *dev;
     struct gpio_dt_spec rst_gpio; /* GPIO used for Power-On-Reset line */
 
     K_THREAD_STACK_MEMBER(thread_stack, MOUSE_PS2_THREAD_STACK_SIZE);
@@ -592,17 +598,24 @@ static void zmk_mouse_ps2_tick_timer_handler(struct k_work *work) {
     data->prev_move_dir_y = move_dir_y;
 }
 
+static bool zmk_mouse_ps2_is_non_zero_1d_movement(int16_t speed) { return speed != 0; }
+
 void zmk_mouse_ps2_tick_timer_handler_mode_mouse() {
     struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
 
-    zmk_hid_mouse_movement_set(0, 0);
-    zmk_hid_mouse_scroll_set(0, 0);
-
-    // ZMK expects up movement to be negative, but PS2 sends it as positive
-    zmk_hid_mouse_movement_update(data->move_speed.x, -data->move_speed.y);
-    zmk_hid_mouse_scroll_update(data->scroll_speed.x, data->scroll_speed.y);
-
-    zmk_endpoints_send_mouse_report();
+    int ret = 0;
+    bool have_x = zmk_mouse_ps2_is_non_zero_1d_movement(data->move_speed.x);
+    bool have_y = zmk_mouse_ps2_is_non_zero_1d_movement(data->move_speed.y);
+    if (have_x) {
+        ret = input_report_rel(data->dev, INPUT_REL_X,
+                               (int16_t)CLAMP(data->move_speed.x, INT16_MIN, INT16_MAX), !have_y,
+                               K_NO_WAIT);
+    }
+    if (have_y) {
+        ret = input_report_rel(data->dev, INPUT_REL_Y,
+                               (int16_t)CLAMP(data->move_speed.y, INT16_MIN, INT16_MAX), true,
+                               K_NO_WAIT);
+    }
 }
 
 void zmk_mouse_ps2_tick_timer_handler_mode_scroll() {
@@ -1672,15 +1685,17 @@ static int zmk_mouse_ps2_init(const struct device *dev) {
 }
 
 static void zmk_mouse_ps2_init_thread(int dev_ptr, int unused) {
-    const struct device *dev = INT_TO_POINTER(dev_ptr);
     struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
-    const struct zmk_mouse_ps2_config *config = dev->config;
     int err;
+
+    data->dev = INT_TO_POINTER(dev_ptr);
+
+    const struct zmk_mouse_ps2_config *config = data->dev->config;
 
     zmk_mouse_ps2_init_power_on_reset();
 
     LOG_INF("Waiting for mouse to connect...");
-    err = zmk_mouse_ps2_init_wait_for_mouse(dev);
+    err = zmk_mouse_ps2_init_wait_for_mouse(data->dev);
     if (err) {
         LOG_ERR("Could not init a mouse in %d attempts. Giving up. "
                 "Power cycle the mouse and reset zmk to try again.",
@@ -1747,7 +1762,7 @@ static void zmk_mouse_ps2_init_thread(int dev_ptr, int unused) {
     }
 
     k_timer_init(&data->mouse_timer, zmk_mouse_ps2_tick_timer_cb, NULL);
-    k_timer_start(&data->mouse_timer, K_NO_WAIT, K_MSEC(CONFIG_ZMK_MOUSE_TICK_DURATION));
+    k_timer_start(&data->mouse_timer, K_NO_WAIT, K_MSEC(CONFIG_ZMK_MOUSE_PS2_TICK_DURATION));
     k_work_init(&data->mouse_tick, zmk_mouse_ps2_tick_timer_handler);
     k_work_init_delayable(&data->packet_buffer_timeout, zmk_mouse_ps2_activity_packet_timout);
     k_work_init_delayable(&data->layer_toggle_deactivation_delay,
