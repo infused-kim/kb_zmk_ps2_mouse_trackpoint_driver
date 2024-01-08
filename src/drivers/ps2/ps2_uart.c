@@ -30,7 +30,7 @@ PINCTRL_DT_DEFINE(DT_INST_BUS(0));
  */
 
 #define PS2_UART_WRITE_MAX_RETRY 5
-#define PS2_UART_READ_MAX_RETRY 3
+#define PS2_UART_READ_MAX_RETRY  3
 
 // Custom queue for background PS/2 processing work at low priority
 // We purposefully want this to be a fairly low priority, because
@@ -38,7 +38,7 @@ PINCTRL_DT_DEFINE(DT_INST_BUS(0));
 // If the system is very busy with interrupts and other threads, then we
 // want to wait until that is over so that our write interrupts don't get
 // missed.
-#define PS2_UART_WORK_QUEUE_PRIORITY 10
+#define PS2_UART_WORK_QUEUE_PRIORITY   10
 #define PS2_UART_WORK_QUEUE_STACK_SIZE 1024
 
 // Custom queue for calling the zephyr ps/2 callback.
@@ -46,22 +46,22 @@ PINCTRL_DT_DEFINE(DT_INST_BUS(0));
 // could be using blocking functions.
 // But we also don't want to hand it off at a low priority, since the PS/2
 // packets must be dealt with quickly. So we use a fairly high priority.
-#define PS2_UART_WORK_QUEUE_CB_PRIORITY 2
+#define PS2_UART_WORK_QUEUE_CB_PRIORITY   2
 #define PS2_UART_WORK_QUEUE_CB_STACK_SIZE 1024
 
 /*
  * PS/2 Defines
  */
 
-#define PS2_UART_POS_START 0
+#define PS2_UART_POS_START      0
 #define PS2_UART_POS_DATA_FIRST 1
-#define PS2_UART_POS_DATA_LAST 8
-#define PS2_UART_POS_PARITY 9
-#define PS2_UART_POS_STOP 10
-#define PS2_UART_POS_ACK 11  // Write mode only
+#define PS2_UART_POS_DATA_LAST  8
+#define PS2_UART_POS_PARITY     9
+#define PS2_UART_POS_STOP       10
+#define PS2_UART_POS_ACK        11 // Write mode only
 
-#define PS2_UART_RESP_ACK 0xfa
-#define PS2_UART_RESP_RESEND 0xfe
+#define PS2_UART_RESP_ACK     0xfa
+#define PS2_UART_RESP_RESEND  0xfe
 #define PS2_UART_RESP_FAILURE 0xfc
 
 /*
@@ -70,18 +70,14 @@ PINCTRL_DT_DEFINE(DT_INST_BUS(0));
 
 #define PS2_UART_TIMING_SCL_CYCLE_LEN 69
 
-
 // The minimum time needed to inhibit clock to start a write
 // is 100us, but we triple it just in case.
 #define PS2_UART_TIMING_SCL_INHIBITION_MIN 100
 
-
 // Theoretically, only 100us is required, but practically, trackponts
 // seem to respond to a total duration of 1,000 us the best.
 // This is also the duration my USB to PS/2 adapter is using.
-#define PS2_UART_TIMING_SCL_INHIBITION ( \
-	5 * PS2_UART_TIMING_SCL_INHIBITION_MIN \
-)
+#define PS2_UART_TIMING_SCL_INHIBITION (5 * PS2_UART_TIMING_SCL_INHIBITION_MIN)
 
 // PS2 uses a frequency between 10 kHz and 16.7 kHz. So clocks should arrive
 // within 60-100us.
@@ -93,25 +89,18 @@ PINCTRL_DT_DEFINE(DT_INST_BUS(0));
 // need much longer if you are asking them to interrupt an
 // ongoing read.
 #define PS2_UART_TIMING_SCL_INHIBITION_RESP_MAX 3000
-#define PS2_UART_TIMEOUT_WRITE_SCL_START K_USEC( \
-	PS2_UART_TIMING_SCL_INHIBITION_RESP_MAX \
-)
+#define PS2_UART_TIMEOUT_WRITE_SCL_START        K_USEC(PS2_UART_TIMING_SCL_INHIBITION_RESP_MAX)
 
 // Writes start with us inhibiting the line and then respond
 // with 11 bits (start bit included in inhibition time).
 // To be conservative we give it another 2 cycles to complete
-#define PS2_UART_TIMING_WRITE_MAX_TIME ( \
-	PS2_UART_TIMING_SCL_INHIBITION \
-	+ PS2_UART_TIMING_SCL_INHIBITION_RESP_MAX \
-	+ 11 * PS2_UART_TIMING_SCL_CYCLE_MAX \
-	+ 2 * PS2_UART_TIMING_SCL_CYCLE_MAX \
-)
+#define PS2_UART_TIMING_WRITE_MAX_TIME                                                             \
+	(PS2_UART_TIMING_SCL_INHIBITION + PS2_UART_TIMING_SCL_INHIBITION_RESP_MAX +                \
+	 11 * PS2_UART_TIMING_SCL_CYCLE_MAX + 2 * PS2_UART_TIMING_SCL_CYCLE_MAX)
 
 // Reads are 11bit and we give it another 2 cycles to start and stop
-#define PS2_UART_TIMING_READ_MAX_TIME (\
-	11 * PS2_UART_TIMING_SCL_CYCLE_MAX \
-	+ 2 * PS2_UART_TIMING_SCL_CYCLE_MAX \
-)
+#define PS2_UART_TIMING_READ_MAX_TIME                                                              \
+	(11 * PS2_UART_TIMING_SCL_CYCLE_MAX + 2 * PS2_UART_TIMING_SCL_CYCLE_MAX)
 
 // Timeout for write_byte_await_response()
 // PS/2 spec says that device must respond within 20msec,
@@ -129,25 +118,22 @@ PINCTRL_DT_DEFINE(DT_INST_BUS(0));
 #define PS2_UART_TIMEOUT_READ K_SECONDS(2)
 
 // Timeout for write_byte_blocking()
-#define PS2_UART_TIMEOUT_WRITE_BLOCKING K_USEC( \
-	PS2_UART_TIMING_WRITE_MAX_TIME \
-)
+#define PS2_UART_TIMEOUT_WRITE_BLOCKING K_USEC(PS2_UART_TIMING_WRITE_MAX_TIME)
 
 /*
  * Global Variables
  */
 
 // Used to keep track of blocking write status
-typedef enum
-{
-    PS2_UART_WRITE_STATUS_INACTIVE,
-    PS2_UART_WRITE_STATUS_ACTIVE,
+typedef enum {
+	PS2_UART_WRITE_STATUS_INACTIVE,
+	PS2_UART_WRITE_STATUS_ACTIVE,
 	PS2_UART_WRITE_STATUS_SUCCESS,
 	PS2_UART_WRITE_STATUS_FAILURE,
 } ps2_uart_write_status;
 
 struct ps2_uart_config {
-    const struct device *uart_dev;
+	const struct device *uart_dev;
 	struct gpio_dt_spec scl_gpio;
 	struct gpio_dt_spec sda_gpio;
 	const struct pinctrl_dev_config *pcfg;
@@ -179,21 +165,20 @@ struct ps2_uart_data {
 	struct k_sem write_lock;
 	struct k_work_delayable write_scl_timout;
 
-
 	struct k_work resend_cmd_work;
 };
 
 static const struct ps2_uart_config ps2_uart_config = {
 	.uart_dev = DEVICE_DT_GET(DT_INST_BUS(0)),
-	.scl_gpio	= GPIO_DT_SPEC_INST_GET(0, scl_gpios),
-	.sda_gpio	= GPIO_DT_SPEC_INST_GET(0, sda_gpios),
+	.scl_gpio = GPIO_DT_SPEC_INST_GET(0, scl_gpios),
+	.sda_gpio = GPIO_DT_SPEC_INST_GET(0, sda_gpios),
 	.pcfg = PINCTRL_DT_DEV_CONFIG_GET(DT_INST_BUS(0)),
 };
 
 static struct ps2_uart_data ps2_uart_data = {
 	.callback_byte = 0x0,
-    .callback_isr = NULL,
-    .resend_callback_isr = NULL,
+	.callback_isr = NULL,
+	.resend_callback_isr = NULL,
 	.callback_enabled = false,
 
 	.cur_write_status = PS2_UART_WRITE_STATUS_INACTIVE,
@@ -202,16 +187,10 @@ static struct ps2_uart_data ps2_uart_data = {
 	.write_awaits_resp_byte = 0x0,
 };
 
-K_THREAD_STACK_DEFINE(
-	ps2_uart_work_queue_stack_area,
-	PS2_UART_WORK_QUEUE_STACK_SIZE
-);
+K_THREAD_STACK_DEFINE(ps2_uart_work_queue_stack_area, PS2_UART_WORK_QUEUE_STACK_SIZE);
 static struct k_work_q ps2_uart_work_queue;
 
-K_THREAD_STACK_DEFINE(
-	ps2_uart_work_queue_cb_stack_area,
-	PS2_UART_WORK_QUEUE_CB_STACK_SIZE
-);
+K_THREAD_STACK_DEFINE(ps2_uart_work_queue_cb_stack_area, PS2_UART_WORK_QUEUE_CB_STACK_SIZE);
 static struct k_work_q ps2_uart_work_queue_cb;
 
 /*
@@ -220,12 +199,11 @@ static struct k_work_q ps2_uart_work_queue_cb;
 
 int ps2_uart_write_byte(uint8_t byte);
 
-
 /*
  * Helpers functions
  */
 
-#define PS2_UART_GET_BIT(data, bit_pos) ( (data >> bit_pos) & 0x1 )
+#define PS2_UART_GET_BIT(data, bit_pos) ((data >> bit_pos) & 0x1)
 
 int ps2_uart_get_scl()
 {
@@ -260,13 +238,10 @@ void ps2_uart_set_sda(int state)
 
 int ps2_uart_configure_pin_scl(gpio_flags_t flags, char *descr)
 {
-	struct ps2_uart_config *config = (struct ps2_uart_config *) &ps2_uart_config;
+	struct ps2_uart_config *config = (struct ps2_uart_config *)&ps2_uart_config;
 	int err;
 
-	err = gpio_pin_configure_dt(
-		&config->scl_gpio,
-		flags
-	);
+	err = gpio_pin_configure_dt(&config->scl_gpio, flags);
 	if (err) {
 		LOG_ERR("failed to configure SCL GPIO pin to %s (err %d)", descr, err);
 	}
@@ -276,29 +251,20 @@ int ps2_uart_configure_pin_scl(gpio_flags_t flags, char *descr)
 
 int ps2_uart_configure_pin_scl_input()
 {
-	return ps2_uart_configure_pin_scl(
-		(GPIO_INPUT),
-		"input"
-	);
+	return ps2_uart_configure_pin_scl((GPIO_INPUT), "input");
 }
 
 int ps2_uart_configure_pin_scl_output()
 {
-	return ps2_uart_configure_pin_scl(
-		(GPIO_OUTPUT_HIGH),
-		"output"
-	);
+	return ps2_uart_configure_pin_scl((GPIO_OUTPUT_HIGH), "output");
 }
 
 int ps2_uart_configure_pin_sda(gpio_flags_t flags, char *descr)
 {
-	struct ps2_uart_config *config = (struct ps2_uart_config *) &ps2_uart_config;
+	struct ps2_uart_config *config = (struct ps2_uart_config *)&ps2_uart_config;
 	int err;
 
-	err = gpio_pin_configure_dt(
-		&config->sda_gpio,
-		flags
-	);
+	err = gpio_pin_configure_dt(&config->sda_gpio, flags);
 	if (err) {
 		LOG_ERR("failed to configure SDA GPIO pin to %s (err %d)", descr, err);
 	}
@@ -308,49 +274,35 @@ int ps2_uart_configure_pin_sda(gpio_flags_t flags, char *descr)
 
 int ps2_uart_configure_pin_sda_input()
 {
-	return ps2_uart_configure_pin_sda(
-		(GPIO_INPUT),
-		"input"
-	);
+	return ps2_uart_configure_pin_sda((GPIO_INPUT), "input");
 }
 
 int ps2_uart_configure_pin_sda_output()
 {
-	return ps2_uart_configure_pin_sda(
-		(GPIO_OUTPUT_HIGH),
-		"output"
-	);
+	return ps2_uart_configure_pin_sda((GPIO_OUTPUT_HIGH), "output");
 }
 
 int ps2_uart_set_scl_callback_enabled(bool enabled)
 {
-	struct ps2_uart_config *config = (struct ps2_uart_config *) &ps2_uart_config;
+	struct ps2_uart_config *config = (struct ps2_uart_config *)&ps2_uart_config;
 	int err;
 
 	// LOG_INF("Setting ps2_uart_set_scl_callback_enabled: %d", enabled);
 
-	if(enabled) {
-		err = gpio_pin_interrupt_configure_dt(
-			&config->scl_gpio,
-			(GPIO_INT_EDGE_FALLING)
-		);
+	if (enabled) {
+		err = gpio_pin_interrupt_configure_dt(&config->scl_gpio, (GPIO_INT_EDGE_FALLING));
 		if (err) {
-			LOG_ERR(
-				"failed to enable interrupt on "
-				"SCL GPIO pin (err %d)", err
-			);
+			LOG_ERR("failed to enable interrupt on "
+				"SCL GPIO pin (err %d)",
+				err);
 			return err;
 		}
 	} else {
-		err = gpio_pin_interrupt_configure_dt(
-			&config->scl_gpio,
-			(GPIO_INT_DISABLE)
-		);
+		err = gpio_pin_interrupt_configure_dt(&config->scl_gpio, (GPIO_INT_DISABLE));
 		if (err) {
-			LOG_ERR(
-				"failed to disable interrupt on "
-				"SCL GPIO pin (err %d)", err
-			);
+			LOG_ERR("failed to disable interrupt on "
+				"SCL GPIO pin (err %d)",
+				err);
 			return err;
 		}
 	}
@@ -364,10 +316,7 @@ static int ps2_uart_set_mode_read()
 	int err;
 
 	// Set the SDA pin for the uart device
-	err = pinctrl_apply_state(
-		config->pcfg,
-		PINCTRL_STATE_DEFAULT
-	);
+	err = pinctrl_apply_state(config->pcfg, PINCTRL_STATE_DEFAULT);
 	if (err < 0) {
 		LOG_ERR("Could not switch pinctrl state to DEFAULT: %d", err);
 		return err;
@@ -392,10 +341,7 @@ static int ps2_uart_set_mode_write()
 
 	// Set pincntrl with unused pins so that we can control the pins
 	// through GPIO
-	err = pinctrl_apply_state(
-		config->pcfg,
-		PINCTRL_STATE_SLEEP
-	);
+	err = pinctrl_apply_state(config->pcfg, PINCTRL_STATE_SLEEP);
 	if (err < 0) {
 		LOG_ERR("Could not switch pinctrl state to OFF: %d", err);
 		return err;
@@ -408,14 +354,15 @@ static int ps2_uart_set_mode_write()
 	return err;
 }
 
-void log_binary(uint8_t value) {
+void log_binary(uint8_t value)
+{
 	char binary_str[9];
 
-    for(int i = 7; i >= 0; --i) {
+	for (int i = 7; i >= 0; --i) {
 		binary_str[7 - i] = PS2_UART_GET_BIT(value, i) ? '1' : '0';
-    }
+	}
 
-    binary_str[8] = '\0';
+	binary_str[8] = '\0';
 
 	LOG_INF("Binary Value of 0x%x: %s", value, binary_str);
 }
@@ -434,11 +381,11 @@ uint8_t ps2_uart_data_queue_get_next(uint8_t *dst_byte, k_timeout_t timeout)
 	struct ps2_uart_data *data = &ps2_uart_data;
 
 	uint8_t *queue_byte = k_fifo_get(&data->data_queue, timeout);
-	if(queue_byte == NULL) {
+	if (queue_byte == NULL) {
 		return -ETIMEDOUT;
 	}
 
-	*dst_byte =  *queue_byte;
+	*dst_byte = *queue_byte;
 
 	k_free(queue_byte);
 
@@ -447,10 +394,10 @@ uint8_t ps2_uart_data_queue_get_next(uint8_t *dst_byte, k_timeout_t timeout)
 
 void ps2_uart_data_queue_empty()
 {
-	while(true) {
+	while (true) {
 		uint8_t byte;
 		int err = ps2_uart_data_queue_get_next(&byte, K_NO_WAIT);
-		if(err) {  // No more items in queue
+		if (err) { // No more items in queue
 			break;
 		}
 	}
@@ -460,12 +407,10 @@ void ps2_uart_data_queue_add(uint8_t byte)
 {
 	struct ps2_uart_data *data = &ps2_uart_data;
 
-	uint8_t *byte_heap = (uint8_t *) k_malloc(sizeof(byte));
-	if(byte_heap == NULL) {
-		LOG_WRN(
-			"Could not allocate heap space to add byte to fifo. "
-			"Clearing fifo."
-		);
+	uint8_t *byte_heap = (uint8_t *)k_malloc(sizeof(byte));
+	if (byte_heap == NULL) {
+		LOG_WRN("Could not allocate heap space to add byte to fifo. "
+			"Clearing fifo.");
 
 		// TODO: Define max amount for read data queue instead of emptying it
 		// when memory runs out.
@@ -473,12 +418,11 @@ void ps2_uart_data_queue_add(uint8_t byte)
 		// how many items are currently in the fifo.
 		ps2_uart_data_queue_empty();
 
-		byte_heap = (uint8_t *) k_malloc(sizeof(byte));
-		if(byte_heap == NULL) {
-			LOG_ERR(
-				"Could not allocate heap space after clearing fifo. "
-				"Losing received byte 0x%x", byte
-			);
+		byte_heap = (uint8_t *)k_malloc(sizeof(byte));
+		if (byte_heap == NULL) {
+			LOG_ERR("Could not allocate heap space after clearing fifo. "
+				"Losing received byte 0x%x",
+				byte);
 			return;
 		}
 	}
@@ -494,7 +438,7 @@ void ps2_uart_send_cmd_resend_worker(struct k_work *item)
 	// Notify the PS/2 device driver that we are requesting a resend.
 	// PS/2 devices don't just resend the last byte that was sent, but the
 	// entire command packet, which can be multiple bytes.
-	if(data->resend_callback_isr != NULL && data->callback_enabled) {
+	if (data->resend_callback_isr != NULL && data->callback_enabled) {
 
 		data->resend_callback_isr(data->dev);
 	}
@@ -508,55 +452,48 @@ void ps2_uart_send_cmd_resend()
 {
 	struct ps2_uart_data *data = &ps2_uart_data;
 
-    if (k_is_in_isr()) {
+	if (k_is_in_isr()) {
 
 		// It's important to submit this on the cb queue and not on the
 		// same queue as the inhibition delay.
 		// Otherwise the queue will be blocked by the semaphore and the
 		// inhibition delay worker will never be called.
-    	k_work_submit_to_queue(
-			&ps2_uart_work_queue_cb,
-			&data->resend_cmd_work
-		);
-    } else {
-        ps2_uart_send_cmd_resend_worker(NULL);
-    }
+		k_work_submit_to_queue(&ps2_uart_work_queue_cb, &data->resend_cmd_work);
+	} else {
+		ps2_uart_send_cmd_resend_worker(NULL);
+	}
 }
-
 
 /*
  * Reading PS2 data
  */
-static void ps2_uart_interrupt_handler(const struct device *uart_dev,
-									   void *user_data);
+static void ps2_uart_interrupt_handler(const struct device *uart_dev, void *user_data);
 void ps2_uart_read_interrupt_handler();
 static int ps2_uart_read_err_check(const struct device *dev);
 void ps2_uart_read_process_received_byte(uint8_t byte);
 const char *ps2_uart_read_get_error_str(int err);
 
-static void ps2_uart_interrupt_handler(const struct device *uart_dev,
-									   void *user_data)
+static void ps2_uart_interrupt_handler(const struct device *uart_dev, void *user_data)
 {
 	int err;
 
 	err = uart_irq_update(uart_dev);
-	if(err != 1) {
+	if (err != 1) {
 		LOG_ERR("uart_irq_update returned: %d", err);
 		return;
 	}
 
 	while (uart_irq_rx_ready(uart_dev)) {
 		ps2_uart_read_interrupt_handler(uart_dev, user_data);
-    }
+	}
 }
 
-void ps2_uart_read_interrupt_handler(const struct device *uart_dev,
-									 void *user_data)
+void ps2_uart_read_interrupt_handler(const struct device *uart_dev, void *user_data)
 {
 	uint8_t byte;
 
 	int byte_len = uart_fifo_read(uart_dev, &byte, 1);
-	if(byte_len < 1) {
+	if (byte_len < 1) {
 		LOG_ERR("UART read failed with error: %d", byte_len);
 		return;
 	}
@@ -575,13 +512,13 @@ static int ps2_uart_read_err_check(const struct device *dev)
 	// every reception.
 	// If the parity error doesn't happen, it means the transfer had an
 	// actual even parity, which we consider an error.
-	if((err & NRF_UARTE_ERROR_PARITY_MASK) == 0) {
-		err =  UART_ERROR_PARITY;
-	} else if(err & NRF_UARTE_ERROR_OVERRUN_MASK) {
+	if ((err & NRF_UARTE_ERROR_PARITY_MASK) == 0) {
+		err = UART_ERROR_PARITY;
+	} else if (err & NRF_UARTE_ERROR_OVERRUN_MASK) {
 		err = UART_ERROR_OVERRUN;
-	} else if(err & NRF_UARTE_ERROR_FRAMING_MASK) {
+	} else if (err & NRF_UARTE_ERROR_FRAMING_MASK) {
 		err = UART_ERROR_FRAMING;
-	} else if(err & NRF_UARTE_ERROR_BREAK_MASK) {
+	} else if (err & NRF_UARTE_ERROR_BREAK_MASK) {
 		err = UART_BREAK;
 	} else { // No errors
 		err = 0;
@@ -599,19 +536,15 @@ void ps2_uart_read_process_received_byte(uint8_t byte)
 
 	LOG_DBG("UART Received: 0x%x", byte);
 
-
 	err = ps2_uart_read_err_check(config->uart_dev);
-	if(err != 0) {
+	if (err != 0) {
 		const char *err_str = ps2_uart_read_get_error_str(err);
-		LOG_ERR(
-			"UART RX detected error for byte 0x%x: %s (%d)",
-			byte, err_str, err
-		);
+		LOG_ERR("UART RX detected error for byte 0x%x: %s (%d)", byte, err_str, err);
 	}
 
 	// If write_byte_await_response() is waiting, we notify
 	// the blocked write process of whether it was a success or not.
-	if(data->write_awaits_resp) {
+	if (data->write_awaits_resp) {
 		data->write_awaits_resp_byte = byte;
 		data->write_awaits_resp = false;
 		k_sem_give(&data->write_awaits_resp_sem);
@@ -620,9 +553,8 @@ void ps2_uart_read_process_received_byte(uint8_t byte)
 		// data queue.
 		// If it's an ack, the write process will return success.
 		// If it's an error, the write process will return failure.
-		if(byte == PS2_UART_RESP_ACK ||
-		   byte == PS2_UART_RESP_RESEND ||
-		   byte == PS2_UART_RESP_FAILURE) {
+		if (byte == PS2_UART_RESP_ACK || byte == PS2_UART_RESP_RESEND ||
+		    byte == PS2_UART_RESP_FAILURE) {
 
 			return;
 		}
@@ -630,16 +562,13 @@ void ps2_uart_read_process_received_byte(uint8_t byte)
 
 	// If no callback is set, we add the data to a fifo queue
 	// that can be read later with the read using `ps2_read`
-	if(data->callback_isr != NULL && data->callback_enabled) {
+	if (data->callback_isr != NULL && data->callback_enabled) {
 
 		// Call callback from a worker to make sure the callback
 		// doesn't block the interrupt.
 		// Will call ps2_uart_read_callback_work_handler
 		data->callback_byte = byte;
-    	k_work_submit_to_queue(
-			&ps2_uart_work_queue_cb,
-			&data->callback_work
-		);
+		k_work_submit_to_queue(&ps2_uart_work_queue_cb, &data->callback_work);
 	} else {
 		ps2_uart_data_queue_add(byte);
 	}
@@ -647,8 +576,7 @@ void ps2_uart_read_process_received_byte(uint8_t byte)
 
 const char *ps2_uart_read_get_error_str(int err)
 {
-	switch (err)
-	{
+	switch (err) {
 	case UART_ERROR_OVERRUN:
 		return "Overrun error";
 	case UART_ERROR_PARITY:
@@ -672,7 +600,6 @@ void ps2_uart_read_callback_work_handler(struct k_work *work)
 	data->callback_byte = 0x0;
 }
 
-
 /*
  * Writing PS2 data
  */
@@ -680,9 +607,8 @@ void ps2_uart_read_callback_work_handler(struct k_work *work)
 int ps2_uart_write_byte_await_response(uint8_t byte);
 int ps2_uart_write_byte_blocking(uint8_t byte);
 int ps2_uart_write_byte_start(uint8_t byte);
-void ps2_uart_write_scl_interrupt_handler(const struct device *dev,
-						   				  struct gpio_callback *cb,
-						   				  uint32_t pins);
+void ps2_uart_write_scl_interrupt_handler(const struct device *dev, struct gpio_callback *cb,
+					  uint32_t pins);
 void ps2_uart_write_scl_timeout(struct k_work *item);
 void ps2_uart_write_finish(bool successful, char *descr);
 
@@ -711,7 +637,6 @@ void ps2_uart_write_finish(bool successful, char *descr);
 
 K_MUTEX_DEFINE(write_mutex);
 
-
 int ps2_uart_write_byte(uint8_t byte)
 {
 	int err;
@@ -721,25 +646,21 @@ int ps2_uart_write_byte(uint8_t byte)
 
 	k_mutex_lock(&write_mutex, K_FOREVER);
 
-	for(int i = 0; i < PS2_UART_WRITE_MAX_RETRY; i++) {
-		if(i > 0) {
-			LOG_WRN(
-				"Attempting write re-try #%d of %d...",
-				i + 1, PS2_UART_WRITE_MAX_RETRY
-			);
+	for (int i = 0; i < PS2_UART_WRITE_MAX_RETRY; i++) {
+		if (i > 0) {
+			LOG_WRN("Attempting write re-try #%d of %d...", i + 1,
+				PS2_UART_WRITE_MAX_RETRY);
 		}
 
 		err = ps2_uart_write_byte_await_response(byte);
 
-		if(err == 0) {
-			if(i > 0) {
-				LOG_WRN(
-					"Successfully wrote 0x%x on try #%d of %d...",
-					byte, i + 1, PS2_UART_WRITE_MAX_RETRY
-				);
+		if (err == 0) {
+			if (i > 0) {
+				LOG_WRN("Successfully wrote 0x%x on try #%d of %d...", byte, i + 1,
+					PS2_UART_WRITE_MAX_RETRY);
 			}
 			break;
-		} else if(err == PS2_UART_E_WRITE_FAILURE) {
+		} else if (err == PS2_UART_E_WRITE_FAILURE) {
 			// Write failed and the device requested to stop trying
 			// to resend.
 			break;
@@ -764,47 +685,37 @@ int ps2_uart_write_byte_await_response(uint8_t byte)
 	int err;
 
 	err = ps2_uart_write_byte_blocking(byte);
-	if(err) {
+	if (err) {
 		return err;
 	}
 
 	data->write_awaits_resp = true;
 
-	err = k_sem_take(
-		&data->write_awaits_resp_sem, PS2_UART_TIMEOUT_WRITE_AWAIT_RESPONSE
-	);
+	err = k_sem_take(&data->write_awaits_resp_sem, PS2_UART_TIMEOUT_WRITE_AWAIT_RESPONSE);
 
 	uint8_t resp_byte = data->write_awaits_resp_byte;
 	data->write_awaits_resp_byte = 0x0;
 	data->write_awaits_resp = false;
 
-    if (err) {
-		LOG_WRN(
-			"Write response didn't arrive in time for byte "
-			"0x%x. Considering send a failure.", byte
-		);
+	if (err) {
+		LOG_WRN("Write response didn't arrive in time for byte "
+			"0x%x. Considering send a failure.",
+			byte);
 
 		return PS2_UART_E_WRITE_RESPONSE;
 	}
 
-	if(resp_byte == PS2_UART_RESP_RESEND ||
-	   resp_byte == PS2_UART_RESP_FAILURE) {
-		LOG_WRN(
-			"Write of 0x%x received error response: 0x%x",
-			byte, resp_byte
-		);
+	if (resp_byte == PS2_UART_RESP_RESEND || resp_byte == PS2_UART_RESP_FAILURE) {
+		LOG_WRN("Write of 0x%x received error response: 0x%x", byte, resp_byte);
 	} else {
-		LOG_DBG(
-			"Write for byte 0x%x received response: 0x%x",
-			byte, resp_byte
-		);
+		LOG_DBG("Write for byte 0x%x received response: 0x%x", byte, resp_byte);
 	}
 
 	// We fail the write since we got an error response
-	if(resp_byte == PS2_UART_RESP_RESEND) {
+	if (resp_byte == PS2_UART_RESP_RESEND) {
 
 		return PS2_UART_E_WRITE_RESEND;
-	} else if(resp_byte == PS2_UART_RESP_FAILURE) {
+	} else if (resp_byte == PS2_UART_RESP_FAILURE) {
 
 		return PS2_UART_E_WRITE_FAILURE;
 	}
@@ -823,7 +734,7 @@ int ps2_uart_write_byte_blocking(uint8_t byte)
 	// LOG_DBG("ps2_uart_write_byte_blocking called with byte=0x%x", byte);
 
 	err = ps2_uart_write_byte_start(byte);
-    if (err) {
+	if (err) {
 		LOG_ERR("Could not initiate writing of byte.");
 		return PS2_UART_E_WRITE_TRANSMIT;
 	}
@@ -832,29 +743,26 @@ int ps2_uart_write_byte_blocking(uint8_t byte)
 	// This causes the `k_sem_take` call below to block until
 	// `ps2_uart_write_finish` gives it back.
 	err = k_sem_take(&data->write_lock, PS2_UART_TIMEOUT_WRITE_BLOCKING);
-    if (err) {
+	if (err) {
 
 		// This usually means the controller is busy with other interrupts,
 		// timed out processing the interrupts and even the scl timeout
 		// delayable wasn't called due to the delay.
 		//
 		// So we abort the write and try again.
-		LOG_ERR(
-			"Blocking write failed due to semaphore timeout for byte "
-			"0x%x: %d", byte, err
-		);
+		LOG_ERR("Blocking write failed due to semaphore timeout for byte "
+			"0x%x: %d",
+			byte, err);
 
 		return PS2_UART_E_WRITE_SEM_TIMEOUT;
 	}
 
-	if(data->cur_write_status == PS2_UART_WRITE_STATUS_SUCCESS) {
+	if (data->cur_write_status == PS2_UART_WRITE_STATUS_SUCCESS) {
 		// LOG_DBG("Blocking write finished successfully for byte 0x%x", byte);
 		err = 0;
 	} else {
-		LOG_ERR(
-			"Blocking write finished with failure for byte 0x%x status: %d",
-			byte, data->cur_write_status
-		);
+		LOG_ERR("Blocking write finished with failure for byte 0x%x status: %d", byte,
+			data->cur_write_status);
 		err = -data->cur_write_status;
 	}
 
@@ -863,21 +771,22 @@ int ps2_uart_write_byte_blocking(uint8_t byte)
 	return err;
 }
 
-int ps2_uart_write_byte_start(uint8_t byte) {
+int ps2_uart_write_byte_start(uint8_t byte)
+{
 	struct ps2_uart_data *data = &ps2_uart_data;
 	int err;
 
 	// Take semaphore so that when `ps2_uart_write_byte_blocking` attempts
 	// taking it, the process gets blocked.
 	err = k_sem_take(&data->write_lock, K_NO_WAIT);
-    if (err != 0 && err != -EBUSY) {
+	if (err != 0 && err != -EBUSY) {
 		LOG_ERR("ps2_uart_write_byte_start could not take semaphore: %d", err);
 
 		return err;
 	}
 
 	err = ps2_uart_set_mode_write();
-	if(err != 0) {
+	if (err != 0) {
 		LOG_ERR("Could not configure driver for write mode: %d", err);
 		return err;
 	}
@@ -907,11 +816,8 @@ int ps2_uart_write_byte_start(uint8_t byte) {
 
 	// And if the PS/2 device doesn't start the clock, we want to
 	// handle that error...
-	k_work_schedule_for_queue(
-		&ps2_uart_work_queue,
-		&data->write_scl_timout,
-		PS2_UART_TIMEOUT_WRITE_SCL_START
-	);
+	k_work_schedule_for_queue(&ps2_uart_work_queue, &data->write_scl_timout,
+				  PS2_UART_TIMEOUT_WRITE_SCL_START);
 
 	k_mutex_unlock(&write_mutex);
 
@@ -929,7 +835,6 @@ void ps2_uart_write_scl_timeout(struct k_work *item)
 	ps2_uart_write_finish(false, "scl timeout");
 }
 
-
 // The nrf52 is too slow to process all SCL interrupts, so we
 // try to avoid them as much as possible.
 //
@@ -945,9 +850,8 @@ void ps2_uart_write_scl_timeout(struct k_work *item)
 // So, we use a GPIO interrupt to wait for the first clock cycle and
 // then use delays to send the actual data at the same rate as the
 // UART baud rate.
-void ps2_uart_write_scl_interrupt_handler(const struct device *dev,
-						   				  struct gpio_callback *cb,
-						   				  uint32_t pins)
+void ps2_uart_write_scl_interrupt_handler(const struct device *dev, struct gpio_callback *cb,
+					  uint32_t pins)
 {
 	struct ps2_uart_data *data = &ps2_uart_data;
 
@@ -958,23 +862,20 @@ void ps2_uart_write_scl_interrupt_handler(const struct device *dev,
 	// From here we will just use time delays.
 	ps2_uart_set_scl_callback_enabled(false);
 
-	for(int i = PS2_UART_POS_DATA_FIRST; i <= PS2_UART_POS_STOP; i++) {
+	for (int i = PS2_UART_POS_DATA_FIRST; i <= PS2_UART_POS_STOP; i++) {
 
-		if(i >= PS2_UART_POS_DATA_FIRST && i <= PS2_UART_POS_DATA_LAST) {
+		if (i >= PS2_UART_POS_DATA_FIRST && i <= PS2_UART_POS_DATA_LAST) {
 
 			int data_pos = i - PS2_UART_POS_DATA_FIRST;
-			bool data_bit = PS2_UART_GET_BIT(
-				data->cur_write_byte,
-				data_pos
-			);
+			bool data_bit = PS2_UART_GET_BIT(data->cur_write_byte, data_pos);
 
 			ps2_uart_set_sda(data_bit);
-		} else if(i == PS2_UART_POS_PARITY) {
+		} else if (i == PS2_UART_POS_PARITY) {
 
 			bool byte_parity = ps2_uart_get_byte_parity(data->cur_write_byte);
 
 			ps2_uart_set_sda(byte_parity);
-		} else if(i == PS2_UART_POS_STOP) {
+		} else if (i == PS2_UART_POS_STOP) {
 
 			ps2_uart_set_sda(1);
 
@@ -993,7 +894,7 @@ void ps2_uart_write_scl_interrupt_handler(const struct device *dev,
 	// Check Ack
 	int ack_val = ps2_uart_get_sda();
 
-	if(ack_val == 0) {
+	if (ack_val == 0) {
 		ps2_uart_write_finish(true, "successful ack");
 	} else {
 		// TODO: Properly handle write ack errors
@@ -1007,23 +908,17 @@ void ps2_uart_write_finish(bool successful, char *descr)
 	struct ps2_uart_data *data = &ps2_uart_data;
 	int err;
 
-	if(successful) {
-		LOG_DBG(
-			"Successfully wrote value 0x%x",
-			data->cur_write_byte
-		);
+	if (successful) {
+		LOG_DBG("Successfully wrote value 0x%x", data->cur_write_byte);
 		data->cur_write_status = PS2_UART_WRITE_STATUS_SUCCESS;
-	} else {  // Failure
-		LOG_ERR(
-			"Failed to write value 0x%x: %s",
-			data->cur_write_byte, descr
-		);
+	} else { // Failure
+		LOG_ERR("Failed to write value 0x%x: %s", data->cur_write_byte, descr);
 
 		data->cur_write_status = PS2_UART_WRITE_STATUS_FAILURE;
 	}
 
 	err = ps2_uart_set_mode_read();
-	if(err != 0) {
+	if (err != 0) {
 		LOG_ERR("Could not configure driver for read mode: %d", err);
 		return;
 	}
@@ -1038,15 +933,13 @@ void ps2_uart_write_finish(bool successful, char *descr)
 	k_mutex_unlock(&write_mutex);
 }
 
-
 /*
  * Zephyr PS/2 driver interface
  */
 static int ps2_uart_enable_callback(const struct device *dev);
 
-static int ps2_uart_configure(const struct device *dev,
-			     ps2_callback_t callback_isr,
-				 ps2_resend_callback_t resend_callback_isr)
+static int ps2_uart_configure(const struct device *dev, ps2_callback_t callback_isr,
+			      ps2_resend_callback_t resend_callback_isr)
 {
 	struct ps2_uart_data *data = dev->data;
 
@@ -1054,12 +947,12 @@ static int ps2_uart_configure(const struct device *dev,
 		return -EINVAL;
 	}
 
-	if(callback_isr) {
+	if (callback_isr) {
 		data->callback_isr = callback_isr;
 		ps2_uart_enable_callback(dev);
 	}
 
-	if(resend_callback_isr) {
+	if (resend_callback_isr) {
 		data->resend_callback_isr = resend_callback_isr;
 	}
 
@@ -1072,14 +965,14 @@ int ps2_uart_read(const struct device *dev, uint8_t *value)
 	// Maybe only bytes that were received within past 10 seconds.
 	uint8_t queue_byte;
 	int err = ps2_uart_data_queue_get_next(&queue_byte, PS2_UART_TIMEOUT_READ);
-	if(err) {  // Timeout due to no data to read in data queue
+	if (err) { // Timeout due to no data to read in data queue
 		// LOG_DBG("ps2_uart_read: Fifo timed out...");
 
 		return -ETIMEDOUT;
 	}
 
 	// LOG_DBG("ps2_uart_read: Returning 0x%x", queue_byte);
-	*value =  queue_byte;
+	*value = queue_byte;
 
 	return 0;
 }
@@ -1126,7 +1019,6 @@ static const struct ps2_driver_api ps2_uart_driver_api = {
 	.enable_callback = ps2_uart_enable_callback,
 };
 
-
 /*
  * PS/2 UART Driver Init
  */
@@ -1148,26 +1040,18 @@ static int ps2_uart_init(const struct device *dev)
 	k_fifo_init(&data->data_queue);
 
 	// Custom queue for background PS/2 processing work at high priority
-	k_work_queue_start(
-        &ps2_uart_work_queue,
-        ps2_uart_work_queue_stack_area,
-        K_THREAD_STACK_SIZEOF(ps2_uart_work_queue_stack_area),
-        PS2_UART_WORK_QUEUE_PRIORITY,
-        NULL
-    );
+	k_work_queue_start(&ps2_uart_work_queue, ps2_uart_work_queue_stack_area,
+			   K_THREAD_STACK_SIZEOF(ps2_uart_work_queue_stack_area),
+			   PS2_UART_WORK_QUEUE_PRIORITY, NULL);
 
 	// Custom queue for calling the zephyr ps/2 callback at lower priority
-	k_work_queue_start(
-        &ps2_uart_work_queue_cb,
-        ps2_uart_work_queue_cb_stack_area,
-        K_THREAD_STACK_SIZEOF(ps2_uart_work_queue_cb_stack_area),
-        PS2_UART_WORK_QUEUE_CB_PRIORITY,
-        NULL
-    );
+	k_work_queue_start(&ps2_uart_work_queue_cb, ps2_uart_work_queue_cb_stack_area,
+			   K_THREAD_STACK_SIZEOF(ps2_uart_work_queue_cb_stack_area),
+			   PS2_UART_WORK_QUEUE_CB_PRIORITY, NULL);
 
 	k_work_init(&data->callback_work, ps2_uart_read_callback_work_handler);
 
-    k_work_init_delayable(&data->write_scl_timout, ps2_uart_write_scl_timeout);
+	k_work_init_delayable(&data->write_scl_timout, ps2_uart_write_scl_timeout);
 
 	// Init semaphore for blocking writes
 	k_sem_init(&data->write_lock, 0, 1);
@@ -1176,19 +1060,19 @@ static int ps2_uart_init(const struct device *dev)
 	k_sem_init(&data->write_awaits_resp_sem, 0, 1);
 
 	err = ps2_uart_init_uart();
-	if(err != 0) {
+	if (err != 0) {
 		LOG_ERR("Could not init UART: %d", err);
 		return err;
 	}
 
 	err = ps2_uart_init_gpio();
-	if(err != 0) {
+	if (err != 0) {
 		LOG_ERR("Could not init GPIO: %d", err);
 		return err;
 	}
 
 	err = ps2_uart_set_mode_read();
-	if(err != 0) {
+	if (err != 0) {
 		LOG_ERR("Could not initialize in UART mode read: %d", err);
 		return err;
 	}
@@ -1199,20 +1083,19 @@ static int ps2_uart_init(const struct device *dev)
 static int ps2_uart_init_uart(void)
 {
 	struct ps2_uart_data *data = &ps2_uart_data;
-	struct ps2_uart_config *config = (struct ps2_uart_config *) &ps2_uart_config;
+	struct ps2_uart_config *config = (struct ps2_uart_config *)&ps2_uart_config;
 	int err;
 
-    if (!device_is_ready(config->uart_dev))
-    {
-        LOG_ERR("UART device not ready");
-        return -ENODEV;
-    } else {
+	if (!device_is_ready(config->uart_dev)) {
+		LOG_ERR("UART device not ready");
+		return -ENODEV;
+	} else {
 		LOG_INF("UART device is ready");
 	}
 
 	struct uart_config uart_cfg;
 	err = uart_config_get(config->uart_dev, &uart_cfg);
-	if(err != 0) {
+	if (err != 0) {
 		LOG_ERR("Could not retrieve UART config...");
 		return -ENODEV;
 	}
@@ -1226,16 +1109,13 @@ static int ps2_uart_init_uart(void)
 	uart_cfg.parity = UART_CFG_PARITY_EVEN;
 
 	err = uart_configure(config->uart_dev, &uart_cfg);
-	if(err != 0) {
+	if (err != 0) {
 		LOG_ERR("Could not configure UART device: %d", err);
 		return -EINVAL;
 	}
 
-	uart_irq_callback_user_data_set(
-		config->uart_dev,
-		ps2_uart_interrupt_handler,
-		(void *)data->dev
-	);
+	uart_irq_callback_user_data_set(config->uart_dev, ps2_uart_interrupt_handler,
+					(void *)data->dev);
 
 	uart_irq_rx_enable(config->uart_dev);
 	uart_irq_err_enable(config->uart_dev);
@@ -1246,22 +1126,18 @@ static int ps2_uart_init_uart(void)
 static int ps2_uart_init_gpio(void)
 {
 	struct ps2_uart_data *data = &ps2_uart_data;
-	struct ps2_uart_config *config = (struct ps2_uart_config *) &ps2_uart_config;
+	struct ps2_uart_config *config = (struct ps2_uart_config *)&ps2_uart_config;
 	int err;
 
 	// Interrupt for clock line
-	gpio_init_callback(
-		&data->scl_cb_data,
-		ps2_uart_write_scl_interrupt_handler,
-		BIT(config->scl_gpio.pin)
-	);
+	gpio_init_callback(&data->scl_cb_data, ps2_uart_write_scl_interrupt_handler,
+			   BIT(config->scl_gpio.pin));
 
 	err = gpio_add_callback(config->scl_gpio.port, &data->scl_cb_data);
 	if (err) {
-		LOG_ERR(
-			"failed to enable interrupt callback on "
-			"SCL GPIO pin (err %d)", err
-		);
+		LOG_ERR("failed to enable interrupt callback on "
+			"SCL GPIO pin (err %d)",
+			err);
 	}
 
 	ps2_uart_set_scl_callback_enabled(false);
@@ -1269,11 +1145,5 @@ static int ps2_uart_init_gpio(void)
 	return err;
 }
 
-DEVICE_DT_INST_DEFINE(
-	0,
-	&ps2_uart_init,
-	NULL,
-	&ps2_uart_data, &ps2_uart_config,
-	POST_KERNEL, 80,
-	&ps2_uart_driver_api
-);
+DEVICE_DT_INST_DEFINE(0, &ps2_uart_init, NULL, &ps2_uart_data, &ps2_uart_config, POST_KERNEL, 80,
+		      &ps2_uart_driver_api);
