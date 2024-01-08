@@ -635,7 +635,7 @@ void ps2_uart_write_finish(bool successful, char *descr);
 // device responded with 0xfc (failure / cancel).
 #define PS2_UART_E_WRITE_FAILURE 5
 
-K_MUTEX_DEFINE(write_mutex);
+K_MUTEX_DEFINE(ps2_uart_write_mutex);
 
 int ps2_uart_write_byte(uint8_t byte)
 {
@@ -644,7 +644,7 @@ int ps2_uart_write_byte(uint8_t byte)
 	LOG_DBG("\n");
 	LOG_INF("Writing: 0x%x", byte);
 
-	k_mutex_lock(&write_mutex, K_FOREVER);
+	k_mutex_lock(&ps2_uart_write_mutex, K_FOREVER);
 
 	for (int i = 0; i < PS2_UART_WRITE_MAX_RETRY; i++) {
 		if (i > 0) {
@@ -668,7 +668,7 @@ int ps2_uart_write_byte(uint8_t byte)
 	}
 
 	LOG_DBG("END WRITE: 0x%x\n", byte);
-	k_mutex_unlock(&write_mutex);
+	k_mutex_unlock(&ps2_uart_write_mutex);
 
 	return err;
 }
@@ -819,7 +819,7 @@ int ps2_uart_write_byte_start(uint8_t byte)
 	k_work_schedule_for_queue(&ps2_uart_work_queue, &data->write_scl_timout,
 				  PS2_UART_TIMEOUT_WRITE_SCL_START);
 
-	k_mutex_unlock(&write_mutex);
+	k_mutex_unlock(&ps2_uart_write_mutex);
 
 	return 0;
 }
@@ -930,7 +930,7 @@ void ps2_uart_write_finish(bool successful, char *descr)
 	// Give the semaphore to allow write_byte_blocking to continue
 	k_sem_give(&data->write_lock);
 
-	k_mutex_unlock(&write_mutex);
+	k_mutex_unlock(&ps2_uart_write_mutex);
 }
 
 /*
