@@ -843,7 +843,7 @@ void ps2_gpio_interrupt_log_scl_timeout(struct k_work *item)
 // device responded with 0xfc (failure / cancel).
 #define PS2_GPIO_E_WRITE_FAILURE 5
 
-	K_MUTEX_DEFINE(write_mutex);
+	K_MUTEX_DEFINE(ps2_gpio_write_mutex);
 
 	int ps2_gpio_write_byte(uint8_t byte)
 	{
@@ -852,7 +852,7 @@ void ps2_gpio_interrupt_log_scl_timeout(struct k_work *item)
 		LOG_DBG("\n");
 		LOG_DBG("START WRITE: 0x%x", byte);
 
-		k_mutex_lock(&write_mutex, K_FOREVER);
+		k_mutex_lock(&ps2_gpio_write_mutex, K_FOREVER);
 
 		for (int i = 0; i < PS2_GPIO_WRITE_MAX_RETRY; i++) {
 			if (i > 0) {
@@ -876,7 +876,7 @@ void ps2_gpio_interrupt_log_scl_timeout(struct k_work *item)
 		}
 
 		LOG_DBG("END WRITE: 0x%x\n", byte);
-		k_mutex_unlock(&write_mutex);
+		k_mutex_unlock(&ps2_gpio_write_mutex);
 
 		return err;
 	}
