@@ -12,6 +12,7 @@
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/uart.h>
 #include <zephyr/drivers/pinctrl.h>
+#include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
 #include <hal/nrf_uarte.h>
