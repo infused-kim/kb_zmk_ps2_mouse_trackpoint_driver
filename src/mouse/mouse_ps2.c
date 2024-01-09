@@ -847,7 +847,7 @@ int zmk_mouse_ps2_activity_reporting_disable();
 
 struct zmk_mouse_ps2_send_cmd_resp {
     int err;
-    char err_msg[50];
+    char err_msg[80];
     uint8_t resp_buffer[8];
     int resp_len;
 };
