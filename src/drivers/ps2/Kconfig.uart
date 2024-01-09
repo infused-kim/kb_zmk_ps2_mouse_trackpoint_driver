@@ -9,5 +9,6 @@ config PS2_UART
 	select CONFIG_SERIAL
 	select CONFIG_UART_ASYNC_API
 	select CONFIG_UART_USE_RUNTIME_CONFIGURE
+	select CONFIG_PM_DEVICE
 	help
 	  Enable software driven (bit banging) PS/2 support using UART on GPIO pins
