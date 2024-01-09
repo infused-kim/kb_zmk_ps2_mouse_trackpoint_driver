@@ -16,6 +16,14 @@ config ZMK_MOUSE_PS2_TICK_DURATION
     int "Sets how frequently a mouse report is sent"
     default 8
 
+config ZMK_MOUSE_PS2_DEDICATED_THREAD_STACK_SIZE
+    int "Stack size for dedicated mouse thread/queue"
+    default 2048
+
+config ZMK_MOUSE_PS2_DEDICATED_THREAD_PRIORITY
+    int "Thread priority for dedicated mouse thread/queue"
+    default 3
+
 config ZMK_MOUSE_PS2_SAMPLING_RATE
     int "Sets how many mouse activity reports should be sent per second. The default is 100. You can reduce this setting if you see a lot of PS/2 transmission errors. Increasing it will not lead to significant improvements, because mouse reports are accumulated and only sent over bluetooth every `CONFIG_ZMK_MOUSE_TICK_DURATION` ms."
 	default 100

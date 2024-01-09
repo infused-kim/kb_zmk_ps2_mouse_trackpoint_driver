@@ -292,6 +292,9 @@ static struct zmk_mouse_ps2_data zmk_mouse_ps2_data = {
     .scroll_mode_enabled = false,
 };
 
+K_THREAD_STACK_DEFINE(mouse_ps2_work_stack_area, CONFIG_ZMK_MOUSE_PS2_DEDICATED_THREAD_STACK_SIZE);
+static struct k_work_q mouse_ps2_work_q;
+
 static int allowed_sampling_rates[] = {
     10, 20, 40, 60, 80, 100, 200,
 };
@@ -550,7 +553,7 @@ void zmk_mouse_ps2_tick_timer_cb(struct k_timer *dummy) {
 
     // LOG_DBG("Submitting mouse work to queue");
     // Calls zmk_mouse_ps2_tick_timer_handler on our work queue
-    k_work_submit_to_queue(zmk_mouse_work_q(), &data->mouse_tick);
+    k_work_submit_to_queue(&mouse_ps2_work_q, &data->mouse_tick);
 }
 
 // Here is where we actually ask zmk to send the mouse movement to
@@ -1760,6 +1763,10 @@ static void zmk_mouse_ps2_init_thread(int dev_ptr, int unused) {
     } else {
         LOG_DBG("Successfully activated ps2 callback");
     }
+
+    k_work_queue_start(&mouse_ps2_work_q, mouse_ps2_work_stack_area,
+                       K_THREAD_STACK_SIZEOF(mouse_ps2_work_stack_area),
+                       CONFIG_ZMK_MOUSE_PS2_DEDICATED_THREAD_PRIORITY, NULL);
 
     k_timer_init(&data->mouse_timer, zmk_mouse_ps2_tick_timer_cb, NULL);
     k_timer_start(&data->mouse_timer, K_NO_WAIT, K_MSEC(CONFIG_ZMK_MOUSE_PS2_TICK_DURATION));
