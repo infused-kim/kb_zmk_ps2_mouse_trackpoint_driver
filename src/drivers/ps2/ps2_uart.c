@@ -23,16 +23,9 @@ LOG_MODULE_REGISTER(ps2_uart);
 /*
  * Pin Control
  */
-#define PINCTRL_STATE_OFF 2
-// PINCTRL_DT_STATE_PINS_DEFINE(DT_PATH(zephyr_user), uart0_ps2_off);
-// static const struct pinctrl_state pinctrl_state_off =
-// 	PINCTRL_DT_STATE_INIT(uart0_ps2_off, PINCTRL_STATE_OFF);
-// static const struct pinctrl_state pinctrl_states_with_off[10];
 
-PINCTRL_DT_STATE_PINS_DEFINE(DT_PATH(zephyr_user), uart0_ps2_off);
+PINCTRL_DT_DEFINE(DT_INST_BUS(0));
 
-static const struct pinctrl_state uart0_ps2_off[] = {
-	PINCTRL_DT_STATE_INIT(uart0_ps2_off, PINCTRL_STATE_DEFAULT)};
 /*
  * Settings
  */
@@ -349,10 +342,7 @@ static int ps2_uart_set_mode_write()
 
 	// Set pincntrl with unused pins so that we can control the pins
 	// through GPIO
-	LOG_ERR("config->pcfg.state_cnt: %d", config->pcfg->state_cnt);
-	LOG_ERR("config->pcfg: %p", config->pcfg);
-
-	err = pinctrl_apply_state(config->pcfg, PINCTRL_STATE_OFF);
+	err = pinctrl_apply_state(config->pcfg, PINCTRL_STATE_SLEEP);
 	if (err < 0) {
 		LOG_ERR("Could not switch pinctrl state to OFF: %d", err);
 		return err;
@@ -1132,28 +1122,6 @@ static int ps2_uart_init_uart(void)
 	uart_irq_err_enable(config->uart_dev);
 
 	return 0;
-}
-
-static int ps2_uart_configure_dynamic_pinctrl()
-{
-	struct ps2_uart_config *config = (struct ps2_uart_config *)&ps2_uart_config;
-	int ret;
-
-	struct pinctrl_dev_config *pcfg = config->pcfg;
-	LOG_ERR("In ps2_uart_configure_dynamic_pinctrl pcfg->state_cnt BEFORE: %d",
-		pcfg->state_cnt);
-
-	for (int i = 0; i < pcfg->state_cnt && i < sizeof(pinctrl_states_with_off); i++) {
-
-		memcpy(&pinctrl_states_with_off[i], &pcfg->states[i], sizeof(struct pinctrl_state));
-	}
-
-	memcpy(&pinctrl_states_with_off[pcfg->state_cnt], &pinctrl_state_off,
-	       sizeof(struct pinctrl_state));
-	ret = pinctrl_update_states(pcfg, pinctrl_states_with_off, pcfg->state_cnt + 1);
-
-	LOG_ERR("pinctrl_update_states: %d", ret);
-	LOG_ERR("pcfg->state_cnt AFTER: %d", pcfg->state_cnt);
 }
 
 static int ps2_uart_init_gpio(void)
