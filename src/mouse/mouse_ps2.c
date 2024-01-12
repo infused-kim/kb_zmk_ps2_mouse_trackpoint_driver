@@ -1578,42 +1578,42 @@ int zmk_mouse_ps2_settings_save() {
 // It's called once for each PS/2 mouse setting that has been stored.
 static int zmk_mouse_ps2_settings_restore(const char *name, size_t len, settings_read_cb read_cb,
                                           void *cb_arg) {
-    struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
-    uint8_t setting_val;
+    // struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
+    // uint8_t setting_val;
 
-    if (len != sizeof(setting_val)) {
-        LOG_ERR("Could not restore settings %s: Len mismatch", name);
+    // if (len != sizeof(setting_val)) {
+    //     LOG_ERR("Could not restore settings %s: Len mismatch", name);
 
-        return -EINVAL;
-    }
+    //     return -EINVAL;
+    // }
 
-    int rc = read_cb(cb_arg, &setting_val, sizeof(setting_val));
-    if (rc <= 0) {
-        LOG_ERR("Could not restore setting %s: %d", name, rc);
-        return -EINVAL;
-    }
+    // int rc = read_cb(cb_arg, &setting_val, sizeof(setting_val));
+    // if (rc <= 0) {
+    //     LOG_ERR("Could not restore setting %s: %d", name, rc);
+    //     return -EINVAL;
+    // }
 
-    if (data->is_trackpoint == false) {
-        LOG_INF("Mouse device is not a trackpoint. Not restoring setting %s.", name);
+    // if (data->is_trackpoint == false) {
+    //     LOG_INF("Mouse device is not a trackpoint. Not restoring setting %s.", name);
 
-        return 0;
-    }
+    //     return 0;
+    // }
 
-    LOG_INF("Restoring setting %s with value: %d", name, setting_val);
+    // LOG_INF("Restoring setting %s with value: %d", name, setting_val);
 
-    if (strcmp(name, MOUSE_PS2_ST_TP_SENSITIVITY) == 0) {
+    // if (strcmp(name, MOUSE_PS2_ST_TP_SENSITIVITY) == 0) {
 
-        return zmk_mouse_ps2_tp_sensitivity_set(setting_val);
-    } else if (strcmp(name, MOUSE_PS2_ST_TP_NEG_INERTIA) == 0) {
+    //     return zmk_mouse_ps2_tp_sensitivity_set(setting_val);
+    // } else if (strcmp(name, MOUSE_PS2_ST_TP_NEG_INERTIA) == 0) {
 
-        return zmk_mouse_ps2_tp_neg_inertia_set(setting_val);
-    } else if (strcmp(name, MOUSE_PS2_ST_TP_VALUE6) == 0) {
+    //     return zmk_mouse_ps2_tp_neg_inertia_set(setting_val);
+    // } else if (strcmp(name, MOUSE_PS2_ST_TP_VALUE6) == 0) {
 
-        return zmk_mouse_ps2_tp_value6_upper_plateau_speed_set(setting_val);
-    } else if (strcmp(name, MOUSE_PS2_ST_TP_PTS_THRESHOLD) == 0) {
+    //     return zmk_mouse_ps2_tp_value6_upper_plateau_speed_set(setting_val);
+    // } else if (strcmp(name, MOUSE_PS2_ST_TP_PTS_THRESHOLD) == 0) {
 
-        return zmk_mouse_ps2_tp_pts_threshold_set(setting_val);
-    }
+    //     return zmk_mouse_ps2_tp_pts_threshold_set(setting_val);
+    // }
 
     return -EINVAL;
 }
