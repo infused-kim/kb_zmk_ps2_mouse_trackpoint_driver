@@ -8,7 +8,6 @@
 	behaviors {
 		msm: behavior_mouse_scroll_mode {
 			compatible = "zmk,behavior-mouse-scroll-mode";
-			label = "MOUSE_SCROLL_MODE";
 			#binding-cells = <0>;
 		};
 	};

@@ -54,5 +54,6 @@ static int zmk_behavior_mouse_setting_init(const struct device *dev) { return 0;
 static const struct behavior_driver_api zmk_behavior_mouse_setting_driver_api = {
     .binding_pressed = on_keymap_binding_pressed, .binding_released = on_keymap_binding_released};
 
-DEVICE_DT_INST_DEFINE(0, zmk_behavior_mouse_setting_init, NULL, NULL, NULL, POST_KERNEL,
-                      CONFIG_KERNEL_INIT_PRIORITY_DEFAULT, &zmk_behavior_mouse_setting_driver_api);
+BEHAVIOR_DT_INST_DEFINE(0, zmk_behavior_mouse_setting_init, NULL, NULL, NULL, POST_KERNEL,
+                        CONFIG_KERNEL_INIT_PRIORITY_DEFAULT,
+                        &zmk_behavior_mouse_setting_driver_api);

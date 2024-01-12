@@ -8,7 +8,6 @@
 	behaviors {
 		mms: behavior_mouse_setting {
 			compatible = "zmk,behavior-mouse-setting";
-			label = "MOUSE_SETTING";
 			#binding-cells = <1>;
 		};
 	};
