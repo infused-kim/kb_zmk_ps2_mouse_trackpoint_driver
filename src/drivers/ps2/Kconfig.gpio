@@ -15,12 +15,32 @@ if PS2_GPIO
 # BT_CTLR_LLL_PRIO from 0 to 1 and BT_CTLR_ULL_* priorities from 1 to 2.
 # We then set the gpio priority to 0.
 #
-# On top of this, the following has to be added to the device tree:
+# The following also has to be added to the device tree to set GPIOTE to the
+# highest priority:
 # &gpiote {
 # 	interrupts = < 0x6 0 >;
 # };
 #
-# This allows the PS/2 interrupts to be triggered in time.
+# On top of that all other interrupts have to be set to priority 3 to prevent
+# them from delaying the BT interrupts.
+#
+# Overrides can be generated using the following script in infused-kim's zmk
+# fork:
+# app/scripts/gen_interrupt_priority_overrides.py
+#
+# Make sure to do it on a zephyr.dts where the interrupts have not been
+# adjusted yet (i.e. a config that doesn't have the the following options
+# enabled).
+#
+# If you are building using a toolchain you can find the zephyr.dts in the
+# build directory, which by default is: `app/build/zephyr/zephyr.dts`
+#
+# If you are building using the github actions, copy the output of the build
+# step `xxxx_right - nice_nano_v2 Devicetree file` into a file and run the
+# script on it.
+#
+# This will increase the probability that the PS/2 interrupts are triggered in
+# time.
 
 config BT_CTLR_ADVANCED_FEATURES
 	default y
