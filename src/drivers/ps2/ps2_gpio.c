@@ -269,18 +269,20 @@ int ps2_gpio_set_scl_callback_enabled(bool enabled)
 	int err;
 
 	if (enabled) {
-		err = gpio_add_callback(data->scl_gpio.port, &data->scl_cb_data);
+		err = gpio_pin_interrupt_configure_dt(&data->scl_gpio, (GPIO_INT_EDGE_FALLING));
 		if (err) {
-			LOG_ERR("failed to enable interrupt callback on "
+			LOG_ERR("failed to enable interrupt on "
 				"SCL GPIO pin (err %d)",
 				err);
+			return err;
 		}
 	} else {
-		err = gpio_remove_callback(data->scl_gpio.port, &data->scl_cb_data);
+		err = gpio_pin_interrupt_configure_dt(&data->scl_gpio, (GPIO_INT_DISABLE));
 		if (err) {
-			LOG_ERR("failed to disable interrupt callback on "
+			LOG_ERR("failed to disable interrupt on "
 				"SCL GPIO pin (err %d)",
 				err);
+			return err;
 		}
 	}
 
@@ -307,7 +309,7 @@ int ps2_gpio_configure_pin_scl_input()
 
 int ps2_gpio_configure_pin_scl_output()
 {
-	return ps2_gpio_configure_pin_scl((GPIO_OUTPUT), "output");
+	return ps2_gpio_configure_pin_scl((GPIO_OUTPUT_HIGH), "output");
 }
 
 int ps2_gpio_configure_pin_sda(gpio_flags_t flags, char *descr)
@@ -330,7 +332,7 @@ int ps2_gpio_configure_pin_sda_input()
 
 int ps2_gpio_configure_pin_sda_output()
 {
-	return ps2_gpio_configure_pin_sda((GPIO_OUTPUT), "output");
+	return ps2_gpio_configure_pin_sda((GPIO_OUTPUT_HIGH), "output");
 }
 
 bool ps2_gpio_get_byte_parity(uint8_t byte)
@@ -1019,14 +1021,11 @@ void ps2_gpio_interrupt_log_scl_timeout(struct k_work *item)
 		}
 
 		// Configure data and clock lines for output
+		ps2_gpio_set_scl_callback_enabled(false);
 		ps2_gpio_configure_pin_scl_output();
 		ps2_gpio_configure_pin_sda_output();
 
 		LOG_PS2_INT("Starting write of byte ", &byte);
-
-		// Disable interrupt so that we don't trigger it when we
-		// pull the clock low to inhibit the line
-		ps2_gpio_set_scl_callback_enabled(false);
 
 		// Inhibit the line by setting clock low and data high
 		ps2_gpio_set_scl(0);
@@ -1302,74 +1301,53 @@ void ps2_gpio_interrupt_log_scl_timeout(struct k_work *item)
 	 * PS/2 GPIO Driver Init
 	 */
 
-	int ps2_gpio_configure_scl_pin(struct ps2_gpio_data * data,
-				       const struct ps2_gpio_config *config)
+	static int ps2_gpio_init_gpio(void)
 	{
+		struct ps2_gpio_data *data = &ps2_gpio_data;
+		struct ps2_gpio_config *config = (struct ps2_gpio_config *)&ps2_gpio_config;
 		int err;
 
 		// Make pin info accessible through the data struct
 		data->scl_gpio = config->scl_gpio;
-
-		// Overwrite any user-provided flags from the devicetree
-		data->scl_gpio.dt_flags = 0;
-
-		ps2_gpio_configure_pin_scl_input();
-
-		// Interrupt for clock line
-		err = gpio_pin_interrupt_configure_dt(&data->scl_gpio, (GPIO_INT_EDGE_FALLING));
-		if (err) {
-			LOG_ERR("failed to configure interrupt on "
-				"SCL GPIO pin (err %d)",
-				err);
-			return err;
-		}
-
-		gpio_init_callback(&data->scl_cb_data, ps2_gpio_scl_interrupt_handler,
-				   BIT(data->scl_gpio.pin));
-
-		ps2_gpio_set_scl_callback_enabled(true);
-
-		return 0;
-	}
-
-	int ps2_gpio_configure_sda_pin(struct ps2_gpio_data * data,
-				       const struct ps2_gpio_config *config)
-	{
-		// Make pin info accessible through the data struct
 		data->sda_gpio = config->sda_gpio;
 
 		// Overwrite any user-provided flags from the devicetree
 		data->scl_gpio.dt_flags = 0;
+		data->scl_gpio.dt_flags = 0;
 
+		// Setup interrupt callback for clock line
+		gpio_init_callback(&data->scl_cb_data, ps2_gpio_scl_interrupt_handler,
+				   BIT(data->scl_gpio.pin));
+
+		err = gpio_add_callback(config->scl_gpio.port, &data->scl_cb_data);
+		if (err) {
+			LOG_ERR("failed to enable interrupt callback on "
+				"SCL GPIO pin (err %d)",
+				err);
+		}
+
+		ps2_gpio_set_scl_callback_enabled(true);
+		ps2_gpio_configure_pin_scl_input();
 		ps2_gpio_configure_pin_sda_input();
 
-		return 0;
+		// Check if this stuff is needed
+		// TODO: Figure out why this is requiered.
+		ps2_gpio_set_sda(1);
+		ps2_gpio_set_scl(1);
+
+		return err;
 	}
 
 	static int ps2_gpio_init(const struct device *dev)
 	{
 
 		struct ps2_gpio_data *data = dev->data;
-		const struct ps2_gpio_config *config = dev->config;
-		int err;
 
 		// Set the ps2 device so we can retrieve it later for
 		// the ps2 callback
 		data->dev = dev;
 
-		err = ps2_gpio_configure_scl_pin(data, config);
-		if (err) {
-			return err;
-		}
-		err = ps2_gpio_configure_sda_pin(data, config);
-		if (err) {
-			return err;
-		}
-
-		// Check if this stuff is needed
-		// TODO: Figure out why this is requiered.
-		ps2_gpio_set_sda(1);
-		ps2_gpio_set_scl(1);
+		ps2_gpio_init_gpio();
 
 		// Init fifo for synchronous read operations
 		k_fifo_init(&data->data_queue);
