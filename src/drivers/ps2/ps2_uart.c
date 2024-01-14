@@ -1060,7 +1060,7 @@ int ps2_uart_read(const struct device *dev, uint8_t *value)
 
 static int ps2_uart_write(const struct device *dev, uint8_t value)
 {
-	int ret = ps2_uart_write_byte_debug(value);
+	int ret = ps2_uart_write_byte(value);
 
 	return ret;
 }
