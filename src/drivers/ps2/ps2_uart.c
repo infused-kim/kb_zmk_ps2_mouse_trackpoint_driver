@@ -337,9 +337,6 @@ static int ps2_uart_set_mode_write()
 	const struct ps2_uart_config *config = &ps2_uart_config;
 	int err;
 
-	// Disable UART interrupt
-	uart_irq_rx_disable(config->uart_dev);
-
 	// Set pincntrl with unused pins so that we can control the pins
 	// through GPIO
 	err = pinctrl_apply_state(config->pcfg, PINCTRL_STATE_SLEEP);
@@ -347,6 +344,11 @@ static int ps2_uart_set_mode_write()
 		LOG_ERR("Could not switch pinctrl state to OFF: %d", err);
 		return err;
 	}
+
+	// Disable UART interrupt
+	// Unintuitively, this has to be done AFTER applying the pincntrl state,
+	// otherwise GPIO won't be able to use the data pin
+	uart_irq_rx_disable(config->uart_dev);
 
 	// Configure data and clock lines for output
 	ps2_uart_set_scl_callback_enabled(false);
