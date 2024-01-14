@@ -33,6 +33,9 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
  * Settings
  */
 
+// Delay mouse init to give the mouse time to send the init sequence.
+#define ZMK_MOUSE_PS2_INIT_THREAD_DELAY_MS 1000
+
 // How often the driver try to initialize a mouse before we give up.
 #define MOUSE_PS2_INIT_ATTEMPTS 10
 
@@ -1709,7 +1712,7 @@ static int zmk_mouse_ps2_init(const struct device *dev) {
     k_thread_create(&zmk_mouse_ps2_data.thread, zmk_mouse_ps2_data.thread_stack,
                     MOUSE_PS2_THREAD_STACK_SIZE, (k_thread_entry_t)zmk_mouse_ps2_init_thread,
                     (struct device *)dev, 0, NULL, K_PRIO_COOP(MOUSE_PS2_THREAD_PRIORITY), 0,
-                    K_NO_WAIT);
+                    K_MSEC(ZMK_MOUSE_PS2_INIT_THREAD_DELAY_MS));
 
     return 0;
 }
@@ -1899,7 +1902,7 @@ int zmk_mouse_ps2_init_wait_for_mouse(const struct device *dev) {
                 }
             }
         } else {
-            LOG_DBG("Could not read PS/2 device self-test result: %d. ", err);
+            LOG_WRN("Could not read PS/2 device self-test result: %d. ", err);
         }
 
         // But when a zmk device is reset, it doesn't cut the power to external
@@ -1917,5 +1920,8 @@ int zmk_mouse_ps2_init_wait_for_mouse(const struct device *dev) {
     return 1;
 }
 
+// Depends on the UART and PS2 init priorities, which are 55 and 45 by default
+#define ZMK_MOUSE_PS2_INIT_PRIORITY 90
+
 DEVICE_DT_INST_DEFINE(0, &zmk_mouse_ps2_init, NULL, &zmk_mouse_ps2_data, &zmk_mouse_ps2_config,
-                      POST_KERNEL, 91, NULL);
+                      POST_KERNEL, ZMK_MOUSE_PS2_INIT_PRIORITY, NULL);
