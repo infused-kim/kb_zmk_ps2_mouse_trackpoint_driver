@@ -641,6 +641,82 @@ void ps2_uart_write_finish(bool successful, char *descr);
 
 K_MUTEX_DEFINE(ps2_uart_write_mutex);
 
+int ps2_uart_write_byte_debug(uint8_t byte)
+{
+	int err;
+
+	LOG_WRN("DEBUG WRITE STARTED for byte 0x%x", byte);
+
+	LOG_WRN("Setting Write mode");
+	err = ps2_uart_set_mode_write();
+	if (err != 0) {
+		LOG_ERR("Could not configure driver for write mode: %d", err);
+		return err;
+	}
+	// k_sleep(K_MSEC(1000));
+	// err = ps2_uart_set_mode_write();
+	// if (err != 0) {
+	// 	LOG_ERR("Could not configure driver for write mode: %d", err);
+	// 	return err;
+	// }
+	LOG_WRN("Setting Write mode: Done");
+
+	// Inhibit the line by setting clock low and data high for 100us
+	LOG_INF("Setting low");
+	ps2_uart_set_scl(0);
+	ps2_uart_set_sda(0);
+	k_sleep(K_MSEC(100));
+
+	LOG_INF("Setting high");
+	ps2_uart_set_scl(1);
+	ps2_uart_set_sda(1);
+	k_sleep(K_MSEC(100));
+
+	LOG_INF("Setting low");
+	ps2_uart_set_scl(0);
+	ps2_uart_set_sda(0);
+	k_sleep(K_MSEC(100));
+
+	LOG_INF("Setting high");
+	ps2_uart_set_scl(1);
+	ps2_uart_set_sda(1);
+	k_sleep(K_MSEC(100));
+
+	LOG_INF("Setting low");
+	ps2_uart_set_scl(0);
+	ps2_uart_set_sda(0);
+	k_sleep(K_MSEC(100));
+
+	LOG_INF("Setting high");
+	ps2_uart_set_scl(1);
+	ps2_uart_set_sda(1);
+	k_sleep(K_MSEC(100));
+
+	LOG_INF("Setting low");
+	ps2_uart_set_scl(0);
+	ps2_uart_set_sda(0);
+	k_sleep(K_MSEC(100));
+
+	LOG_WRN("Enabling interrupt callback");
+	ps2_uart_set_scl_callback_enabled(true);
+
+	LOG_WRN("Setting SCL input");
+	ps2_uart_configure_pin_scl_input();
+
+	k_sleep(K_MSEC(300));
+
+	LOG_WRN("Switching back to mode read");
+	err = ps2_uart_set_mode_read();
+	if (err != 0) {
+		LOG_ERR("Could not configure driver for write mode: %d", err);
+		return err;
+	}
+
+	LOG_WRN("Finished Debug write");
+
+	return -1;
+}
+
 int ps2_uart_write_byte(uint8_t byte)
 {
 	int err;
@@ -984,7 +1060,7 @@ int ps2_uart_read(const struct device *dev, uint8_t *value)
 
 static int ps2_uart_write(const struct device *dev, uint8_t value)
 {
-	int ret = ps2_uart_write_byte(value);
+	int ret = ps2_uart_write_byte_debug(value);
 
 	return ret;
 }
@@ -1145,6 +1221,7 @@ static int ps2_uart_init_gpio(void)
 			err);
 	}
 
+	LOG_INF("Disabling callback...");
 	ps2_uart_set_scl_callback_enabled(false);
 
 	return err;
