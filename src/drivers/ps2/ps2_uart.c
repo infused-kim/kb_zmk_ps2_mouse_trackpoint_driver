@@ -561,7 +561,7 @@ void ps2_uart_read_process_received_byte(uint8_t byte)
 		}
 	}
 
-	LOG_INF("Received byte: 0x%x", byte);
+	LOG_DBG("Received byte: 0x%x", byte);
 
 	// If write_byte_await_response() is waiting, we notify
 	// the blocked write process of whether it was a success or not.
@@ -739,7 +739,7 @@ int ps2_uart_write_byte(uint8_t byte)
 	int err;
 
 	LOG_DBG("\n");
-	LOG_INF("Writing: 0x%x", byte);
+	LOG_DBG("Writing: 0x%x", byte);
 
 	k_mutex_lock(&ps2_uart_write_mutex, K_FOREVER);
 
