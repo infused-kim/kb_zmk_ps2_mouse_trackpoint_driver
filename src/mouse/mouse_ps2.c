@@ -473,19 +473,6 @@ void zmk_mouse_ps2_activity_process_cmd(zmk_mouse_ps2_packet_mode packet_mode, u
     // Make mouse movement adjustment based on settings
     struct vector2d mouse_move = {packet.mov_x, packet.mov_y};
 
-#if IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_SWAP_XY)
-    mouse_move.x = packet.mov_y;
-    mouse_move.y = packet.mov_x;
-#endif /* IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_SWAP_XY) */
-
-#if IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_INVERT_X)
-    mouse_move.x = -mouse_move.x;
-#endif /* IS_ENABLED(ZMK_MOUSE_PS2_INVERT_X) */
-
-#if IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_INVERT_Y)
-    mouse_move.y = -mouse_move.y;
-#endif /* IS_ENABLED(ZMK_MOUSE_PS2_INVERT_Y) */
-
     // We don't send the mouse move over BT every time we get a PS2
     // packet, because it can send too fast.
     // Here we just add up the coordinates and then we use a timer to

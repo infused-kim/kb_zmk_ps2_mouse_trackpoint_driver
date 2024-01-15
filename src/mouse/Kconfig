@@ -32,18 +32,6 @@ config ZMK_MOUSE_PS2_ENABLE_CLICKING
     bool "Enables clicking events."
 	default y
 
-config ZMK_MOUSE_PS2_INVERT_X
-    bool "Invert the mouse movement x axis."
-	default n
-
-config ZMK_MOUSE_PS2_INVERT_Y
-    bool "Invert the mouse movement y axis."
-	default n
-
-config ZMK_MOUSE_PS2_SWAP_XY
-    bool "Swaps the X and Y axis."
-	default n
-
 config ZMK_MOUSE_PS2_SCROLL
     bool "Enable scroll wheel on mouse devices supporting the Intellimouse extension."
 	default n
