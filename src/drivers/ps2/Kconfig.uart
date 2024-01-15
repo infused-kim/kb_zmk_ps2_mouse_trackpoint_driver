@@ -14,6 +14,10 @@ config PS2_UART
 
 if PS2_UART
 
+config PS2_UART_WRITE_MODE_BLOCKING
+	bool "Don't use interrupts for writing data and instead block using timers."
+	default n
+
 # PM_DEVICE is needed, because we use GPIO bitbanging for writing. And to
 # release the data PIN that is used by the UART device, we use pinctrl to
 # switch to the sleep state. But the sleep state is only included if PM_DEVICE

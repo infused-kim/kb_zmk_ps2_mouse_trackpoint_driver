@@ -92,6 +92,12 @@ PINCTRL_DT_DEFINE(DT_INST_BUS(0));
 #define PS2_UART_TIMING_SCL_INHIBITION_RESP_MAX 3000
 #define PS2_UART_TIMEOUT_WRITE_SCL_START        K_USEC(PS2_UART_TIMING_SCL_INHIBITION_RESP_MAX)
 
+// Max time we allow the device to send the next clock signal during writes.
+// Even though PS/2 devices send the clock at most every 100us, it doesn't mean
+// that the interrupts always get triggered within that time. So we allow a
+// little extra time.
+#define PS2_UART_TIMEOUT_WRITE_SCL K_USEC(PS2_UART_TIMING_SCL_CYCLE_MAX + 50)
+
 // Writes start with us inhibiting the line and then respond
 // with 11 bits (start bit included in inhibition time).
 // To be conservative we give it another 2 cycles to complete
@@ -185,7 +191,7 @@ static struct ps2_uart_data ps2_uart_data = {
 
 	.cur_write_status = PS2_UART_WRITE_STATUS_INACTIVE,
 	.cur_write_byte = 0x0,
-	.cur_write_position = 0,
+	.cur_write_pos = 0,
 	.write_awaits_resp = false,
 	.write_awaits_resp_byte = 0x0,
 };
@@ -941,10 +947,12 @@ void ps2_uart_write_scl_timeout(struct k_work *item)
 // So, we use a GPIO interrupt to wait for the first clock cycle and
 // then use delays to send the actual data at the same rate as the
 // UART baud rate.
-void ps2_uart_write_scl_interrupt_handler(const struct device *dev, struct gpio_callback *cb,
-					  uint32_t pins)
+void ps2_uart_write_scl_interrupt_handler_blocking(const struct device *dev,
+						   struct gpio_callback *cb, uint32_t pins)
 {
 	struct ps2_uart_data *data = &ps2_uart_data;
+
+	LOG_INF("Inside ps2_uart_write_scl_interrupt_handler_blocking");
 
 	// Cancel the SCL timeout
 	k_work_cancel_delayable(&data->write_scl_timout);
@@ -994,10 +1002,66 @@ void ps2_uart_write_scl_interrupt_handler(const struct device *dev, struct gpio_
 	}
 }
 
+void ps2_uart_write_scl_interrupt_handler_async(const struct device *dev, struct gpio_callback *cb,
+						uint32_t pins)
+{
+	struct ps2_uart_data *data = &ps2_uart_data;
+
+	k_work_cancel_delayable(&data->write_scl_timout);
+
+	if (data->cur_write_pos == PS2_UART_POS_START) {
+		// This should not be happening, because the PS2_UART_POS_START bit
+		// is sent in ps2_uart_write_byte_start during inhibition
+		return;
+	} else if (data->cur_write_pos >= PS2_UART_POS_DATA_FIRST &&
+		   data->cur_write_pos <= PS2_UART_POS_DATA_LAST) {
+
+		int data_pos = data->cur_write_pos - PS2_UART_POS_DATA_FIRST;
+		bool data_bit = PS2_UART_GET_BIT(data->cur_write_byte, data_pos);
+
+		ps2_uart_set_sda(data_bit);
+	} else if (data->cur_write_pos == PS2_UART_POS_PARITY) {
+
+		bool byte_parity = ps2_uart_get_byte_parity(data->cur_write_byte);
+
+		ps2_uart_set_sda(byte_parity);
+	} else if (data->cur_write_pos == PS2_UART_POS_STOP) {
+
+		ps2_uart_set_sda(1);
+
+		// Give control over data pin back to device after sending
+		// the stop bit so that we can receive the ack bit from the
+		// device
+		ps2_uart_configure_pin_sda_input();
+	} else if (data->cur_write_pos == PS2_UART_POS_ACK) {
+
+		int ack_val = ps2_uart_get_sda();
+
+		if (ack_val == 0) {
+			ps2_uart_write_finish(true, "successful ack");
+		} else {
+			// TODO: Properly handle write ack errors
+			LOG_WRN("Ack bit was invalid for write of 0x%x", data->cur_write_byte);
+			ps2_uart_write_finish(true, "failed ack");
+		}
+	} else {
+		LOG_ERR("UART unknown TX bit number: %d", data->cur_write_pos);
+	}
+
+	if (data->cur_write_pos < PS2_UART_POS_ACK) {
+		k_work_schedule_for_queue(&ps2_uart_work_queue, &data->write_scl_timout,
+					  PS2_UART_TIMEOUT_WRITE_SCL);
+	}
+
+	data->cur_write_pos += 1;
+}
+
 void ps2_uart_write_finish(bool successful, char *descr)
 {
 	struct ps2_uart_data *data = &ps2_uart_data;
 	int err;
+
+	k_work_cancel_delayable(&data->write_scl_timout);
 
 	if (successful) {
 		LOG_DBG("Successfully wrote value 0x%x", data->cur_write_byte);
@@ -1221,8 +1285,13 @@ static int ps2_uart_init_gpio(void)
 	int err;
 
 	// Interrupt for clock line
-	gpio_init_callback(&data->scl_cb_data, ps2_uart_write_scl_interrupt_handler,
+#if IS_ENABLED(CONFIG_PS2_UART_WRITE_MODE_BLOCKING)
+	gpio_init_callback(&data->scl_cb_data, ps2_uart_write_scl_interrupt_handler_blocking,
 			   BIT(config->scl_gpio.pin));
+#else
+	gpio_init_callback(&data->scl_cb_data, ps2_uart_write_scl_interrupt_handler_async,
+			   BIT(config->scl_gpio.pin));
+#endif /* IS_ENABLED(CONFIG_PS2_UART_WRITE_MODE_BLOCKING) */
 
 	err = gpio_add_callback(config->scl_gpio.port, &data->scl_cb_data);
 	if (err) {
