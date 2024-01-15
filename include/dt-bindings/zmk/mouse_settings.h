@@ -5,6 +5,9 @@
  */
 #pragma once
 
+#define MS_LOG 0
+#define MS_RESET 1
+
 #define MS_TP_SENSITIVITY_INCR 10
 #define MS_TP_SENSITIVITY_DECR 11
 

@@ -19,6 +19,10 @@ static int on_keymap_binding_pressed(struct zmk_behavior_binding *binding,
                                      struct zmk_behavior_binding_event event) {
     switch (binding->param1) {
 
+    case MS_LOG:
+        return zmk_mouse_ps2_settings_log();
+    case MS_RESET:
+        return zmk_mouse_ps2_settings_reset();
     case MS_TP_SENSITIVITY_INCR:
         return zmk_mouse_ps2_tp_sensitivity_change(INCREMENT_TP_SENSITIVITY);
     case MS_TP_SENSITIVITY_DECR:
