@@ -14,6 +14,22 @@ properties:
     required: false
     description: GPIO to which the RST pin of the device is connected and on which the Power-On-Reset will be performed.
 
+  sampling-rate:
+    type: int
+    description: Adjusts the sensitivity setting on trackpoint devices. The allowed values are 10, 20, 40, 60, 80, 100, 200 and the default is 100.
+    enum:
+      - 10
+      - 20
+      - 40
+      - 60
+      - 80
+      - 100
+      - 200
+
+  tp-press-to-select:
+    type: boolean
+    description: Enables mouse clicking by pressing hard on the trackpoint. Not all trackpoints support this feature.
+
   layer-toggle:
     type: int
     required: false

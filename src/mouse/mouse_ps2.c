@@ -173,6 +173,8 @@ struct zmk_mouse_ps2_config {
     const struct device *ps2_device;
     struct gpio_dt_spec rst_gpio;
 
+    int sampling_rate;
+    int tp_press_to_select;
     int layer_toggle;
     int layer_toggle_delay_ms;
     int layer_toggle_timout_ms;
@@ -254,10 +256,11 @@ static const struct zmk_mouse_ps2_config zmk_mouse_ps2_config = {
         },
 #endif
 
+    .sampling_rate = DT_INST_PROP_OR(0, sampling_rate, MOUSE_PS2_CMD_SET_SAMPLING_RATE_DEFAULT),
+    .tp_press_to_select = DT_INST_PROP_OR(0, tp_press_to_select, false),
     .layer_toggle = DT_INST_PROP_OR(0, layer_toggle, 0),
     .layer_toggle_delay_ms = DT_INST_PROP_OR(0, layer_toggle_delay_ms, 250),
     .layer_toggle_timout_ms = DT_INST_PROP_OR(0, layer_toggle_timout_ms, 250),
-
 };
 
 static struct zmk_mouse_ps2_data zmk_mouse_ps2_data = {
@@ -1723,23 +1726,24 @@ static void zmk_mouse_ps2_init_thread(int dev_ptr, int unused) {
         return;
     }
 
-#if CONFIG_ZMK_MOUSE_PS2_SAMPLING_RATE != MOUSE_PS2_CMD_SET_SAMPLING_RATE_DEFAULT
-    LOG_INF("Setting sample rate to %d...", CONFIG_ZMK_MOUSE_PS2_SAMPLING_RATE);
-    zmk_mouse_ps2_set_sampling_rate(CONFIG_ZMK_MOUSE_PS2_SAMPLING_RATE);
-    if (err) {
-        LOG_ERR("Could not set sampling rate to %d: %d", CONFIG_ZMK_MOUSE_PS2_SAMPLING_RATE, err);
-        return;
+    if (config->sampling_rate != MOUSE_PS2_CMD_SET_SAMPLING_RATE_DEFAULT) {
+
+        LOG_INF("Setting sample rate to %d...", config->sampling_rate);
+        zmk_mouse_ps2_set_sampling_rate(config->sampling_rate);
+        if (err) {
+            LOG_ERR("Could not set sampling rate to %d: %d", config->sampling_rate, err);
+            return;
+        }
     }
-#endif /* CONFIG_ZMK_MOUSE_PS2_SAMPLING_RATE */
 
     if (zmk_mouse_ps2_is_device_trackpoint() == true) {
         LOG_INF("Device is a trackpoint");
         data->is_trackpoint = true;
 
-#if IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_TP_TAP_TO_SELECT)
-        LOG_INF("Enabling trackpoint press to select...");
-        zmk_mouse_ps2_tp_press_to_select_set(true);
-#endif /* IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_TP_TAP_TO_SELECT) */
+        if (config->tp_press_to_select) {
+            LOG_INF("Enabling TP press to select...");
+            zmk_mouse_ps2_tp_press_to_select_set(true);
+        }
 
 #if IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_TP_INVERT_X)
         LOG_INF("Inverting trackpoint x axis.");
