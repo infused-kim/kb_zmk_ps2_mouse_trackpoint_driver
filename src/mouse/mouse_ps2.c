@@ -1621,6 +1621,8 @@ int zmk_mouse_ps2_settings_save() {
 static int zmk_mouse_ps2_settings_restore(const char *name, size_t len, settings_read_cb read_cb,
                                           void *cb_arg) {
     struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
+    const struct zmk_mouse_ps2_config *config = &zmk_mouse_ps2_config;
+
     uint8_t setting_val;
 
     if (len != sizeof(setting_val)) {
@@ -1645,14 +1647,43 @@ static int zmk_mouse_ps2_settings_restore(const char *name, size_t len, settings
 
     if (strcmp(name, MOUSE_PS2_ST_TP_SENSITIVITY) == 0) {
 
+        if (config->tp_sensitivity != -1 && config->tp_sensitivity != setting_val) {
+            LOG_WRN("Not restoring runtime settings for %s with value %d, because deviceconfig "
+                    "defines the setting with value %d",
+                    name, setting_val, config->tp_sensitivity);
+
+            return 0;
+        }
+
         return zmk_mouse_ps2_tp_sensitivity_set(setting_val);
     } else if (strcmp(name, MOUSE_PS2_ST_TP_NEG_INERTIA) == 0) {
+        if (config->tp_neg_inertia != -1 && config->tp_neg_inertia != setting_val) {
+            LOG_WRN("Not restoring runtime settings for %s with value %d, because deviceconfig "
+                    "defines the setting with value %d",
+                    name, setting_val, config->tp_neg_inertia);
+
+            return 0;
+        }
 
         return zmk_mouse_ps2_tp_neg_inertia_set(setting_val);
     } else if (strcmp(name, MOUSE_PS2_ST_TP_VALUE6) == 0) {
+        if (config->tp_val6_upper_speed != -1 && config->tp_val6_upper_speed != setting_val) {
+            LOG_WRN("Not restoring runtime settings for %s with value %d, because deviceconfig "
+                    "defines the setting with value %d",
+                    name, setting_val, config->tp_val6_upper_speed);
+
+            return 0;
+        }
 
         return zmk_mouse_ps2_tp_value6_upper_plateau_speed_set(setting_val);
     } else if (strcmp(name, MOUSE_PS2_ST_TP_PTS_THRESHOLD) == 0) {
+        if (config->tp_val6_upper_speed != -1 && config->tp_val6_upper_speed != setting_val) {
+            LOG_WRN("Not restoring runtime settings for %s with value %d, because deviceconfig "
+                    "defines the setting with value %d",
+                    name, setting_val, config->tp_val6_upper_speed);
+
+            return 0;
+        }
 
         return zmk_mouse_ps2_tp_pts_threshold_set(setting_val);
     }
