@@ -551,7 +551,14 @@ void ps2_uart_read_process_received_byte(uint8_t byte)
 	err = ps2_uart_read_err_check(config->uart_dev);
 	if (err != 0) {
 		const char *err_str = ps2_uart_read_get_error_str(err);
-		LOG_ERR("UART RX detected error for byte 0x%x: %s (%d)", byte, err_str, err);
+
+		// Framing errors
+		if (byte == 0xfa && err == UART_ERROR_FRAMING) {
+			// Ignore, because it is not a real error and happens frequently
+		} else {
+			LOG_WRN("UART RX detected error for byte 0x%x: %s (%d)", byte, err_str,
+				err);
+		}
 	}
 
 	LOG_INF("Received byte: 0x%x", byte);
