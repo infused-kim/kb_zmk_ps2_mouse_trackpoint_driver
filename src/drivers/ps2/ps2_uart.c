@@ -546,6 +546,8 @@ void ps2_uart_read_process_received_byte(uint8_t byte)
 		LOG_ERR("UART RX detected error for byte 0x%x: %s (%d)", byte, err_str, err);
 	}
 
+	LOG_INF("Received byte: 0x%x", byte);
+
 	// If write_byte_await_response() is waiting, we notify
 	// the blocked write process of whether it was a success or not.
 	if (data->write_awaits_resp) {
