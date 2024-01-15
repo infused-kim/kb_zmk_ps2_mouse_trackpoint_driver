@@ -30,6 +30,22 @@ properties:
     type: boolean
     description: Enables mouse clicking by pressing hard on the trackpoint. Not all trackpoints support this feature.
 
+  tp-press-to-select-threshold:
+    type: int
+    description: Adjusts how sensitive the press-to-select feature is. The range is 0 - 255 and the default is 8. You can also adjust this setting at runtime without recompiling using the &mms behavior. If this setting is enabled, then the runtime behavior won't be saved into the runtime settings.
+
+  tp-sensitivity:
+    type: int
+    description: Adjusts the sensitivity setting on trackpoint devices. The range is 0 - 255 and the default is 128. You can also adjust this setting at runtime without recompiling using the &mms behavior. If this setting is enabled, then the runtime behavior won't be saved into the runtime settings.
+
+  tp-neg-inertia:
+    type: int
+    description: Adjusts the negative inertia setting on trackpoint devices. The range is 0 - 255 and the default is 6. You can also adjust this setting at runtime without recompiling using the &mms behavior. If this setting is enabled, then the runtime behavior won't be saved into the runtime settings.
+
+  tp-val6-upper-speed:
+    type: int
+    description: Adjusts the negative value0 upper plateau speed setting on trackpoint devices. The range is 0 - 255 and the default is 97. You can also adjust this setting at runtime without recompiling using the &mms behavior. If this setting is enabled, then the runtime behavior won't be saved into the runtime settings.
+
   layer-toggle:
     type: int
     required: false

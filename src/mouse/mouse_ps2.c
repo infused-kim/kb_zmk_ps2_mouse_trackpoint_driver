@@ -175,6 +175,11 @@ struct zmk_mouse_ps2_config {
 
     int sampling_rate;
     int tp_press_to_select;
+    int tp_press_to_select_threshold;
+    int tp_sensitivity;
+    int tp_neg_inertia;
+    int tp_val6_upper_speed;
+
     int layer_toggle;
     int layer_toggle_delay_ms;
     int layer_toggle_timout_ms;
@@ -258,6 +263,11 @@ static const struct zmk_mouse_ps2_config zmk_mouse_ps2_config = {
 
     .sampling_rate = DT_INST_PROP_OR(0, sampling_rate, MOUSE_PS2_CMD_SET_SAMPLING_RATE_DEFAULT),
     .tp_press_to_select = DT_INST_PROP_OR(0, tp_press_to_select, false),
+    .tp_press_to_select_threshold = DT_INST_PROP_OR(0, tp_press_to_select_threshold, -1),
+    .tp_sensitivity = DT_INST_PROP_OR(0, tp_sensitivity, -1),
+    .tp_neg_inertia = DT_INST_PROP_OR(0, tp_neg_inertia, -1),
+    .tp_val6_upper_speed = DT_INST_PROP_OR(0, tp_val6_upper_speed, -1),
+
     .layer_toggle = DT_INST_PROP_OR(0, layer_toggle, 0),
     .layer_toggle_delay_ms = DT_INST_PROP_OR(0, layer_toggle_delay_ms, 250),
     .layer_toggle_timout_ms = DT_INST_PROP_OR(0, layer_toggle_timout_ms, 250),
@@ -1755,6 +1765,27 @@ static void zmk_mouse_ps2_init_thread(int dev_ptr, int unused) {
         if (config->tp_press_to_select) {
             LOG_INF("Enabling TP press to select...");
             zmk_mouse_ps2_tp_press_to_select_set(true);
+        }
+
+        if (config->tp_press_to_select_threshold != -1) {
+            LOG_INF("Setting TP press to select thereshold to %d...",
+                    config->tp_press_to_select_threshold);
+            zmk_mouse_ps2_tp_pts_threshold_set(config->tp_press_to_select_threshold);
+        }
+
+        if (config->tp_sensitivity != -1) {
+            LOG_INF("Setting TP sensitivity to %d...", config->tp_sensitivity);
+            zmk_mouse_ps2_tp_sensitivity_set(config->tp_sensitivity);
+        }
+
+        if (config->tp_neg_inertia != -1) {
+            LOG_INF("Setting TP inertia to %d...", config->tp_neg_inertia);
+            zmk_mouse_ps2_tp_neg_inertia_set(config->tp_neg_inertia);
+        }
+
+        if (config->tp_val6_upper_speed != -1) {
+            LOG_INF("Setting TP value 6 upper speed plateau to %d...", config->tp_val6_upper_speed);
+            zmk_mouse_ps2_tp_value6_upper_plateau_speed_set(config->tp_val6_upper_speed);
         }
 
 #if IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_TP_INVERT_X)
