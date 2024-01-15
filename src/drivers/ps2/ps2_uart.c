@@ -85,9 +85,6 @@ PINCTRL_DT_DEFINE(DT_INST_BUS(0));
 #define PS2_UART_TIMING_SCL_CYCLE_MIN 60
 #define PS2_UART_TIMING_SCL_CYCLE_MAX 100
 
-#define PS2_GPIO_WRITE_INHIBIT_SCL_DURATION K_USEC(PS2_UART_TIMING_SCL_INHIBITION)
-#define PS2_GPIO_WRITE_INHIBIT_SDA_DURATION K_USEC(PS2_UART_TIMING_SCL_INHIBITION)
-
 // After inhibiting and releasing the clock, the device starts sending
 // the clock. It's supposed to start immediately, but some devices
 // need much longer if you are asking them to interrupt an
@@ -167,8 +164,6 @@ struct ps2_uart_data {
 	uint8_t write_awaits_resp_byte;
 	struct k_sem write_awaits_resp_sem;
 	struct k_sem write_lock;
-	struct k_work_delayable write_inhibition_scl_wait;
-	struct k_work_delayable write_inhibition_sda_wait;
 	struct k_work_delayable write_scl_timout;
 
 	struct k_work resend_cmd_work;
@@ -886,31 +881,11 @@ int ps2_uart_write_byte_start(uint8_t byte)
 	// Inhibit the line by setting clock low and data high for 100us
 	ps2_uart_set_scl(0);
 	ps2_uart_set_sda(1);
-	// k_busy_wait(PS2_UART_TIMING_SCL_INHIBITION);
-
-	// Keep the line inhibited for at least 100 microseconds
-	k_work_schedule_for_queue(&ps2_uart_work_queue, &data->write_inhibition_scl_wait,
-				  PS2_GPIO_WRITE_INHIBIT_SCL_DURATION);
-
-	return 0;
-}
-
-void ps2_gpio_write_inhibition_scl_wait(struct k_work *item)
-{
-	struct ps2_uart_data *data = &ps2_uart_data;
+	k_busy_wait(PS2_UART_TIMING_SCL_INHIBITION);
 
 	// Set data to value of start bit
 	ps2_uart_set_sda(0);
-	// k_busy_wait(PS2_UART_TIMING_SCL_INHIBITION);
-
-	// Keep the line inhibited for at least 100 microseconds
-	k_work_schedule_for_queue(&ps2_uart_work_queue, &data->write_inhibition_sda_wait,
-				  PS2_GPIO_WRITE_INHIBIT_SDA_DURATION);
-}
-
-void ps2_gpio_write_inhibition_sda_wait(struct k_work *item)
-{
-	struct ps2_uart_data *data = &ps2_uart_data;
+	k_busy_wait(PS2_UART_TIMING_SCL_INHIBITION);
 
 	// Release the clock line and configure it as input
 	// This let's the device take control of the clock again
@@ -928,6 +903,8 @@ void ps2_gpio_write_inhibition_sda_wait(struct k_work *item)
 				  PS2_UART_TIMEOUT_WRITE_SCL_START);
 
 	k_mutex_unlock(&ps2_uart_write_mutex);
+
+	return 0;
 }
 
 void ps2_uart_write_scl_timeout(struct k_work *item)
@@ -1157,8 +1134,6 @@ static int ps2_uart_init(const struct device *dev)
 
 	k_work_init(&data->callback_work, ps2_uart_read_callback_work_handler);
 
-	k_work_init_delayable(&data->write_inhibition_scl_wait, ps2_gpio_write_inhibition_scl_wait);
-	k_work_init_delayable(&data->write_inhibition_sda_wait, ps2_gpio_write_inhibition_sda_wait);
 	k_work_init_delayable(&data->write_scl_timout, ps2_uart_write_scl_timeout);
 
 	// Init semaphore for blocking writes
