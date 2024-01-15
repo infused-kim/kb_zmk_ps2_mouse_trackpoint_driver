@@ -54,12 +54,13 @@ PINCTRL_DT_DEFINE(DT_INST_BUS(0));
  * PS/2 Defines
  */
 
-#define PS2_UART_POS_START      0
-#define PS2_UART_POS_DATA_FIRST 1
-#define PS2_UART_POS_DATA_LAST  8
-#define PS2_UART_POS_PARITY     9
-#define PS2_UART_POS_STOP       10
-#define PS2_UART_POS_ACK        11 // Write mode only
+#define PS2_UART_POS_START       0
+#define PS2_UART_POS_DATA_FIRST  1
+#define PS2_UART_POS_DATA_SECOND 2
+#define PS2_UART_POS_DATA_LAST   8
+#define PS2_UART_POS_PARITY      9
+#define PS2_UART_POS_STOP        10
+#define PS2_UART_POS_ACK         11 // Write mode only
 
 #define PS2_UART_RESP_ACK     0xfa
 #define PS2_UART_RESP_RESEND  0xfe
@@ -69,7 +70,8 @@ PINCTRL_DT_DEFINE(DT_INST_BUS(0));
  * PS/2 Timings
  */
 
-#define PS2_UART_TIMING_SCL_CYCLE_LEN 69
+#define PS2_UART_TIMING_SCL_CYCLE_LEN                     69
+#define PS2_UART_TIMING_SCL_INTERRUPT_WORKER_COMPENSATION 25
 
 // The minimum time needed to inhibit clock to start a write
 // is 100us, but we triple it just in case.
@@ -162,9 +164,11 @@ struct ps2_uart_data {
 	uint8_t cur_write_byte;
 	bool write_awaits_resp;
 	uint8_t write_awaits_resp_byte;
+	int64_t write_scl_interrupt_time;
 	struct k_sem write_awaits_resp_sem;
 	struct k_sem write_lock;
 	struct k_work_delayable write_scl_timout;
+	struct k_work write_scl_interrupt_work;
 
 	struct k_work resend_cmd_work;
 };
@@ -878,7 +882,7 @@ int ps2_uart_write_byte_start(uint8_t byte)
 	// from the SCL interrupt
 	data->cur_write_byte = byte;
 
-	// Inhibit the line by setting clock low and data high for 100us
+	// Inhibit the line by setting clock low and data high
 	ps2_uart_set_scl(0);
 	ps2_uart_set_sda(1);
 	k_busy_wait(PS2_UART_TIMING_SCL_INHIBITION);
@@ -938,6 +942,14 @@ void ps2_uart_write_scl_interrupt_handler(const struct device *dev, struct gpio_
 {
 	struct ps2_uart_data *data = &ps2_uart_data;
 
+	// We want to block the interrupt as briefly as possible and do most of
+	// the work in a background work queue function. But the background
+	// function is not executed immediately.
+	//
+	// To make sure we don't mess up the timings, we store the time the
+	// interrupt was triggered and then caclulate the necessary delay
+	data->write_scl_interrupt_time = k_uptime_ticks();
+
 	// Cancel the SCL timeout
 	k_work_cancel_delayable(&data->write_scl_timout);
 
@@ -945,7 +957,28 @@ void ps2_uart_write_scl_interrupt_handler(const struct device *dev, struct gpio_
 	// From here we will just use time delays.
 	ps2_uart_set_scl_callback_enabled(false);
 
-	for (int i = PS2_UART_POS_DATA_FIRST; i <= PS2_UART_POS_STOP; i++) {
+	// Set the first data bit
+	bool data_bit_first = PS2_UART_GET_BIT(data->cur_write_byte, 0);
+	ps2_uart_set_sda(data_bit_first);
+
+	LOG_INF("INside ps2_uart_write_scl_interrupt_handler");
+	k_work_submit_to_queue(&ps2_uart_work_queue_cb, &data->write_scl_interrupt_work);
+}
+
+void ps2_uart_write_scl_interrupt_worker(struct k_work *item)
+{
+	struct ps2_uart_data *data = &ps2_uart_data;
+	int64_t time_elapsed = k_uptime_ticks() - data->write_scl_interrupt_time;
+	int64_t time_remaining = PS2_UART_TIMING_SCL_CYCLE_LEN - time_elapsed -
+				 PS2_UART_TIMING_SCL_INTERRUPT_WORKER_COMPENSATION;
+	int64_t time_compensation = 0;
+	if (time_remaining > 0) {
+		k_busy_wait(time_remaining);
+	} else if (time_remaining < 0) {
+		time_compensation = time_remaining * -1;
+	}
+
+	for (int i = PS2_UART_POS_DATA_SECOND; i <= PS2_UART_POS_STOP; i++) {
 
 		if (i >= PS2_UART_POS_DATA_FIRST && i <= PS2_UART_POS_DATA_LAST) {
 
@@ -971,7 +1004,10 @@ void ps2_uart_write_scl_interrupt_handler(const struct device *dev, struct gpio_
 		}
 
 		// Sleep for the cycle length
-		k_busy_wait(PS2_UART_TIMING_SCL_CYCLE_LEN);
+		k_busy_wait(PS2_UART_TIMING_SCL_CYCLE_LEN - time_compensation);
+		if (time_compensation > 0) {
+			time_compensation = 0;
+		}
 	}
 
 	// Check Ack
@@ -1133,6 +1169,8 @@ static int ps2_uart_init(const struct device *dev)
 			   PS2_UART_WORK_QUEUE_CB_PRIORITY, NULL);
 
 	k_work_init(&data->callback_work, ps2_uart_read_callback_work_handler);
+	k_work_init(&data->write_scl_interrupt_work, ps2_uart_write_scl_interrupt_worker);
+	k_work_init(&data->resend_cmd_work, ps2_uart_send_cmd_resend_worker);
 
 	k_work_init_delayable(&data->write_scl_timout, ps2_uart_write_scl_timeout);
 
