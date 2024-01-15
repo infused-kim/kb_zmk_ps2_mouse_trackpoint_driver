@@ -162,6 +162,7 @@ struct ps2_uart_data {
 	// Write byte
 	ps2_uart_write_status cur_write_status;
 	uint8_t cur_write_byte;
+	int cur_write_pos;
 	bool write_awaits_resp;
 	uint8_t write_awaits_resp_byte;
 	int64_t write_scl_interrupt_time;
@@ -188,6 +189,7 @@ static struct ps2_uart_data ps2_uart_data = {
 
 	.cur_write_status = PS2_UART_WRITE_STATUS_INACTIVE,
 	.cur_write_byte = 0x0,
+	.cur_write_position = 0,
 	.write_awaits_resp = false,
 	.write_awaits_resp_byte = 0x0,
 };
@@ -881,6 +883,7 @@ int ps2_uart_write_byte_start(uint8_t byte)
 	// the downstream write function that is called
 	// from the SCL interrupt
 	data->cur_write_byte = byte;
+	data->cur_write_pos = PS2_UART_POS_START;
 
 	// Inhibit the line by setting clock low and data high
 	ps2_uart_set_scl(0);
@@ -890,6 +893,11 @@ int ps2_uart_write_byte_start(uint8_t byte)
 	// Set data to value of start bit
 	ps2_uart_set_sda(0);
 	k_busy_wait(PS2_UART_TIMING_SCL_INHIBITION);
+
+	// The start bit was sent by setting sda to low
+	// So the next scl interrupt will be for the first
+	// data bit.
+	data->cur_write_pos += 1;
 
 	// Release the clock line and configure it as input
 	// This let's the device take control of the clock again
