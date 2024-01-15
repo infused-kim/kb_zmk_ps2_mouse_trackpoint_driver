@@ -1117,6 +1117,8 @@ int zmk_mouse_ps2_set_sampling_rate(uint8_t sampling_rate) {
 
     data->sampling_rate = sampling_rate;
 
+    LOG_INF("Successfully set sampling rate to %d", sampling_rate);
+
     return resp.err;
 }
 
@@ -1280,6 +1282,8 @@ int zmk_mouse_ps2_tp_set_config_option(int config_bit, bool enabled, char *descr
         return resp.err;
     }
 
+    LOG_INF("Successfully set config option %s to %s", descr, enabled ? "enabled" : "disabled");
+
     return 0;
 }
 
@@ -1352,6 +1356,8 @@ int zmk_mouse_ps2_tp_sensitivity_set(int sensitivity) {
 
     data->tp_sensitivity = sensitivity;
 
+    LOG_INF("Successfully set TP sensitivity to %d", sensitivity);
+
     return 0;
 }
 
@@ -1408,6 +1414,8 @@ int zmk_mouse_ps2_tp_neg_inertia_set(int neg_inertia) {
     }
 
     data->tp_neg_inertia = neg_inertia;
+
+    LOG_INF("Successfully set TP negative inertia to %d", neg_inertia);
 
     return 0;
 }
@@ -1469,6 +1477,8 @@ int zmk_mouse_ps2_tp_value6_upper_plateau_speed_set(int value6) {
 
     data->tp_value6 = value6;
 
+    LOG_INF("Successfully set TP value6 upper plateau speed to %d", value6);
+
     return 0;
 }
 
@@ -1525,6 +1535,8 @@ int zmk_mouse_ps2_tp_pts_threshold_set(int pts_threshold) {
     }
 
     data->tp_pts_threshold = pts_threshold;
+
+    LOG_INF("Successfully set TP press-to-select threshold to %d", pts_threshold);
 
     return 0;
 }
