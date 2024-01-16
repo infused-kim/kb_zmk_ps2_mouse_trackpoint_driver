@@ -173,6 +173,7 @@ struct zmk_mouse_ps2_config {
     const struct device *ps2_device;
     struct gpio_dt_spec rst_gpio;
 
+    bool disable_clicking;
     int sampling_rate;
     bool tp_press_to_select;
     int tp_press_to_select_threshold;
@@ -261,6 +262,7 @@ static const struct zmk_mouse_ps2_config zmk_mouse_ps2_config = {
         },
 #endif
 
+    .disable_clicking = DT_INST_PROP_OR(0, disable_clicking, false),
     .sampling_rate = DT_INST_PROP_OR(0, sampling_rate, MOUSE_PS2_CMD_SET_SAMPLING_RATE_DEFAULT),
     .tp_press_to_select = DT_INST_PROP_OR(0, tp_press_to_select, false),
     .tp_press_to_select_threshold = DT_INST_PROP_OR(0, tp_press_to_select_threshold, -1),
@@ -712,6 +714,7 @@ int zmk_mouse_ps2_activity_calc_scroll_mode_amt(float mov,
 
 void zmk_mouse_ps2_activity_click_buttons(bool button_l, bool button_m, bool button_r) {
     struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
+    const struct zmk_mouse_ps2_config *config = &zmk_mouse_ps2_config;
 
     // TODO: Integrate this with the proper button mask instead
     // of hardcoding the mouse button indeces.
@@ -774,49 +777,48 @@ void zmk_mouse_ps2_activity_click_buttons(bool button_l, bool button_m, bool but
         return;
     }
 
-#if IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_ENABLE_CLICKING)
+    if (config->disable_clicking != true) {
+        // If it wasn't, we actually send the events.
+        if (buttons_pressed > 0 || buttons_released > 0) {
 
-    // If it wasn't, we actually send the events.
-    if (buttons_pressed > 0 || buttons_released > 0) {
+            // Left button
+            if (button_l_pressed) {
 
-        // Left button
-        if (button_l_pressed) {
+                zmk_hid_mouse_button_press(MOUSE_PS2_BUTTON_L_IDX);
+                data->button_l_is_held = true;
+            } else if (button_l_released) {
 
-            zmk_hid_mouse_button_press(MOUSE_PS2_BUTTON_L_IDX);
-            data->button_l_is_held = true;
-        } else if (button_l_released) {
+                zmk_hid_mouse_button_release(MOUSE_PS2_BUTTON_L_IDX);
+                data->button_l_is_held = false;
+            }
 
-            zmk_hid_mouse_button_release(MOUSE_PS2_BUTTON_L_IDX);
-            data->button_l_is_held = false;
+            // Middle Button
+            if (button_m_pressed) {
+
+                zmk_hid_mouse_button_press(MOUSE_PS2_BUTTON_M_IDX);
+                data->button_m_is_held = true;
+            } else if (button_m_released) {
+
+                zmk_hid_mouse_button_release(MOUSE_PS2_BUTTON_M_IDX);
+                data->button_m_is_held = false;
+            }
+
+            // Right button
+            if (button_r_pressed) {
+
+                zmk_hid_mouse_button_press(MOUSE_PS2_BUTTON_R_IDX);
+                data->button_r_is_held = true;
+            } else if (button_r_released) {
+
+                zmk_hid_mouse_button_release(MOUSE_PS2_BUTTON_R_IDX);
+                data->button_r_is_held = false;
+            }
+
+            // Since mouse clicks generate far few events than movement,
+            // we send them right away instead of using the timer.
+            zmk_endpoints_send_mouse_report();
         }
-
-        // Middle Button
-        if (button_m_pressed) {
-
-            zmk_hid_mouse_button_press(MOUSE_PS2_BUTTON_M_IDX);
-            data->button_m_is_held = true;
-        } else if (button_m_released) {
-
-            zmk_hid_mouse_button_release(MOUSE_PS2_BUTTON_M_IDX);
-            data->button_m_is_held = false;
-        }
-
-        // Right button
-        if (button_r_pressed) {
-
-            zmk_hid_mouse_button_press(MOUSE_PS2_BUTTON_R_IDX);
-            data->button_r_is_held = true;
-        } else if (button_r_released) {
-
-            zmk_hid_mouse_button_release(MOUSE_PS2_BUTTON_R_IDX);
-            data->button_r_is_held = false;
-        }
-
-        // Since mouse clicks generate far few events than movement,
-        // we send them right away instead of using the timer.
-        zmk_endpoints_send_mouse_report();
     }
-#endif /* IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_ENABLE_CLICKING) */
 }
 
 void zmk_mouse_ps2_activity_toggle_layer() {

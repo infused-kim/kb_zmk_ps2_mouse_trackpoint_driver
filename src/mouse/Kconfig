@@ -24,10 +24,6 @@ config ZMK_MOUSE_PS2_DEDICATED_THREAD_PRIORITY
     int "Thread priority for dedicated mouse thread/queue"
     default 3
 
-config ZMK_MOUSE_PS2_ENABLE_CLICKING
-    bool "Enables clicking events."
-	default y
-
 config ZMK_MOUSE_PS2_SCROLL
     bool "Enable scroll wheel on mouse devices supporting the Intellimouse extension."
 	default n

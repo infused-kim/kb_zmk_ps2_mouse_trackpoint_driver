@@ -26,6 +26,10 @@ properties:
       - 100
       - 200
 
+  disable-clicking:
+    type: boolean
+    description: Disables clicking. Useful when using a PS2 driver that is prone to erros in transmissions to reduce accidental clicks.
+
   tp-press-to-select:
     type: boolean
     description: Enables mouse clicking by pressing hard on the trackpoint. Not all trackpoints support this feature.
