@@ -41,8 +41,8 @@ config ZMK_MOUSE_PS2_TP_SWAP_XY
 	default n
 
 config ZMK_MOUSE_PS2_ENABLE_ERROR_MITIGATION
-    bool "Swaps the x and y axis on the trackpoint. This is sets the swap settingin the trackpoint firmware and should therefore correctly impact the trackpoint algorithms. But this setting is not supported by all trackpoints."
-	default y
+    bool "Tries to mitigate transmission errors. Only useful when using a PS2 driver that is prone to miscommunication like the GPIO bitbanging driver."
+	default n
 
 config ZMK_MOUSE_PS2_SCROLL_MODE_INERTIA
     int "The number of pixels the mouse has to move to send one scroll whell movement in scroll mode."
