@@ -24,10 +24,6 @@ config ZMK_MOUSE_PS2_DEDICATED_THREAD_PRIORITY
     int "Thread priority for dedicated mouse thread/queue"
     default 3
 
-config ZMK_MOUSE_PS2_SCROLL
-    bool "Enable scroll wheel on mouse devices supporting the Intellimouse extension."
-	default n
-
 config ZMK_MOUSE_PS2_ENABLE_ERROR_MITIGATION
     bool "Tries to mitigate transmission errors. Only useful when using a PS2 driver that is prone to miscommunication like the GPIO bitbanging driver."
 	default n

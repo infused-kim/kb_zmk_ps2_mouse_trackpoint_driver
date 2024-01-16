@@ -165,8 +165,10 @@ struct zmk_mouse_ps2_config {
     const struct device *ps2_device;
     struct gpio_dt_spec rst_gpio;
 
+    bool scroll_mode;
     bool disable_clicking;
     int sampling_rate;
+
     bool tp_press_to_select;
     int tp_press_to_select_threshold;
     int tp_sensitivity;
@@ -251,6 +253,7 @@ static const struct zmk_mouse_ps2_config zmk_mouse_ps2_config = {
         },
 #endif
 
+    .scroll_mode = DT_INST_PROP_OR(0, scroll_mode, false),
     .disable_clicking = DT_INST_PROP_OR(0, disable_clicking, false),
     .sampling_rate = DT_INST_PROP_OR(0, sampling_rate, MOUSE_PS2_CMD_SET_SAMPLING_RATE_DEFAULT),
     .tp_press_to_select = DT_INST_PROP_OR(0, tp_press_to_select, false),
@@ -1739,10 +1742,10 @@ static void zmk_mouse_ps2_init_thread(int dev_ptr, int unused) {
         }
     }
 
-#if IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_SCROLL)
-    LOG_INF("Enabling scroll mode.");
-    zmk_mouse_ps2_set_packet_mode(MOUSE_PS2_PACKET_MODE_SCROLL);
-#endif /* IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_SCROLL) */
+    if (config->scroll_mode) {
+        LOG_INF("Enabling scroll mode.");
+        zmk_mouse_ps2_set_packet_mode(MOUSE_PS2_PACKET_MODE_SCROLL);
+    }
 
     zmk_mouse_ps2_settings_init();
 

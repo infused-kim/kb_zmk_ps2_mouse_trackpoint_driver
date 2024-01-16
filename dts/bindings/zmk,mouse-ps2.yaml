@@ -26,6 +26,10 @@ properties:
       - 100
       - 200
 
+  scroll-mode:
+    type: boolean
+    description: Enables scroll wheel on mouse devices supporting the Intellimouse extension.
+
   disable-clicking:
     type: boolean
     description: Disables clicking. Useful when using a PS2 driver that is prone to erros in transmissions to reduce accidental clicks.
