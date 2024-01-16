@@ -1,6 +1,6 @@
 description: PS2 mouse configuration
 
-compatible: "zmk,mouse-ps2"
+compatible: "zmk,input-mouse-ps2"
 
 properties:
   ps2-device:

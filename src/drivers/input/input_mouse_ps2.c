@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define DT_DRV_COMPAT zmk_mouse_ps2
+#define DT_DRV_COMPAT zmk_input_mouse_ps2
 
 #include <stdlib.h>
 
@@ -427,7 +427,7 @@ void zmk_mouse_ps2_activity_process_cmd(zmk_mouse_ps2_packet_mode packet_mode, u
             packet.mov_x, packet.mov_y, packet.overflow_x, packet.overflow_y, packet.scroll,
             packet.button_l, packet.button_m, packet.button_r, x_delta, y_delta);
 
-#if IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_ENABLE_ERROR_MITIGATION)
+#if IS_ENABLED(CONFIG_ZMK_INPUT_MOUSE_PS2_ENABLE_ERROR_MITIGATION)
     if (packet.overflow_x == 1 && packet.overflow_y == 1) {
         LOG_WRN("Detected overflow in both x and y. "
                 "Probably mistransmission. Aborting...");

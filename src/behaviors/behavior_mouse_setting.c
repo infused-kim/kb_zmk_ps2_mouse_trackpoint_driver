@@ -5,8 +5,7 @@
 #include <zephyr/logging/log.h>
 
 #include <dt-bindings/zmk/mouse_settings.h>
-#include <zmk/mouse_ps2.h>
-#include <zmk/mouse.h>
+#include <zmk/input_mouse_ps2.h>
 
 #define INCREMENT_TP_SENSITIVITY 10
 #define INCREMENT_TP_NEG_INERTIA 1
