@@ -70,15 +70,3 @@ properties:
     type: int
     required: false
     description: The layer that should be toggled when the mouse is moved.
-
-  layer-toggle-delay-ms:
-    type: int
-    default: 250
-    required: false
-    description: How many miliseconds of mouse activity are required before the layer is toggled on.
-
-  layer-toggle-timeout-ms:
-    type: int
-    default: 250
-    required: false
-    description: How many miliseconds of mouse inactivity are required before the layer is toggled off again.

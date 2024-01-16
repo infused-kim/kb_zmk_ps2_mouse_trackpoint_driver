@@ -18,8 +18,6 @@
 #include <zephyr/settings/settings.h>
 #include <zephyr/sys/util.h>
 
-#include <zmk/keymap.h>
-
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
 /*
@@ -172,10 +170,6 @@ struct zmk_mouse_ps2_config {
     bool tp_x_invert;
     bool tp_y_invert;
     bool tp_xy_swap;
-
-    int layer_toggle;
-    int layer_toggle_delay_ms;
-    int layer_toggle_timout_ms;
 };
 
 struct zmk_mouse_ps2_packet {
@@ -214,12 +208,6 @@ struct zmk_mouse_ps2_data {
     uint8_t tp_neg_inertia;
     uint8_t tp_value6;
     uint8_t tp_pts_threshold;
-
-    // Automatic layer toggling
-    struct k_work_delayable layer_toggle_activation_delay;
-    struct k_work_delayable layer_toggle_deactivation_delay;
-    bool layer_enabled;
-    int64_t last_mouse_package_time;
 };
 
 static const struct zmk_mouse_ps2_config zmk_mouse_ps2_config = {
@@ -247,10 +235,6 @@ static const struct zmk_mouse_ps2_config zmk_mouse_ps2_config = {
     .tp_x_invert = DT_INST_PROP_OR(0, tp_x_invert, false),
     .tp_y_invert = DT_INST_PROP_OR(0, tp_y_invert, false),
     .tp_xy_swap = DT_INST_PROP_OR(0, tp_xy_swap, false),
-
-    .layer_toggle = DT_INST_PROP_OR(0, layer_toggle, 0),
-    .layer_toggle_delay_ms = DT_INST_PROP_OR(0, layer_toggle_delay_ms, 250),
-    .layer_toggle_timout_ms = DT_INST_PROP_OR(0, layer_toggle_timout_ms, 250),
 };
 
 static struct zmk_mouse_ps2_data zmk_mouse_ps2_data = {
@@ -282,8 +266,6 @@ static struct zmk_mouse_ps2_data zmk_mouse_ps2_data = {
     .tp_neg_inertia = MOUSE_PS2_CMD_TP_SET_NEG_INERTIA_DEFAULT,
     .tp_value6 = MOUSE_PS2_CMD_TP_SET_VALUE6_UPPER_PLATEAU_SPEED_DEFAULT,
     .tp_pts_threshold = MOUSE_PS2_CMD_TP_SET_PTS_THRESHOLD_DEFAULT,
-
-    .layer_enabled = false,
 };
 
 static int allowed_sampling_rates[] = {
@@ -450,8 +432,6 @@ void zmk_mouse_ps2_activity_process_cmd(zmk_mouse_ps2_packet_mode packet_mode, u
     zmk_mouse_ps2_activity_move_mouse(packet.mov_x, packet.mov_y);
     zmk_mouse_ps2_activity_click_buttons(packet.button_l, packet.button_m, packet.button_r);
 
-    data->last_mouse_package_time = k_uptime_get();
-
     data->prev_packet = packet;
 }
 
@@ -513,16 +493,10 @@ static bool zmk_mouse_ps2_is_non_zero_1d_movement(int16_t speed) { return speed 
 
 void zmk_mouse_ps2_activity_move_mouse(int16_t mov_x, int16_t mov_y) {
     struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
-    const struct zmk_mouse_ps2_config *config = &zmk_mouse_ps2_config;
     int ret = 0;
 
     bool have_x = zmk_mouse_ps2_is_non_zero_1d_movement(mov_x);
     bool have_y = zmk_mouse_ps2_is_non_zero_1d_movement(mov_y);
-
-    // If there was movement, we toggle the mouse layer
-    if (config->layer_toggle != 0 && (have_x || have_y)) {
-        zmk_mouse_ps2_activity_toggle_layer();
-    }
 
     if (have_x) {
         ret = input_report_rel(data->dev, INPUT_REL_X, mov_x, !have_y, K_NO_WAIT);
@@ -647,52 +621,6 @@ void zmk_mouse_ps2_activity_click_buttons(bool button_l, bool button_m, bool but
             }
         }
     }
-}
-
-void zmk_mouse_ps2_activity_toggle_layer() {
-    struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
-    const struct zmk_mouse_ps2_config *config = &zmk_mouse_ps2_config;
-
-    if (data->layer_enabled == false) {
-        k_work_schedule(&data->layer_toggle_activation_delay,
-                        K_MSEC(config->layer_toggle_delay_ms));
-    } else {
-        // Deactivate the layer if no further movement within
-        // layer_toggle_timout_ms
-        k_work_reschedule(&data->layer_toggle_deactivation_delay,
-                          K_MSEC(config->layer_toggle_timout_ms));
-    }
-}
-
-void zmk_mouse_ps2_activity_activate_layer(struct k_work *item) {
-    struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
-    const struct zmk_mouse_ps2_config *config = &zmk_mouse_ps2_config;
-
-    int64_t current_ticks = k_uptime_get();
-    int64_t last_mv_time = current_ticks - data->last_mouse_package_time;
-
-    if (last_mv_time <= config->layer_toggle_timout_ms * 0.1) {
-        LOG_INF("Activating layer %d due to mouse activity...", config->layer_toggle);
-
-        zmk_keymap_layer_activate(config->layer_toggle, false);
-        data->layer_enabled = true;
-    } else {
-        LOG_INF("Not activating mouse layer %d, because last mouse activity was %lld ticks ago",
-                config->layer_toggle, last_mv_time);
-    }
-}
-
-void zmk_mouse_ps2_activity_deactivate_layer(struct k_work *item) {
-    struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
-    const struct zmk_mouse_ps2_config *config = &zmk_mouse_ps2_config;
-
-    LOG_INF("Deactivating layer %d due to mouse activity...", config->layer_toggle);
-
-    if (zmk_keymap_layer_active(config->layer_toggle)) {
-        zmk_keymap_layer_deactivate(config->layer_toggle);
-    }
-
-    data->layer_enabled = false;
 }
 
 /*
@@ -1716,10 +1644,7 @@ static void zmk_mouse_ps2_init_thread(int dev_ptr, int unused) {
     }
 
     k_work_init_delayable(&data->packet_buffer_timeout, zmk_mouse_ps2_activity_packet_timout);
-    k_work_init_delayable(&data->layer_toggle_activation_delay,
-                          zmk_mouse_ps2_activity_activate_layer);
-    k_work_init_delayable(&data->layer_toggle_deactivation_delay,
-                          zmk_mouse_ps2_activity_deactivate_layer);
+
     return;
 }
 
