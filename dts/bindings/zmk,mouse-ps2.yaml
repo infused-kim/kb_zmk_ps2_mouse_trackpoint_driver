@@ -50,6 +50,18 @@ properties:
     type: int
     description: Adjusts the negative value0 upper plateau speed setting on trackpoint devices. The range is 0 - 255 and the default is 97. You can also adjust this setting at runtime without recompiling using the &mms behavior. If this setting is enabled, then the runtime behavior won't be saved into the runtime settings.
 
+  tp-x-invert:
+    type: boolean
+    description: Enables x axis inversion on the trackpoint. Only works with some trackpoint devices, but is properly considered by the trackpoint's acceleration features (which may or may not have an impact). Alternatively consider achieving the same effect using the `zmk,input-configs` feature.
+
+  tp-y-invert:
+    type: boolean
+    description: Enables y axis inversion on the trackpoint. Only works with some trackpoint devices, but is properly considered by the trackpoint's acceleration features (which may or may not have an impact). Alternatively consider achieving the same effect using the `zmk,input-configs` feature.
+
+  tp-xy-swap:
+    type: boolean
+    description: Swaps the x and y axis on the trackpoint. Only works with some trackpoint devices, but may properly considered by the trackpoint's acceleration features (which may or may not have an impact). Alternatively consider achieving the same effect using the `zmk,input-configs` feature.
+
   layer-toggle:
     type: int
     required: false

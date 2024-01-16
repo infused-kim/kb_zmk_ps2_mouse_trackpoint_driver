@@ -28,18 +28,6 @@ config ZMK_MOUSE_PS2_SCROLL
     bool "Enable scroll wheel on mouse devices supporting the Intellimouse extension."
 	default n
 
-config ZMK_MOUSE_PS2_TP_INVERT_X
-    bool "Inverts x on the trackpoint. This is sets the setting directly in the trackpoint firmware and should therefore correctly impact the trackpoint algorithms."
-	default n
-
-config ZMK_MOUSE_PS2_TP_INVERT_Y
-    bool "Inverts y on the trackpoint. This is sets the setting directly in the trackpoint firmware and should therefore correctly impact the trackpoint algorithms."
-	default n
-
-config ZMK_MOUSE_PS2_TP_SWAP_XY
-    bool "Swaps the x and y axis on the trackpoint. This is sets the swap settingin the trackpoint firmware and should therefore correctly impact the trackpoint algorithms. But this setting is not supported by all trackpoints."
-	default n
-
 config ZMK_MOUSE_PS2_ENABLE_ERROR_MITIGATION
     bool "Tries to mitigate transmission errors. Only useful when using a PS2 driver that is prone to miscommunication like the GPIO bitbanging driver."
 	default n

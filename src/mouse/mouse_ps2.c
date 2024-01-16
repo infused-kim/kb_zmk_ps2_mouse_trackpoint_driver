@@ -180,6 +180,9 @@ struct zmk_mouse_ps2_config {
     int tp_sensitivity;
     int tp_neg_inertia;
     int tp_val6_upper_speed;
+    bool tp_x_invert;
+    bool tp_y_invert;
+    bool tp_xy_swap;
 
     int layer_toggle;
     int layer_toggle_delay_ms;
@@ -269,6 +272,9 @@ static const struct zmk_mouse_ps2_config zmk_mouse_ps2_config = {
     .tp_sensitivity = DT_INST_PROP_OR(0, tp_sensitivity, -1),
     .tp_neg_inertia = DT_INST_PROP_OR(0, tp_neg_inertia, -1),
     .tp_val6_upper_speed = DT_INST_PROP_OR(0, tp_val6_upper_speed, -1),
+    .tp_x_invert = DT_INST_PROP_OR(0, tp_x_invert, false),
+    .tp_y_invert = DT_INST_PROP_OR(0, tp_y_invert, false),
+    .tp_xy_swap = DT_INST_PROP_OR(0, tp_xy_swap, false),
 
     .layer_toggle = DT_INST_PROP_OR(0, layer_toggle, 0),
     .layer_toggle_delay_ms = DT_INST_PROP_OR(0, layer_toggle_delay_ms, 250),
@@ -1873,21 +1879,20 @@ static void zmk_mouse_ps2_init_thread(int dev_ptr, int unused) {
             LOG_INF("Setting TP value 6 upper speed plateau to %d...", config->tp_val6_upper_speed);
             zmk_mouse_ps2_tp_value6_upper_plateau_speed_set(config->tp_val6_upper_speed);
         }
+        if (config->tp_x_invert) {
+            LOG_INF("Inverting trackpoint x axis.");
+            zmk_mouse_ps2_tp_invert_x_set(true);
+        }
 
-#if IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_TP_INVERT_X)
-        LOG_INF("Inverting trackpoint x axis.");
-        zmk_mouse_ps2_tp_invert_x_set(true);
-#endif /* IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_TP_INVERT_X) */
+        if (config->tp_y_invert) {
+            LOG_INF("Inverting trackpoint y axis.");
+            zmk_mouse_ps2_tp_invert_y_set(true);
+        }
 
-#if IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_TP_INVERT_Y)
-        LOG_INF("Inverting trackpoint y axis.");
-        zmk_mouse_ps2_tp_invert_y_set(true);
-#endif /* IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_TP_INVERT_Y) */
-
-#if IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_TP_SWAP_XY)
-        LOG_INF("Swapping trackpoint x and y axis.");
-        zmk_mouse_ps2_tp_swap_xy_set(true);
-#endif /* IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_TP_SWAP_XY) */
+        if (config->tp_xy_swap) {
+            LOG_INF("Swapping trackpoint x and y axis.");
+            zmk_mouse_ps2_tp_swap_xy_set(true);
+        }
     }
 
 #if IS_ENABLED(CONFIG_ZMK_MOUSE_PS2_SCROLL)
