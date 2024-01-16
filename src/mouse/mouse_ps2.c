@@ -174,7 +174,7 @@ struct zmk_mouse_ps2_config {
     struct gpio_dt_spec rst_gpio;
 
     int sampling_rate;
-    int tp_press_to_select;
+    bool tp_press_to_select;
     int tp_press_to_select_threshold;
     int tp_sensitivity;
     int tp_neg_inertia;
