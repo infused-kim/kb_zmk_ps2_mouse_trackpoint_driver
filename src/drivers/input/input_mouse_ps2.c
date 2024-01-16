@@ -8,8 +8,6 @@
 
 #include <stdlib.h>
 
-#include <dt-bindings/zmk/mouse.h>
-
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/gpio.h>
@@ -20,9 +18,6 @@
 #include <zephyr/settings/settings.h>
 #include <zephyr/sys/util.h>
 
-#include <zmk/behavior_queue.h>
-#include <zmk/endpoints.h>
-#include <zmk/hid.h>
 #include <zmk/keymap.h>
 
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
@@ -606,42 +601,50 @@ void zmk_mouse_ps2_activity_click_buttons(bool button_l, bool button_m, bool but
         // If it wasn't, we actually send the events.
         if (buttons_pressed > 0 || buttons_released > 0) {
 
+            int buttons_need_reporting = buttons_pressed + buttons_released;
+
             // Left button
             if (button_l_pressed) {
 
-                zmk_hid_mouse_button_press(MOUSE_PS2_BUTTON_L_IDX);
+                input_report_key(data->dev, INPUT_BTN_0, 1,
+                                 buttons_need_reporting == 1 ? true : false, K_FOREVER);
                 data->button_l_is_held = true;
             } else if (button_l_released) {
 
-                zmk_hid_mouse_button_release(MOUSE_PS2_BUTTON_L_IDX);
+                input_report_key(data->dev, INPUT_BTN_0, 0,
+                                 buttons_need_reporting == 1 ? true : false, K_FOREVER);
                 data->button_l_is_held = false;
             }
 
-            // Middle Button
-            if (button_m_pressed) {
-
-                zmk_hid_mouse_button_press(MOUSE_PS2_BUTTON_M_IDX);
-                data->button_m_is_held = true;
-            } else if (button_m_released) {
-
-                zmk_hid_mouse_button_release(MOUSE_PS2_BUTTON_M_IDX);
-                data->button_m_is_held = false;
-            }
+            buttons_need_reporting--;
 
             // Right button
             if (button_r_pressed) {
 
-                zmk_hid_mouse_button_press(MOUSE_PS2_BUTTON_R_IDX);
+                input_report_key(data->dev, INPUT_BTN_1, 1,
+                                 buttons_need_reporting == 1 ? true : false, K_FOREVER);
                 data->button_r_is_held = true;
             } else if (button_r_released) {
 
-                zmk_hid_mouse_button_release(MOUSE_PS2_BUTTON_R_IDX);
+                input_report_key(data->dev, INPUT_BTN_1, 0,
+                                 buttons_need_reporting == 1 ? true : false, K_FOREVER);
                 data->button_r_is_held = false;
             }
 
-            // Since mouse clicks generate far few events than movement,
-            // we send them right away instead of using the timer.
-            zmk_endpoints_send_mouse_report();
+            buttons_need_reporting--;
+
+            // Middle Button
+            if (button_m_pressed) {
+
+                input_report_key(data->dev, INPUT_BTN_2, 1,
+                                 buttons_need_reporting == 1 ? true : false, K_FOREVER);
+                data->button_m_is_held = true;
+            } else if (button_m_released) {
+
+                input_report_key(data->dev, INPUT_BTN_2, 0,
+                                 buttons_need_reporting == 1 ? true : false, K_FOREVER);
+                data->button_m_is_held = false;
+            }
         }
     }
 }
