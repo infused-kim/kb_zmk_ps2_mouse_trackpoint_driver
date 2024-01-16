@@ -194,11 +194,6 @@ struct zmk_mouse_ps2_packet {
     bool button_r;
 };
 
-struct vector2d {
-    float x;
-    float y;
-};
-
 struct zmk_mouse_ps2_data {
     const struct device *dev;
     struct gpio_dt_spec rst_gpio; /* GPIO used for Power-On-Reset line */
@@ -211,13 +206,6 @@ struct zmk_mouse_ps2_data {
     int packet_idx;
     struct zmk_mouse_ps2_packet prev_packet;
     struct k_work_delayable packet_buffer_timeout;
-
-    // Stores the x and y coordinates between reporting to the os
-    struct vector2d move_speed;
-    struct vector2d scroll_speed;
-
-    struct k_timer mouse_timer;
-    struct k_work mouse_tick;
 
     bool button_l_is_held;
     bool button_m_is_held;
@@ -289,9 +277,6 @@ static struct zmk_mouse_ps2_data zmk_mouse_ps2_data = {
     .button_m_is_held = false,
     .button_r_is_held = false,
 
-    .move_speed = {0},
-    .scroll_speed = {0},
-
     // Data reporting is disabled on init
     .activity_reporting_on = false,
     .is_trackpoint = false,
@@ -305,9 +290,6 @@ static struct zmk_mouse_ps2_data zmk_mouse_ps2_data = {
 
     .layer_enabled = false,
 };
-
-K_THREAD_STACK_DEFINE(mouse_ps2_work_stack_area, CONFIG_ZMK_MOUSE_PS2_DEDICATED_THREAD_STACK_SIZE);
-static struct k_work_q mouse_ps2_work_q;
 
 static int allowed_sampling_rates[] = {
     10, 20, 40, 60, 80, 100, 200,
@@ -458,7 +440,7 @@ void zmk_mouse_ps2_activity_process_cmd(zmk_mouse_ps2_packet_mode packet_mode, u
     // a mistransmission or misalignment.
     // But we only do this check if there was prior movement that wasn't
     // reset in `zmk_mouse_ps2_activity_packet_timout`.
-    if ((data->move_speed.x != 0 && data->move_speed.y != 0) && (x_delta > 150 || y_delta > 150)) {
+    if ((packet.mov_x != 0 && packet.mov_y != 0) && (x_delta > 150 || y_delta > 150)) {
         LOG_WRN("Detected malformed packet with "
                 "(mov_x=%d, mov_y=%d, o_x=%d, o_y=%d, scroll=%d, "
                 "b_l=%d, b_m=%d, b_r=%d) and ("
@@ -470,20 +452,10 @@ void zmk_mouse_ps2_activity_process_cmd(zmk_mouse_ps2_packet_mode packet_mode, u
     }
 #endif
 
-    // Make mouse movement adjustment based on settings
-    struct vector2d mouse_move = {packet.mov_x, packet.mov_y};
-
-    // We don't send the mouse move over BT every time we get a PS2
-    // packet, because it can send too fast.
-    // Here we just add up the coordinates and then we use a timer to
-    // actually send the movement once every
-    // CONFIG_ZMK_MOUSE_TICK_DURATION ms
-    // in zmk_mouse_ps2_tick_timer_handler.
-    data->move_speed.x += mouse_move.x;
-    data->move_speed.y += mouse_move.y;
-    data->scroll_speed.y += packet.scroll;
-
+    zmk_mouse_ps2_activity_move_mouse(packet.mov_x, packet.mov_y);
     zmk_mouse_ps2_activity_click_buttons(packet.button_l, packet.button_m, packet.button_r);
+
+    data->last_mouse_package_time = k_uptime_get();
 
     data->prev_packet = packet;
 }
@@ -542,49 +514,27 @@ zmk_mouse_ps2_activity_parse_packet_buffer(zmk_mouse_ps2_packet_mode packet_mode
  * Mouse Moving and Clicking
  */
 
-// Called using k_timer data->mouse_timer every x ms as configured with
-// CONFIG_ZMK_MOUSE_TICK_DURATION
-void zmk_mouse_ps2_tick_timer_cb(struct k_timer *dummy) {
-    struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
-
-    // LOG_DBG("Submitting mouse work to queue");
-    // Calls zmk_mouse_ps2_tick_timer_handler on our work queue
-    k_work_submit_to_queue(&mouse_ps2_work_q, &data->mouse_tick);
-}
-
 static bool zmk_mouse_ps2_is_non_zero_1d_movement(int16_t speed) { return speed != 0; }
 
-// Here is where we actually ask zmk to send the mouse movement to
-// the OS.
-static void zmk_mouse_ps2_tick_timer_handler(struct k_work *work) {
+void zmk_mouse_ps2_activity_move_mouse(int16_t mov_x, int16_t mov_y) {
     struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
     const struct zmk_mouse_ps2_config *config = &zmk_mouse_ps2_config;
     int ret = 0;
 
-    data->last_mouse_package_time = k_uptime_ticks();
+    bool have_x = zmk_mouse_ps2_is_non_zero_1d_movement(mov_x);
+    bool have_y = zmk_mouse_ps2_is_non_zero_1d_movement(mov_y);
 
-    // Since there was movement, we toggle the mouse layer
-    if (config->layer_toggle != 0) {
+    // If there was movement, we toggle the mouse layer
+    if (config->layer_toggle != 0 && (have_x || have_y)) {
         zmk_mouse_ps2_activity_toggle_layer();
     }
 
-    bool have_x = zmk_mouse_ps2_is_non_zero_1d_movement(data->move_speed.x);
-    bool have_y = zmk_mouse_ps2_is_non_zero_1d_movement(data->move_speed.y);
     if (have_x) {
-        ret = input_report_rel(data->dev, INPUT_REL_X,
-                               (int16_t)CLAMP(data->move_speed.x, INT16_MIN, INT16_MAX), !have_y,
-                               K_NO_WAIT);
+        ret = input_report_rel(data->dev, INPUT_REL_X, mov_x, !have_y, K_NO_WAIT);
     }
     if (have_y) {
-        ret = input_report_rel(data->dev, INPUT_REL_Y,
-                               (int16_t)CLAMP(data->move_speed.y, INT16_MIN, INT16_MAX), true,
-                               K_NO_WAIT);
+        ret = input_report_rel(data->dev, INPUT_REL_Y, mov_y, true, K_NO_WAIT);
     }
-
-    data->move_speed.x = 0;
-    data->move_speed.y = 0;
-    data->scroll_speed.x = 0;
-    data->scroll_speed.y = 0;
 }
 
 void zmk_mouse_ps2_activity_click_buttons(bool button_l, bool button_m, bool button_r) {
@@ -715,21 +665,17 @@ void zmk_mouse_ps2_activity_activate_layer(struct k_work *item) {
     struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
     const struct zmk_mouse_ps2_config *config = &zmk_mouse_ps2_config;
 
-    int64_t current_ticks = k_uptime_ticks();
+    int64_t current_ticks = k_uptime_get();
     int64_t last_mv_time = current_ticks - data->last_mouse_package_time;
-    int64_t max_mv_time = CONFIG_ZMK_MOUSE_PS2_TICK_DURATION * 7;
 
-    if (last_mv_time <= max_mv_time) {
-        LOG_INF("Activating layer %d due to mouse activity for %lld...", config->layer_toggle,
-                last_mv_time);
+    if (last_mv_time <= config->layer_toggle_timout_ms * 0.1) {
+        LOG_INF("Activating layer %d due to mouse activity...", config->layer_toggle);
 
         zmk_keymap_layer_activate(config->layer_toggle, false);
         data->layer_enabled = true;
     } else {
-        LOG_INF(
-            "Not activating mouse layer %d, because last mouse activity was %lld ticks ago (not "
-            "within %lld ticks).",
-            config->layer_toggle, last_mv_time, max_mv_time);
+        LOG_INF("Not activating mouse layer %d, because last mouse activity was %lld ticks ago",
+                config->layer_toggle, last_mv_time);
     }
 }
 
@@ -1766,13 +1712,6 @@ static void zmk_mouse_ps2_init_thread(int dev_ptr, int unused) {
         LOG_DBG("Successfully activated ps2 callback");
     }
 
-    k_work_queue_start(&mouse_ps2_work_q, mouse_ps2_work_stack_area,
-                       K_THREAD_STACK_SIZEOF(mouse_ps2_work_stack_area),
-                       CONFIG_ZMK_MOUSE_PS2_DEDICATED_THREAD_PRIORITY, NULL);
-
-    k_timer_init(&data->mouse_timer, zmk_mouse_ps2_tick_timer_cb, NULL);
-    k_timer_start(&data->mouse_timer, K_NO_WAIT, K_MSEC(CONFIG_ZMK_MOUSE_PS2_TICK_DURATION));
-    k_work_init(&data->mouse_tick, zmk_mouse_ps2_tick_timer_handler);
     k_work_init_delayable(&data->packet_buffer_timeout, zmk_mouse_ps2_activity_packet_timout);
     k_work_init_delayable(&data->layer_toggle_activation_delay,
                           zmk_mouse_ps2_activity_activate_layer);

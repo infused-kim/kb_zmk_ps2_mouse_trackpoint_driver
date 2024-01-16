@@ -12,18 +12,6 @@ config ZMK_MOUSE_PS2
 
 if ZMK_MOUSE_PS2
 
-config ZMK_MOUSE_PS2_TICK_DURATION
-    int "Sets how frequently a mouse report is sent"
-    default 8
-
-config ZMK_MOUSE_PS2_DEDICATED_THREAD_STACK_SIZE
-    int "Stack size for dedicated mouse thread/queue"
-    default 2048
-
-config ZMK_MOUSE_PS2_DEDICATED_THREAD_PRIORITY
-    int "Thread priority for dedicated mouse thread/queue"
-    default 3
-
 config ZMK_MOUSE_PS2_ENABLE_ERROR_MITIGATION
     bool "Tries to mitigate transmission errors. Only useful when using a PS2 driver that is prone to miscommunication like the GPIO bitbanging driver."
 	default n
