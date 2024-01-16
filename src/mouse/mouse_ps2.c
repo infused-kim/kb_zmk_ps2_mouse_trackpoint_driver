@@ -7,8 +7,6 @@
 #define DT_DRV_COMPAT zmk_mouse_ps2
 
 #include <stdlib.h>
-#include <stdio.h>
-#include <math.h>
 
 #include <dt-bindings/zmk/mouse.h>
 
@@ -163,12 +161,6 @@ typedef enum {
     MOUSE_PS2_PACKET_MODE_SCROLL,
 } zmk_mouse_ps2_packet_mode;
 
-typedef enum {
-    MOUSE_PS2_PACKET_MOVE_DIRECTION_NEG = -1,
-    MOUSE_PS2_PACKET_MOVE_DIRECTION_NONE,
-    MOUSE_PS2_PACKET_MOVE_DIRECTION_POS,
-} zmk_mouse_ps2_move_direction;
-
 struct zmk_mouse_ps2_config {
     const struct device *ps2_device;
     struct gpio_dt_spec rst_gpio;
@@ -221,9 +213,6 @@ struct zmk_mouse_ps2_data {
     // Stores the x and y coordinates between reporting to the os
     struct vector2d move_speed;
     struct vector2d scroll_speed;
-    struct vector2d scroll_mode_remainder;
-    zmk_mouse_ps2_move_direction prev_move_dir_x;
-    zmk_mouse_ps2_move_direction prev_move_dir_y;
 
     struct k_timer mouse_timer;
     struct k_work mouse_tick;
@@ -246,9 +235,6 @@ struct zmk_mouse_ps2_data {
     struct k_work_delayable layer_toggle_deactivation_delay;
     bool layer_enabled;
     int64_t last_mouse_package_time;
-
-    // Scroll mode
-    bool scroll_mode_enabled;
 };
 
 static const struct zmk_mouse_ps2_config zmk_mouse_ps2_config = {
@@ -302,9 +288,6 @@ static struct zmk_mouse_ps2_data zmk_mouse_ps2_data = {
 
     .move_speed = {0},
     .scroll_speed = {0},
-    .scroll_mode_remainder = {0},
-    .prev_move_dir_x = MOUSE_PS2_PACKET_MOVE_DIRECTION_NONE,
-    .prev_move_dir_y = MOUSE_PS2_PACKET_MOVE_DIRECTION_NONE,
 
     // Data reporting is disabled on init
     .activity_reporting_on = false,
@@ -318,8 +301,6 @@ static struct zmk_mouse_ps2_data zmk_mouse_ps2_data = {
     .tp_pts_threshold = MOUSE_PS2_CMD_TP_SET_PTS_THRESHOLD_DEFAULT,
 
     .layer_enabled = false,
-
-    .scroll_mode_enabled = false,
 };
 
 K_THREAD_STACK_DEFINE(mouse_ps2_work_stack_area, CONFIG_ZMK_MOUSE_PS2_DEDICATED_THREAD_STACK_SIZE);
@@ -358,12 +339,7 @@ zmk_mouse_ps2_activity_parse_packet_buffer(zmk_mouse_ps2_packet_mode packet_mode
                                            uint8_t packet_state, uint8_t packet_x, uint8_t packet_y,
                                            uint8_t packet_extra);
 void zmk_mouse_ps2_activity_toggle_layer();
-zmk_mouse_ps2_move_direction zmk_mouse_ps2_activity_get_move_direction(float mov);
-int zmk_mouse_ps2_activity_calc_scroll_mode_amt(float mov,
-                                                zmk_mouse_ps2_move_direction prev_mov_dir,
-                                                char *name);
-void zmk_mouse_ps2_tick_timer_handler_mode_mouse();
-void zmk_mouse_ps2_tick_timer_handler_mode_scroll();
+
 // Called by the PS/2 driver whenver the mouse sends a byte and
 // reporting is enabled through `zmk_mouse_ps2_activity_reporting_enable`.
 void zmk_mouse_ps2_activity_callback(const struct device *ps2_device, uint8_t byte) {
@@ -573,31 +549,14 @@ void zmk_mouse_ps2_tick_timer_cb(struct k_timer *dummy) {
     k_work_submit_to_queue(&mouse_ps2_work_q, &data->mouse_tick);
 }
 
+static bool zmk_mouse_ps2_is_non_zero_1d_movement(int16_t speed) { return speed != 0; }
+
 // Here is where we actually ask zmk to send the mouse movement to
 // the OS.
 static void zmk_mouse_ps2_tick_timer_handler(struct k_work *work) {
     struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
     const struct zmk_mouse_ps2_config *config = &zmk_mouse_ps2_config;
-
-    zmk_mouse_ps2_move_direction move_dir_x =
-        zmk_mouse_ps2_activity_get_move_direction(data->move_speed.x);
-    zmk_mouse_ps2_move_direction move_dir_y =
-        zmk_mouse_ps2_activity_get_move_direction(data->move_speed.y);
-
-    // if (data->move_speed.x != 0 || data->move_speed.y != 0 || move_dir_y !=
-    // data->prev_move_dir_y) {
-    //     LOG_INF("Mouse tick event: %f / %f (%d / %d))", data->move_speed.x, data->move_speed.y,
-    //             move_dir_x, move_dir_y);
-    // }
-    // LOG_DBG("Raising mouse tick event");
-    if (data->move_speed.x == 0 && data->move_speed.y == 0 && data->scroll_speed.x == 0 &&
-        data->scroll_speed.y == 0) {
-        // LOG_DBG("Not raising mouse tick event as the mouse hasn't moved.");
-
-        data->prev_move_dir_x = move_dir_x;
-        data->prev_move_dir_y = move_dir_y;
-        return;
-    }
+    int ret = 0;
 
     data->last_mouse_package_time = k_uptime_ticks();
 
@@ -606,26 +565,6 @@ static void zmk_mouse_ps2_tick_timer_handler(struct k_work *work) {
         zmk_mouse_ps2_activity_toggle_layer();
     }
 
-    if (data->scroll_mode_enabled == false) {
-        zmk_mouse_ps2_tick_timer_handler_mode_mouse();
-    } else {
-        zmk_mouse_ps2_tick_timer_handler_mode_scroll();
-    }
-
-    data->move_speed.x = 0;
-    data->move_speed.y = 0;
-    data->scroll_speed.x = 0;
-    data->scroll_speed.y = 0;
-    data->prev_move_dir_x = move_dir_x;
-    data->prev_move_dir_y = move_dir_y;
-}
-
-static bool zmk_mouse_ps2_is_non_zero_1d_movement(int16_t speed) { return speed != 0; }
-
-void zmk_mouse_ps2_tick_timer_handler_mode_mouse() {
-    struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
-
-    int ret = 0;
     bool have_x = zmk_mouse_ps2_is_non_zero_1d_movement(data->move_speed.x);
     bool have_y = zmk_mouse_ps2_is_non_zero_1d_movement(data->move_speed.y);
     if (have_x) {
@@ -638,84 +577,11 @@ void zmk_mouse_ps2_tick_timer_handler_mode_mouse() {
                                (int16_t)CLAMP(data->move_speed.y, INT16_MIN, INT16_MAX), true,
                                K_NO_WAIT);
     }
-}
 
-void zmk_mouse_ps2_tick_timer_handler_mode_scroll() {
-    struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
-
-    struct vector2d move_total;
-    move_total.x = data->move_speed.x + data->scroll_mode_remainder.x;
-    move_total.y = data->move_speed.y + data->scroll_mode_remainder.y;
-
-    // int scroll_x =
-    //     zmk_mouse_ps2_activity_calc_scroll_mode_amt(move_total.x, data->prev_move_dir_x, "x");
-
-    int scroll_x = 0;
-
-    int scroll_y =
-        zmk_mouse_ps2_activity_calc_scroll_mode_amt(move_total.y, data->prev_move_dir_y, "y");
-
-    zmk_hid_mouse_movement_set(0, 0);
-    zmk_hid_mouse_scroll_set(0, 0);
-
-    LOG_INF("Scroll mode scrolling: %d / %d (mouse move: %f / %f - %d)", scroll_x, scroll_y,
-            move_total.x, move_total.y, CONFIG_ZMK_MOUSE_PS2_SCROLL_MODE_INERTIA);
-
-    if (abs(scroll_x) > 0 || abs(scroll_y) > 0) {
-
-        zmk_hid_mouse_scroll_update(scroll_x, -scroll_y);
-        zmk_endpoints_send_mouse_report();
-    }
-
-    // Only leave the considered pixels
-    data->scroll_mode_remainder.x =
-        move_total.x - (scroll_x * CONFIG_ZMK_MOUSE_PS2_SCROLL_MODE_INERTIA);
-    if (data->scroll_mode_remainder.x < 0) {
-        data->scroll_mode_remainder.x = 0;
-    }
-
-    data->scroll_mode_remainder.y =
-        move_total.y - (scroll_y * CONFIG_ZMK_MOUSE_PS2_SCROLL_MODE_INERTIA);
-    if (data->scroll_mode_remainder.y < 0) {
-        data->scroll_mode_remainder.y = 0;
-    }
-}
-
-zmk_mouse_ps2_move_direction zmk_mouse_ps2_activity_get_move_direction(float mov) {
-    if (mov < 0) {
-        return MOUSE_PS2_PACKET_MOVE_DIRECTION_NEG;
-    } else if (mov == 0) {
-        return MOUSE_PS2_PACKET_MOVE_DIRECTION_NONE;
-    } else {
-        return MOUSE_PS2_PACKET_MOVE_DIRECTION_POS;
-    }
-}
-
-int zmk_mouse_ps2_activity_calc_scroll_mode_amt(float mov,
-                                                zmk_mouse_ps2_move_direction prev_mov_dir,
-                                                char *name) {
-    zmk_mouse_ps2_move_direction mov_dir = zmk_mouse_ps2_activity_get_move_direction(mov);
-
-    // Send one scroll wheel movement for every X pixels of mouse
-    // movement (as defined by
-    // CONFIG_ZMK_MOUSE_PS2_SCROLL_MODE_INERTIA)
-    int scroll = (mov / CONFIG_ZMK_MOUSE_PS2_SCROLL_MODE_INERTIA);
-
-    // The initial movement and movements with direction changes
-    // should always generate a scroll so that scrolling feels
-    // responsive.
-    if (scroll == 0 && mov_dir != MOUSE_PS2_PACKET_MOVE_DIRECTION_NONE && mov_dir != prev_mov_dir) {
-
-        LOG_INF("Scroll direction for %s changed: %d -> %d", name, mov_dir, prev_mov_dir);
-
-        if (mov_dir == MOUSE_PS2_PACKET_MOVE_DIRECTION_NEG) {
-            scroll = -1;
-        } else {
-            scroll = 1;
-        }
-    }
-
-    return scroll;
+    data->move_speed.x = 0;
+    data->move_speed.y = 0;
+    data->scroll_speed.x = 0;
+    data->scroll_speed.y = 0;
 }
 
 void zmk_mouse_ps2_activity_click_buttons(bool button_l, bool button_m, bool button_r) {
@@ -1777,28 +1643,6 @@ int zmk_mouse_ps2_settings_init() {
 #endif
 
     return 0;
-}
-
-/*
- * Scroll Mode
- */
-
-void zmk_mouse_ps2_scroll_mode_set(bool enabled) {
-    struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
-
-    LOG_INF("Setting scroll mode to: %d", enabled);
-
-    data->scroll_mode_enabled = enabled;
-}
-
-void zmk_mouse_ps2_scroll_mode_enable() { zmk_mouse_ps2_scroll_mode_set(true); }
-
-void zmk_mouse_ps2_scroll_mode_disable() { zmk_mouse_ps2_scroll_mode_set(false); }
-
-void zmk_mouse_ps2_scroll_mode_toggle() {
-    struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
-
-    zmk_mouse_ps2_scroll_mode_set(!data->scroll_mode_enabled);
 }
 
 /*
