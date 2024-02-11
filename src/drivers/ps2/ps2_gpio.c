@@ -23,6 +23,8 @@ LOG_MODULE_REGISTER(ps2_gpio);
 #define PS2_GPIO_WRITE_MAX_RETRY 5
 #define PS2_GPIO_READ_MAX_RETRY  3
 
+#define PS2_GPIO_DATA_QUEUE_SIZE 100
+
 // Custom queue for background PS/2 processing work at low priority
 // We purposefully want this to be a fairly low priority, because
 // this queue is used while we wait to start a write.
@@ -142,6 +144,10 @@ typedef enum {
 	PS2_GPIO_WRITE_STATUS_FAILURE,
 } ps2_gpio_write_status;
 
+struct ps2_gpio_data_queue_item {
+	uint8_t byte;
+};
+
 struct ps2_gpio_config {
 	struct gpio_dt_spec scl_gpio;
 	struct gpio_dt_spec sda_gpio;
@@ -164,7 +170,8 @@ struct ps2_gpio_data {
 	bool callback_enabled;
 
 	// Queue for ps2_read()
-	struct k_fifo data_queue;
+	struct k_msgq data_queue;
+	char data_queue_buffer[PS2_GPIO_DATA_QUEUE_SIZE * sizeof(struct ps2_gpio_data_queue_item)];
 
 	ps2_gpio_mode mode;
 
@@ -347,56 +354,53 @@ bool ps2_gpio_get_byte_parity(uint8_t byte)
 uint8_t ps2_gpio_data_queue_get_next(uint8_t *dst_byte, k_timeout_t timeout)
 {
 	struct ps2_gpio_data *data = &ps2_gpio_data;
+	struct ps2_gpio_data_queue_item queue_data;
+	int ret;
 
-	uint8_t *queue_byte = k_fifo_get(&data->data_queue, timeout);
-	if (queue_byte == NULL) {
+	ret = k_msgq_get(&data->data_queue, &queue_data, timeout);
+	if (ret != 0) {
+		LOG_WRN("Data queue timed out...");
 		return -ETIMEDOUT;
 	}
 
-	*dst_byte = *queue_byte;
-
-	k_free(queue_byte);
+	*dst_byte = queue_data.byte;
 
 	return 0;
 }
 
 void ps2_gpio_data_queue_empty()
 {
-	while (true) {
-		uint8_t byte;
-		int err = ps2_gpio_data_queue_get_next(&byte, K_NO_WAIT);
-		if (err) { // No more items in queue
-			break;
-		}
-	}
+	struct ps2_gpio_data *data = &ps2_gpio_data;
+
+	k_msgq_purge(&data->data_queue);
 }
 
 void ps2_gpio_data_queue_add(uint8_t byte)
 {
 	struct ps2_gpio_data *data = &ps2_gpio_data;
 
-	uint8_t *byte_heap = (uint8_t *)k_malloc(sizeof(byte));
-	if (byte_heap == NULL) {
-		LOG_WRN("Could not allocate heap space to add byte to fifo. "
-			"Clearing fifo.");
+	int ret;
 
-		// TODO: Define max amount for read data queue instead of emptying it
-		// when memory runs out.
-		// But unfortunately it seems like there is no official way to query
-		// how many items are currently in the fifo.
-		ps2_gpio_data_queue_empty();
+	struct ps2_gpio_data_queue_item queue_data;
+	queue_data.byte = byte;
 
-		byte_heap = (uint8_t *)k_malloc(sizeof(byte));
-		if (byte_heap == NULL) {
-			LOG_ERR("Could not allocate heap space after clearing fifo. "
-				"Losing received byte 0x%x",
-				byte);
-			return;
+	LOG_INF("Adding byte to data queue: 0x%x", byte);
+
+	for (int i = 0; i < 2; i++) {
+		ret = k_msgq_put(&data->data_queue, &queue_data, K_NO_WAIT);
+		if (ret == 0) {
+			break;
+		} else {
+			LOG_WRN("Data queue full. Removing oldest item.");
+
+			uint8_t tmp_byte;
+			ps2_gpio_data_queue_get_next(&tmp_byte, K_NO_WAIT);
 		}
 	}
 
-	*byte_heap = byte;
-	k_fifo_alloc_put(&data->data_queue, byte_heap);
+	if (ret != 0) {
+		LOG_ERR("Failed to add byte 0x%x to the data queue.", byte);
+	}
 }
 
 void ps2_gpio_send_cmd_resend_worker(struct k_work *item)
@@ -1349,8 +1353,9 @@ void ps2_gpio_interrupt_log_scl_timeout(struct k_work *item)
 
 		ps2_gpio_init_gpio();
 
-		// Init fifo for synchronous read operations
-		k_fifo_init(&data->data_queue);
+		// Init data queue for synchronous read operations
+		k_msgq_init(&data->data_queue, data->data_queue_buffer,
+			    sizeof(struct ps2_gpio_data_queue_item), PS2_GPIO_DATA_QUEUE_SIZE);
 
 		// Init semaphore for blocking writes
 		k_sem_init(&data->write_lock, 0, 1);
