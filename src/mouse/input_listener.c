@@ -191,7 +191,7 @@ static void input_handler(const struct input_listener_config *config,
     // First, filter to update the event data as needed.
     filter_with_input_config(config, evt);
 
-    LOG_INF("Got input_handler event: %s with value 0x%x", get_input_code_name(evt), evt->value);
+    LOG_DBG("Got input_handler event: %s with value 0x%x", get_input_code_name(evt), evt->value);
 
     zmk_input_listener_layer_toggle_input_rel_received(config, data);
 
@@ -246,7 +246,6 @@ static void input_handler(const struct input_listener_config *config,
 void zmk_input_listener_layer_toggle_input_rel_received(const struct input_listener_config *config,
                                                         struct input_listener_data *data) {
     if (config->layer_toggle == -1) {
-        LOG_INF("Ignoring layer toggle mouse movement for dev: %s", data->dev->name);
         return;
     }
 
