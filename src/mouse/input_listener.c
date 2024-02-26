@@ -58,6 +58,31 @@ struct input_listener_config {
     uint16_t scale_divisor;
 };
 
+static char *get_input_code_name(struct input_event *evt) {
+    switch (evt->code) {
+    case INPUT_REL_X:
+        return "INPUT_REL_X";
+    case INPUT_REL_Y:
+        return "INPUT_REL_Y";
+    case INPUT_REL_WHEEL:
+        return "INPUT_REL_WHEEL";
+    case INPUT_REL_HWHEEL:
+        return "INPUT_REL_HWHEEL";
+    case INPUT_BTN_0:
+        return "INPUT_BTN_0";
+    case INPUT_BTN_1:
+        return "INPUT_BTN_1";
+    case INPUT_BTN_2:
+        return "INPUT_BTN_2";
+    case INPUT_BTN_3:
+        return "INPUT_BTN_3";
+    case INPUT_BTN_4:
+        return "INPUT_BTN_4";
+    default:
+        return "UNKNOWN";
+    }
+}
+
 static void handle_rel_code(struct input_listener_data *data, struct input_event *evt) {
     switch (evt->code) {
     case INPUT_REL_X:
@@ -151,6 +176,8 @@ static void input_handler(const struct input_listener_config *config,
                           struct input_listener_data *data, struct input_event *evt) {
     // First, filter to update the event data as needed.
     filter_with_input_config(config, evt);
+
+    LOG_INF("Got input_handler event: %s with value 0x%x", get_input_code_name(evt), evt->value);
 
     switch (evt->type) {
     case INPUT_EV_REL:
