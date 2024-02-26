@@ -41,7 +41,6 @@ struct input_listener_xy_data {
 
 struct input_listener_data {
     const struct device *dev;
-    const struct input_listener_config *config;
 
     union {
         struct {
@@ -269,7 +268,7 @@ void zmk_input_listener_layer_toggle_activate_layer(struct k_work *item) {
 
     struct input_listener_data *data =
         CONTAINER_OF(d_work, struct input_listener_data, layer_toggle_activation_delay);
-    const struct input_listener_config *config = data->config;
+    const struct input_listener_config *config = data->dev->config;
 
     int64_t current_time = k_uptime_get();
     int64_t last_mv_within_ms = current_time - data->layer_toggle_last_mouse_package_time;
@@ -290,7 +289,7 @@ void zmk_input_listener_layer_toggle_deactivate_layer(struct k_work *item) {
 
     struct input_listener_data *data =
         CONTAINER_OF(d_work, struct input_listener_data, layer_toggle_deactivation_delay);
-    const struct input_listener_config *config = data->config;
+    const struct input_listener_config *config = data->dev->config;
 
     LOG_INF("Deactivating layer %d due to mouse activity...", config->layer_toggle);
 
@@ -330,28 +329,25 @@ static int zmk_input_listener_layer_toggle_init(const struct input_listener_conf
                 };                                                                                 \
             static struct input_listener_data data_##n =                                           \
                 {                                                                                  \
-                    .dev = DEVICE_DT_GET(DT_INST_PHANDLE(n, device)),                              \
-                    .config = &config_##n,                                                         \
+                    .dev = DEVICE_DT_INST_GET(n),                                                  \
                     .layer_toggle_layer_enabled = false,                                           \
                     .layer_toggle_last_mouse_package_time = 0,                                     \
                 };                                                                                 \
             void input_handler_##n(struct input_event *evt) {                                      \
                 input_handler(&config_##n, &data_##n, evt);                                        \
-            }                                                                                      \
+            } INPUT_CALLBACK_DEFINE(DEVICE_DT_GET(DT_INST_PHANDLE(n, device)), input_handler_##n); \
                                                                                                    \
-            INPUT_CALLBACK_DEFINE(DEVICE_DT_GET(DT_INST_PHANDLE(n, device)), input_handler_##n);   \
-                                                                                                   \
-            static int zmk_input_listener_init_##n(void) {                                         \
-                struct input_listener_data *data = &data_##n;                                      \
-                const struct input_listener_config *config = &config_##n;                          \
+            static int zmk_input_listener_init_##n(const struct device *dev) {                     \
+                struct input_listener_data *data = dev->data;                                      \
+                const struct input_listener_config *config = dev->config;                          \
                                                                                                    \
                 zmk_input_listener_layer_toggle_init(config, data);                                \
                                                                                                    \
                 return 0;                                                                          \
             }                                                                                      \
                                                                                                    \
-            SYS_INIT(zmk_input_listener_init_##n, APPLICATION,                                     \
-                     CONFIG_APPLICATION_INIT_PRIORITY);),                                          \
+            DEVICE_DT_INST_DEFINE(n, &zmk_input_listener_init_##n, NULL, &data_##n, &config_##n,   \
+                                  POST_KERNEL, CONFIG_APPLICATION_INIT_PRIORITY, NULL);),          \
         ())
 
 DT_INST_FOREACH_STATUS_OKAY(IL_INST)
