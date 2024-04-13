@@ -16,6 +16,10 @@ config ZMK_INPUT_MOUSE_PS2_ENABLE_PS2_RESEND_CALLBACK
 
 if ZMK_INPUT_MOUSE_PS2
 
+config ZMK_INPUT_MOUSE_PS2_ENABLE_UROB_COMPAT
+    bool "Makes the driver compatible with urob's zmk fork. His fork has commits that change the default zmk function definitions. This option adopts the code to make it compatible with his changes. Only enable it if you are using his fork or it will fail to compile."
+	default n
+
 config ZMK_INPUT_MOUSE_PS2_ENABLE_ERROR_MITIGATION
     bool "Tries to mitigate transmission errors. Only useful when using a PS2 driver that is prone to miscommunication like the GPIO bitbanging driver."
 	default n
