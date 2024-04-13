@@ -18,6 +18,11 @@ config PS2_UART_WRITE_MODE_BLOCKING
 	bool "Don't use interrupts for writing data and instead block using timers."
 	default n
 
+config PS2_UART_ENABLE_PS2_RESEND_CALLBACK
+	bool "Notify the PS2 device driver (mouse driver) when the received data is invalid and a resend is requested from the peripheral. This can help the higher level PS2 device driver handle transmission errors with less side-effects, but it requires a forked zephyr. With the ps2-uart driver this option is not really necessary, but is very useful for the ps2-gpio driver."
+	default n
+	select ZMK_INPUT_MOUSE_PS2_ENABLE_PS2_RESEND_CALLBACK
+
 # PM_DEVICE is needed, because we use GPIO bitbanging for writing. And to
 # release the data PIN that is used by the UART device, we use pinctrl to
 # switch to the sleep state. But the sleep state is only included if PM_DEVICE

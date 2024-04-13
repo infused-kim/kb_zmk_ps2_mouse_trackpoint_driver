@@ -355,6 +355,8 @@ void zmk_mouse_ps2_activity_abort_cmd(char *reason) {
     zmk_mouse_ps2_activity_reset_packet_buffer();
 }
 
+#if IS_ENABLED(CONFIG_ZMK_INPUT_MOUSE_PS2_ENABLE_PS2_RESEND_CALLBACK)
+
 // Called if the PS/2 driver encounters a transmission error and asks the
 // device to resend the packet.
 // The device will resend all bytes of the packet. So we need to reset our
@@ -366,6 +368,8 @@ void zmk_mouse_ps2_activity_resend_callback(const struct device *ps2_device) {
 
     zmk_mouse_ps2_activity_reset_packet_buffer();
 }
+
+#endif /* IS_ENABLED(CONFIG_ZMK_INPUT_MOUSE_PS2_ENABLE_PS2_RESEND_CALLBACK) */
 
 // Called if no new byte arrives within
 // MOUSE_PS2_TIMEOUT_ACTIVITY_PACKET
@@ -1628,8 +1632,17 @@ static void zmk_mouse_ps2_init_thread(int dev_ptr, int unused) {
 
     // Configure read callback
     LOG_DBG("Configuring ps2 callback...");
+#if IS_ENABLED(CONFIG_ZMK_INPUT_MOUSE_PS2_ENABLE_PS2_RESEND_CALLBACK)
+
     err = ps2_config(config->ps2_device, &zmk_mouse_ps2_activity_callback,
                      &zmk_mouse_ps2_activity_resend_callback);
+
+#else
+
+    err = ps2_config(config->ps2_device, &zmk_mouse_ps2_activity_callback);
+
+#endif /* IS_ENABLED(CONFIG_ZMK_INPUT_MOUSE_PS2_ENABLE_PS2_RESEND_CALLBACK) */
+
     if (err) {
         LOG_ERR("Could not configure ps2 interface: %d", err);
         return;

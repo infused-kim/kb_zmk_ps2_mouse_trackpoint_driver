@@ -162,7 +162,10 @@ struct ps2_gpio_data {
     struct k_work callback_work;
     uint8_t callback_byte;
     ps2_callback_t callback_isr;
+
+#if IS_ENABLED(CONFIG_PS2_GPIO_ENABLE_PS2_RESEND_CALLBACK)
     ps2_resend_callback_t resend_callback_isr;
+#endif /* IS_ENABLED(CONFIG_PS2_GPIO_ENABLE_PS2_RESEND_CALLBACK) */
 
     bool callback_enabled;
 
@@ -200,7 +203,11 @@ static const struct ps2_gpio_config ps2_gpio_config = {
 static struct ps2_gpio_data ps2_gpio_data = {
     .callback_byte = 0x0,
     .callback_isr = NULL,
+
+#if IS_ENABLED(CONFIG_PS2_GPIO_ENABLE_PS2_RESEND_CALLBACK)
     .resend_callback_isr = NULL,
+#endif /* IS_ENABLED(CONFIG_PS2_GPIO_ENABLE_PS2_RESEND_CALLBACK) */
+
     .callback_enabled = false,
     .mode = PS2_GPIO_MODE_READ,
 
@@ -382,6 +389,9 @@ void ps2_gpio_data_queue_add(uint8_t byte) {
 }
 
 void ps2_gpio_send_cmd_resend_worker(struct k_work *item) {
+
+#if IS_ENABLED(CONFIG_PS2_GPIO_ENABLE_PS2_RESEND_CALLBACK)
+
     struct ps2_gpio_data *data = &ps2_gpio_data;
 
     // Notify the PS/2 device driver that we are requesting a resend.
@@ -391,6 +401,8 @@ void ps2_gpio_send_cmd_resend_worker(struct k_work *item) {
 
         data->resend_callback_isr(data->dev);
     }
+
+#endif /* IS_ENABLED(CONFIG_PS2_GPIO_ENABLE_PS2_RESEND_CALLBACK) */
 
     uint8_t cmd = 0xfe;
     // LOG_DBG("Requesting resend of data with command: 0x%x", cmd);
@@ -1168,6 +1180,8 @@ void ps2_gpio_scl_interrupt_handler(const struct device *dev, struct gpio_callba
  */
 static int ps2_gpio_enable_callback(const struct device *dev);
 
+#if IS_ENABLED(CONFIG_PS2_GPIO_ENABLE_PS2_RESEND_CALLBACK)
+
 static int ps2_gpio_configure(const struct device *dev, ps2_callback_t callback_isr,
                               ps2_resend_callback_t resend_callback_isr) {
     struct ps2_gpio_data *data = dev->data;
@@ -1187,6 +1201,23 @@ static int ps2_gpio_configure(const struct device *dev, ps2_callback_t callback_
 
     return 0;
 }
+
+#else
+
+static int ps2_gpio_configure(const struct device *dev, ps2_callback_t callback_isr) {
+    struct ps2_gpio_data *data = dev->data;
+
+    if (!callback_isr) {
+        return -EINVAL;
+    }
+
+    data->callback_isr = callback_isr;
+    ps2_gpio_enable_callback(dev);
+
+    return 0;
+}
+
+#endif /* IS_ENABLED(CONFIG_PS2_GPIO_ENABLE_PS2_RESEND_CALLBACK) */
 
 int ps2_gpio_read(const struct device *dev, uint8_t *value) {
     // TODO: Add a way to not return old queue items
