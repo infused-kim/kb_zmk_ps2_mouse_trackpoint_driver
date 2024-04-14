@@ -1,7 +1,7 @@
 description: |
   Listener to subscribe to input events and send HID updates after processing
 
-compatible: "zmk,input-listener"
+compatible: "zmk,input-listener-ps2"
 
 properties:
   device:

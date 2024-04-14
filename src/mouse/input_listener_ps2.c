@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: MIT
  */
 
-#define DT_DRV_COMPAT zmk_input_listener
+#define DT_DRV_COMPAT zmk_input_listener_ps2
 
 #include <zephyr/device.h>
 #include <zephyr/kernel.h>
@@ -27,25 +27,25 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
 #if VALID_LISTENER_COUNT > 0
 
-enum input_listener_xy_data_mode {
+enum input_listener_ps2_xy_data_mode {
     INPUT_LISTENER_XY_DATA_MODE_NONE,
     INPUT_LISTENER_XY_DATA_MODE_REL,
     INPUT_LISTENER_XY_DATA_MODE_ABS,
 };
 
-struct input_listener_xy_data {
-    enum input_listener_xy_data_mode mode;
+struct input_listener_ps2_xy_data {
+    enum input_listener_ps2_xy_data_mode mode;
     int16_t x;
     int16_t y;
 };
 
-struct input_listener_data {
+struct input_listener_ps2_data {
     const struct device *dev;
 
     union {
         struct {
-            struct input_listener_xy_data data;
-            struct input_listener_xy_data wheel_data;
+            struct input_listener_ps2_xy_data data;
+            struct input_listener_ps2_xy_data wheel_data;
 
             uint8_t button_set;
             uint8_t button_clear;
@@ -58,7 +58,7 @@ struct input_listener_data {
     struct k_work_delayable layer_toggle_deactivation_delay;
 };
 
-struct input_listener_config {
+struct input_listener_ps2_config {
     bool xy_swap;
     bool x_invert;
     bool y_invert;
@@ -69,8 +69,8 @@ struct input_listener_config {
     int layer_toggle_timeout_ms;
 };
 
-void zmk_input_listener_layer_toggle_input_rel_received(const struct input_listener_config *config,
-                                                        struct input_listener_data *data);
+void zmk_input_listener_ps2_layer_toggle_input_rel_received(const struct input_listener_ps2_config *config,
+                                                        struct input_listener_ps2_data *data);
 
 static char *get_input_code_name(struct input_event *evt) {
     switch (evt->code) {
@@ -97,7 +97,7 @@ static char *get_input_code_name(struct input_event *evt) {
     }
 }
 
-static void handle_rel_code(struct input_listener_data *data, struct input_event *evt) {
+static void handle_rel_code(struct input_listener_ps2_data *data, struct input_event *evt) {
     switch (evt->code) {
     case INPUT_REL_X:
         data->mouse.data.mode = INPUT_LISTENER_XY_DATA_MODE_REL;
@@ -120,11 +120,11 @@ static void handle_rel_code(struct input_listener_data *data, struct input_event
     }
 }
 
-static void handle_abs_code(const struct input_listener_config *config,
-                            struct input_listener_data *data, struct input_event *evt) {}
+static void handle_abs_code(const struct input_listener_ps2_config *config,
+                            struct input_listener_ps2_data *data, struct input_event *evt) {}
 
-static void handle_key_code(const struct input_listener_config *config,
-                            struct input_listener_data *data, struct input_event *evt) {
+static void handle_key_code(const struct input_listener_ps2_config *config,
+                            struct input_listener_ps2_data *data, struct input_event *evt) {
     int8_t btn;
 
     switch (evt->code) {
@@ -164,7 +164,7 @@ static inline bool is_y_data(const struct input_event *evt) {
     return evt->type == INPUT_EV_REL && evt->code == INPUT_REL_Y;
 }
 
-static void filter_with_input_config(const struct input_listener_config *cfg,
+static void filter_with_input_config(const struct input_listener_ps2_config *cfg,
                                      struct input_event *evt) {
     if (!evt->dev) {
         return;
@@ -181,19 +181,19 @@ static void filter_with_input_config(const struct input_listener_config *cfg,
     evt->value = (int16_t)((evt->value * cfg->scale_multiplier) / cfg->scale_divisor);
 }
 
-static void clear_xy_data(struct input_listener_xy_data *data) {
+static void clear_xy_data(struct input_listener_ps2_xy_data *data) {
     data->x = data->y = 0;
     data->mode = INPUT_LISTENER_XY_DATA_MODE_NONE;
 }
 
-static void input_handler(const struct input_listener_config *config,
-                          struct input_listener_data *data, struct input_event *evt) {
+static void input_handler_ps2(const struct input_listener_ps2_config *config,
+                          struct input_listener_ps2_data *data, struct input_event *evt) {
     // First, filter to update the event data as needed.
     filter_with_input_config(config, evt);
 
-    LOG_DBG("Got input_handler event: %s with value 0x%x", get_input_code_name(evt), evt->value);
+    LOG_DBG("Got input_handler_ps2 event: %s with value 0x%x", get_input_code_name(evt), evt->value);
 
-    zmk_input_listener_layer_toggle_input_rel_received(config, data);
+    zmk_input_listener_ps2_layer_toggle_input_rel_received(config, data);
 
     switch (evt->type) {
     case INPUT_EV_REL:
@@ -243,8 +243,8 @@ static void input_handler(const struct input_listener_config *config,
     }
 }
 
-void zmk_input_listener_layer_toggle_input_rel_received(const struct input_listener_config *config,
-                                                        struct input_listener_data *data) {
+void zmk_input_listener_ps2_layer_toggle_input_rel_received(const struct input_listener_ps2_config *config,
+                                                        struct input_listener_ps2_data *data) {
     if (config->layer_toggle == -1) {
         return;
     }
@@ -262,12 +262,12 @@ void zmk_input_listener_layer_toggle_input_rel_received(const struct input_liste
     }
 }
 
-void zmk_input_listener_layer_toggle_activate_layer(struct k_work *item) {
+void zmk_input_listener_ps2_layer_toggle_activate_layer(struct k_work *item) {
     struct k_work_delayable *d_work = k_work_delayable_from_work(item);
 
-    struct input_listener_data *data =
-        CONTAINER_OF(d_work, struct input_listener_data, layer_toggle_activation_delay);
-    const struct input_listener_config *config = data->dev->config;
+    struct input_listener_ps2_data *data =
+        CONTAINER_OF(d_work, struct input_listener_ps2_data, layer_toggle_activation_delay);
+    const struct input_listener_ps2_config *config = data->dev->config;
 
     int64_t current_time = k_uptime_get();
     int64_t last_mv_within_ms = current_time - data->layer_toggle_last_mouse_package_time;
@@ -292,12 +292,12 @@ void zmk_input_listener_layer_toggle_activate_layer(struct k_work *item) {
     }
 }
 
-void zmk_input_listener_layer_toggle_deactivate_layer(struct k_work *item) {
+void zmk_input_listener_ps2_layer_toggle_deactivate_layer(struct k_work *item) {
     struct k_work_delayable *d_work = k_work_delayable_from_work(item);
 
-    struct input_listener_data *data =
-        CONTAINER_OF(d_work, struct input_listener_data, layer_toggle_deactivation_delay);
-    const struct input_listener_config *config = data->dev->config;
+    struct input_listener_ps2_data *data =
+        CONTAINER_OF(d_work, struct input_listener_ps2_data, layer_toggle_deactivation_delay);
+    const struct input_listener_ps2_config *config = data->dev->config;
 
     LOG_INF("Deactivating layer %d due to mouse activity...", config->layer_toggle);
 
@@ -308,12 +308,12 @@ void zmk_input_listener_layer_toggle_deactivate_layer(struct k_work *item) {
     data->layer_toggle_layer_enabled = false;
 }
 
-static int zmk_input_listener_layer_toggle_init(const struct input_listener_config *config,
-                                                struct input_listener_data *data) {
+static int zmk_input_listener_ps2_layer_toggle_init(const struct input_listener_ps2_config *config,
+                                                struct input_listener_ps2_data *data) {
     k_work_init_delayable(&data->layer_toggle_activation_delay,
-                          zmk_input_listener_layer_toggle_activate_layer);
+                          zmk_input_listener_ps2_layer_toggle_activate_layer);
     k_work_init_delayable(&data->layer_toggle_deactivation_delay,
-                          zmk_input_listener_layer_toggle_deactivate_layer);
+                          zmk_input_listener_ps2_layer_toggle_deactivate_layer);
 
     return 0;
 }
@@ -324,7 +324,7 @@ static int zmk_input_listener_layer_toggle_init(const struct input_listener_conf
     COND_CODE_1(                                                                                   \
         DT_NODE_HAS_STATUS(DT_INST_PHANDLE(n, device), okay),                                      \
         (                                                                                          \
-            static const struct input_listener_config config_##n =                                 \
+            static const struct input_listener_ps2_config config_##n =                                 \
                 {                                                                                  \
                     .xy_swap = DT_INST_PROP(n, xy_swap),                                           \
                     .x_invert = DT_INST_PROP(n, x_invert),                                         \
@@ -335,26 +335,26 @@ static int zmk_input_listener_layer_toggle_init(const struct input_listener_conf
                     .layer_toggle_delay_ms = DT_INST_PROP(n, layer_toggle_delay_ms),               \
                     .layer_toggle_timeout_ms = DT_INST_PROP(n, layer_toggle_timeout_ms),           \
                 };                                                                                 \
-            static struct input_listener_data data_##n =                                           \
+            static struct input_listener_ps2_data data_##n =                                           \
                 {                                                                                  \
                     .dev = DEVICE_DT_INST_GET(n),                                                  \
                     .layer_toggle_layer_enabled = false,                                           \
                     .layer_toggle_last_mouse_package_time = 0,                                     \
                 };                                                                                 \
-            void input_handler_##n(struct input_event *evt) {                                      \
-                input_handler(&config_##n, &data_##n, evt);                                        \
-            } INPUT_CALLBACK_DEFINE(DEVICE_DT_GET(DT_INST_PHANDLE(n, device)), input_handler_##n); \
+            void input_handler_ps2_##n(struct input_event *evt) {                                      \
+                input_handler_ps2(&config_##n, &data_##n, evt);                                        \
+            } INPUT_CALLBACK_DEFINE(DEVICE_DT_GET(DT_INST_PHANDLE(n, device)), input_handler_ps2_##n); \
                                                                                                    \
-            static int zmk_input_listener_init_##n(const struct device *dev) {                     \
-                struct input_listener_data *data = dev->data;                                      \
-                const struct input_listener_config *config = dev->config;                          \
+            static int zmk_input_listener_ps2_init_##n(const struct device *dev) {                     \
+                struct input_listener_ps2_data *data = dev->data;                                      \
+                const struct input_listener_ps2_config *config = dev->config;                          \
                                                                                                    \
-                zmk_input_listener_layer_toggle_init(config, data);                                \
+                zmk_input_listener_ps2_layer_toggle_init(config, data);                                \
                                                                                                    \
                 return 0;                                                                          \
             }                                                                                      \
                                                                                                    \
-            DEVICE_DT_INST_DEFINE(n, &zmk_input_listener_init_##n, NULL, &data_##n, &config_##n,   \
+            DEVICE_DT_INST_DEFINE(n, &zmk_input_listener_ps2_init_##n, NULL, &data_##n, &config_##n,   \
                                   POST_KERNEL, CONFIG_APPLICATION_INIT_PRIORITY, NULL);),          \
         ())
 
