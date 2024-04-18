@@ -412,7 +412,7 @@ void ps2_uart_data_queue_add(uint8_t byte) {
     struct ps2_uart_data_queue_item queue_data;
     queue_data.byte = byte;
 
-    LOG_INF("Adding byte to data queue: 0x%x", byte);
+    LOG_DBG("Adding byte to data queue: 0x%x", byte);
 
     for (int i = 0; i < 2; i++) {
         ret = k_msgq_put(&data->data_queue, &queue_data, K_NO_WAIT);
