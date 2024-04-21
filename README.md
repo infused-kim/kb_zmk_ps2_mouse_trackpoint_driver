@@ -57,6 +57,10 @@ If you are interested in how this project came to be, [check out the development
   - [4.4. If your split keyboard halves refuse to pair](#44-if-your-split-keyboard-halves-refuse-to-pair)
 - [5. Development Journey Blog \& Implementation Details](#5-development-journey-blog--implementation-details)
 - [6. Related Resources](#6-related-resources)
+  - [6.1. Zmk Related](#61-zmk-related)
+  - [6.2. TrackPoint Info](#62-trackpoint-info)
+  - [6.3. How to figure out TrackPoint Pinout](#63-how-to-figure-out-trackpoint-pinout)
+  - [6.4. Datasheets](#64-datasheets)
 
 ## 1. Features
 
@@ -201,6 +205,8 @@ In addition to that, you can find a pre-compiled firmware in the [releases secti
 The pre-compiled version is configured for a corne keyboard, but should be compatible with any keyboard that uses the same pins (such as Chocofi and many more).
 
 You can also use it to test your TrackPoint with a breadboard if you are still in the design stage of your keyboard.
+
+You can find the pins that can be used for the TP with the pre-compiled firmware in the [example zmk-config's readme](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver-zmk_config/#1-pre-built-firmware).
 
 ### 3.3. How to set up your zmk-config for the driver
 
@@ -913,14 +919,7 @@ If you are using a TP, that doesn't have a known pinout, don't rely on published
 
 Even with the same chip, the pinouts can vary significantly. You have to reverse engineer each individual TrackPoint.
 
-Here are a few resources I found useful for figuring out the pinout of my TrackPoint (in no particular order):
-
-- [Chinese blog describing how to find pinout](https://www.mydigit.cn/forum.php?mod=viewthread&tid=293118&page=1#pid11673073)
-- [Another Chinese blog post with great details](https://blog.csdn.net/shmilyuho/article/details/122334314)
-- [Image explaining what components to look for different pins](https://chinese.stackexchange.com/questions/32008/translation-help-needed)
-- [Forum thread of people discussing TrackPoint pinouts](https://geekhack.org/index.php?topic=8971.msg775152#msg775152)
-- [English version of half of the post](https://geekhack.org/index.php?topic=115912.0)
-- [Another forum thread with people giving tips on how to identify](https://deskthority.net/viewtopic.php?f=7&t=7678&start=)
+Check out the bottom of this readme for a [list of resources I found useful for figuring out the pinout of my TrackPoint](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver?tab=readme-ov-file#6-related-resources).
 
 ##### Try the PS/2 GPIO driver <!-- omit from toc -->
 
@@ -1339,8 +1338,33 @@ Kim
 
 ## 6. Related Resources
 
+### 6.1. Zmk Related
+
 - [Example zmk-config for this driver](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver-zmk_config)
 - [My personal, more advanced zmk-config](https://github.com/infused-kim/zmk-config)
-- [PS/2 Mouse & TrackPoint driver module for zmk](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver)
+- [Urob's zmk fork](https://github.com/urob/zmk) and [his zmk-config](https://github.com/urob/zmk-config)
 - [Zmk PR #2027: Mouse pointer movement/scrolling](https://github.com/zmkfirmware/zmk/pull/2027)
 - [Zmk PR #1751: Add PS/2 Mouse / TrackPoint / Trackpad / Trackball support](https://github.com/zmkfirmware/zmk/pull/1751)
+
+### 6.2. TrackPoint Info
+
+- [Deskthority - Trackpoint Pinout Wiki](https://deskthority.net/wiki/TrackPoint_Hardware)
+- [Alon Swartz's TrackPoint Info (Includes Reset Circuit Info)](https://github.com/alonswartz/TrackPoint?tab=readme-ov-file#q-how-do-i-identify-the-trackpoint-pinout)
+- [Manna Harbour's TrackPoint Info](https://github.com/manna-harbour/crkbd/tree/master/trackpoint)
+
+### 6.3. How to figure out TrackPoint Pinout
+
+Here are a few resources I found useful for figuring out the pinout of my TrackPoint (in no particular order):
+
+- [Chinese blog describing how to find pinout](https://www.mydigit.cn/forum.php?mod=viewthread&tid=293118&page=1#pid11673073)
+- [Another Chinese blog post with great details](https://blog.csdn.net/shmilyuho/article/details/122334314)
+- [Image explaining what components to look for different pins](https://chinese.stackexchange.com/questions/32008/translation-help-needed)
+- [Forum thread of people discussing TrackPoint pinouts](https://geekhack.org/index.php?topic=8971.msg775152#msg775152)
+- [English version of half of the post](https://geekhack.org/index.php?topic=115912.0)
+- [Another forum thread with people giving tips on how to identify](https://deskthority.net/viewtopic.php?f=7&t=7678&start=)
+
+### 6.4. Datasheets
+
+- [IBM TrackPoint System Version 4.0 Engineering Specification](https://web.mit.edu/bbaren/Public/ykt3eext.pdf)
+- [Sprintek SK7100 PS/2 Pointing Stick Mouse Encoder](https://cdn.thomasnet.com/ccp/10110462/133782.pdf)
+- [Sprintek SK8702 Trackpoint Datasheet](https://cdn.thomasnet.com/ccp/10110462/133781.pdf)
