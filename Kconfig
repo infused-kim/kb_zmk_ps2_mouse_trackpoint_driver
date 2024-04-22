@@ -2,3 +2,13 @@
 # SPDX-License-Identifier: MIT
 
 rsource "src/drivers/Kconfig"
+
+DT_COMPAT_ZMK_INPUT_LISTENER_PS2 := zmk,input-listener-ps2
+config ZMK_INPUT_LISTENER_PS2
+		bool
+		default $(dt_compat_enabled,$(DT_COMPAT_ZMK_INPUT_LISTENER_PS2))
+
+DT_COMPAT_ZMK_BEHAVIOR_MOUSE_SETTING := zmk,behavior-mouse-setting
+config ZMK_BEHAVIOR_MOUSE_SETTING
+		bool
+		default $(dt_compat_enabled,$(DT_COMPAT_ZMK_BEHAVIOR_MOUSE_SETTING))
