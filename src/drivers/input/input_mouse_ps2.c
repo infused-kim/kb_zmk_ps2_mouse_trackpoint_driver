@@ -46,9 +46,6 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #define MOUSE_PS2_POWER_ON_RESET_TIME K_MSEC(600)
 
 // Common PS/2 Mouse commands
-#define MOUSE_PS2_CMD_GET_SECONDARY_ID "\xe1"
-#define MOUSE_PS2_CMD_GET_SECONDARY_ID_RESP_LEN 2
-
 #define MOUSE_PS2_CMD_GET_DEVICE_ID "\xf2"
 #define MOUSE_PS2_CMD_GET_DEVICE_ID_RESP_LEN 1
 
@@ -71,6 +68,12 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 // Trackpoint Commands
 // They can be found in the `IBM TrackPoint System Version 4.0 Engineering
 // Specification` (YKT3Eext.pdf)...
+
+#define MOUSE_PS2_CMD_TP_GET_SECONDARY_ID "\xe1"
+#define MOUSE_PS2_CMD_TP_GET_SECONDARY_ID_RESP_LEN 2
+
+#define MOUSE_PS2_CMD_TP_GET_ROM_ID "\xe2\x46"
+#define MOUSE_PS2_CMD_TP_GET_ROM_ID_RESP_LEN 1
 
 #define MOUSE_PS2_CMD_TP_GET_CONFIG_BYTE "\xe2\x80\x2c"
 #define MOUSE_PS2_CMD_TP_GET_CONFIG_BYTE_RESP_LEN 1
@@ -202,6 +205,9 @@ struct zmk_mouse_ps2_data {
 
     bool activity_reporting_on;
     bool is_trackpoint;
+    uint8_t manufacturer_id;
+    uint8_t secondary_id;
+    uint8_t rom_id;
 
     uint8_t sampling_rate;
     uint8_t tp_sensitivity;
@@ -258,7 +264,12 @@ static struct zmk_mouse_ps2_data zmk_mouse_ps2_data = {
 
     // Data reporting is disabled on init
     .activity_reporting_on = false,
+
+    // Device Info
     .is_trackpoint = false,
+    .manufacturer_id = 0x0,
+    .secondary_id = 0x0,
+    .rom_id = 0x0,
 
     // PS2 devices initialize with this rate
     .sampling_rate = MOUSE_PS2_CMD_SET_SAMPLING_RATE_DEFAULT,
@@ -850,21 +861,6 @@ int zmk_mouse_ps2_reset(const struct device *ps2_device) {
     return resp.err;
 }
 
-int zmk_mouse_ps2_get_secondary_id(uint8_t *resp_byte_1, uint8_t *resp_byte_2) {
-    struct zmk_mouse_ps2_send_cmd_resp resp = zmk_mouse_ps2_send_cmd(
-        MOUSE_PS2_CMD_GET_SECONDARY_ID, sizeof(MOUSE_PS2_CMD_GET_SECONDARY_ID), NULL,
-        MOUSE_PS2_CMD_GET_SECONDARY_ID_RESP_LEN, true);
-    if (resp.err) {
-        LOG_ERR("Could not get secondary id");
-        return resp.err;
-    }
-
-    *resp_byte_1 = resp.resp_buffer[0];
-    *resp_byte_2 = resp.resp_buffer[1];
-
-    return 0;
-}
-
 int zmk_mouse_ps2_set_sampling_rate(uint8_t sampling_rate) {
     struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
 
@@ -990,23 +986,97 @@ int zmk_mouse_ps2_set_packet_mode(zmk_mouse_ps2_packet_mode mode) {
  * Trackpoint Commands
  */
 
-bool zmk_mouse_ps2_is_device_trackpoint() {
-    bool ret = false;
 
-    uint8_t second_id_1, second_id_2;
-    int err = zmk_mouse_ps2_get_secondary_id(&second_id_1, &second_id_2);
-    if (err) {
-        // Not all devices implement this command.
-        ret = false;
-    } else {
-        if (second_id_1 == 0x1) {
-            ret = true;
-        }
+int zmk_mouse_ps2_tp_get_secondary_id(uint8_t *manufacturer_id, uint8_t *secondary_id) {
+    struct zmk_mouse_ps2_send_cmd_resp resp = zmk_mouse_ps2_send_cmd(
+        MOUSE_PS2_CMD_TP_GET_SECONDARY_ID, sizeof(MOUSE_PS2_CMD_TP_GET_SECONDARY_ID), NULL,
+        MOUSE_PS2_CMD_TP_GET_SECONDARY_ID_RESP_LEN, true);
+    if (resp.err) {
+        LOG_ERR("Could not get secondary id");
+        return resp.err;
     }
 
-    LOG_DBG("Connected device is a trackpoint: %d", ret);
+    *manufacturer_id = resp.resp_buffer[0];
+    *secondary_id = resp.resp_buffer[1];
 
-    return ret;
+    return 0;
+}
+
+int zmk_mouse_ps2_tp_get_rom_id(uint8_t *rom_id) {
+    struct zmk_mouse_ps2_send_cmd_resp resp = zmk_mouse_ps2_send_cmd(
+        MOUSE_PS2_CMD_TP_GET_ROM_ID, sizeof(MOUSE_PS2_CMD_TP_GET_ROM_ID), NULL,
+        MOUSE_PS2_CMD_TP_GET_ROM_ID_RESP_LEN, true);
+    if (resp.err) {
+        LOG_ERR("Could not get secondary id");
+        return resp.err;
+    }
+
+    *rom_id = resp.resp_buffer[0];
+
+    return 0;
+}
+
+char  *zmk_mouse_ps2_get_manufacturer_str(uint8_t manufacturer_id) {
+
+    switch (manufacturer_id)
+    {
+    case 0x1:
+        return "IBM";
+    case 0x2:
+        return "Alps";
+    case 0x3:
+        return "Elan";
+    case 0x4:
+        return "NXP";
+    case 0x5:
+        return "JYT Synaptics";
+    case 0x6:
+        return "Synaptics";
+    }
+
+    return "Unknown";
+}
+
+// On non-trackpoints this command is not supported and returns nothing.
+//
+// On trackpoints it returns the manufacturer id and firmware id.
+//
+// Trackpoints from IBM/Lenovo laptops up until aproximately 2016 used IBM
+// trackpoints. After that they started to use other manufacturers.
+//
+// Page 19 of the IBM TP spec describes the features of different firmware ids.
+int zmk_mouse_ps2_tp_get_device_info(bool *is_tp, uint8_t *tp_manufacturer_id, uint8_t *tp_secondary_id, uint8_t *tp_rom_id, char *device_str, int device_str_size) {
+    int err = zmk_mouse_ps2_tp_get_secondary_id(tp_manufacturer_id, tp_secondary_id);
+    if (err) {
+        // Only TPs implement this command. So, if it fails, it means the
+        // device is not a TP.
+
+        *is_tp = false;
+        *tp_manufacturer_id = 0x0;
+        *tp_secondary_id = 0x0;
+        *tp_rom_id = 0x0;
+
+        snprintf(device_str, device_str_size, "Generic PS/2 Mouse");
+
+        return 0;
+    }
+
+    *is_tp = true;
+
+    err = zmk_mouse_ps2_tp_get_rom_id(tp_rom_id);
+    if(err) {
+        LOG_ERR("Could not determine TP rom id: %d", err);
+        *tp_rom_id = 0x0;
+        err = -1;
+    }
+
+    char *manufacturer_str = zmk_mouse_ps2_get_manufacturer_str(
+        *tp_manufacturer_id
+    );
+
+    snprintf(device_str, device_str_size, "Trackpoint by %s (0x%02X); Rom Version: %02X; Secondary ID: 0x%02X", manufacturer_str, *tp_manufacturer_id, *tp_rom_id, *tp_secondary_id);
+
+    return err;
 }
 
 int zmk_mouse_ps2_tp_get_config_byte(uint8_t *config_byte) {
@@ -1578,9 +1648,18 @@ static void zmk_mouse_ps2_init_thread(int dev_ptr, int unused) {
         }
     }
 
-    if (zmk_mouse_ps2_is_device_trackpoint() == true) {
-        LOG_INF("Device is a trackpoint");
-        data->is_trackpoint = true;
+    char device_descr[64];
+    zmk_mouse_ps2_tp_get_device_info(
+        &data->is_trackpoint,
+        &data->manufacturer_id,
+        &data->secondary_id,
+        &data->rom_id,
+        device_descr, sizeof(device_descr)
+    );
+
+    LOG_INF("Connected device is a %s", device_descr);
+
+    if (data->is_trackpoint == true) {
 
         if (config->tp_press_to_select) {
             LOG_INF("Enabling TP press to select...");

@@ -768,15 +768,13 @@ It should look something like the log below. I have added comments so that you k
 # If the driver receives the self-test success 0xaa message, it continues like this...
 [00:00:01.984,527] <inf> zmk: Reading PS/2 device id...
 [00:00:01.984,527] <inf> zmk: Connected PS/2 device is a mouse...
-[00:00:01.991,058] <inf> zmk: Device is a TrackPoint
+[00:00:01.984,527] <inf> zmk: Connected device is a Trackpoint by IBM (0x01); Rom Version: 3E; Secondary ID: 0x0E
 
 
 # The settings will only be restored if you configured non-default settings. So, you might
 # not see these messages.
 [00:00:01.991,058] <inf> zmk: Setting TP sensitivity to 135...
 [00:00:02.002,777] <inf> zmk: Successfully set TP sensitivity to 135
-
-
 # It's fine if there are write errors, because we are using GPIO interrupts instead
 # of the UART chips for writes, which has performance issues on the nice!nano.
 #
