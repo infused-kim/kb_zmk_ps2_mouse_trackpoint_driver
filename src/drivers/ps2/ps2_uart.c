@@ -150,6 +150,9 @@ struct ps2_uart_config {
     struct gpio_dt_spec scl_gpio;
     struct gpio_dt_spec sda_gpio;
     const struct pinctrl_dev_config *pcfg;
+
+    int scl_gpio_port_num;
+    int sda_gpio_port_num;
 };
 
 struct ps2_uart_data {
@@ -190,6 +193,9 @@ static const struct ps2_uart_config ps2_uart_config = {
     .scl_gpio = GPIO_DT_SPEC_INST_GET(0, scl_gpios),
     .sda_gpio = GPIO_DT_SPEC_INST_GET(0, sda_gpios),
     .pcfg = PINCTRL_DT_DEV_CONFIG_GET(DT_INST_BUS(0)),
+
+    .scl_gpio_port_num = DT_PROP(DT_INST_PHANDLE(0, scl_gpios), port),
+    .sda_gpio_port_num = DT_PROP(DT_INST_PHANDLE(0, sda_gpios), port),
 };
 
 static struct ps2_uart_data ps2_uart_data = {
@@ -467,6 +473,49 @@ void ps2_uart_send_cmd_resend() {
     }
 }
 
+// Extract port and pin from pinctrl to log it
+// Based on the defines in zephyr/dt-bindings/pinctrl/nrf-pinctrl.h:
+// https://docs.zephyrproject.org/apidoc/latest/nrf-pinctrl_8h_source.html
+#define PINCTRL_PSEL_NRF_EXTRACT_PORT(x) (((x) >> 5) & 0x03)
+#define PINCTRL_PSEL_NRF_EXTRACT_PIN(x) ((x) & 0x1F)
+int ps2_uart_get_pinctrl_port_pin(const struct pinctrl_dev_config *pcfg, uint8_t state_id,
+                                  uint8_t pin_id, int *res_port, int *res_pin) {
+
+#if IS_ENABLED(CONFIG_SOC_SERIES_NRF52X)
+
+    if (state_id >= pcfg->state_cnt) {
+        LOG_ERR("Could not retrieve pinctrl pin config, because there is no state_id %d ",
+                state_id);
+        return -1;
+    }
+
+    const struct pinctrl_state *state = &pcfg->states[state_id];
+
+    if (pin_id >= state->pin_cnt) {
+        LOG_ERR("Could not retrieve pinctrl pin config, because there is no pin_id %d ", pin_id);
+        return -1;
+    }
+
+    pinctrl_soc_pin_t pin_psel = state->pins[pin_id];
+
+    *res_port = PINCTRL_PSEL_NRF_EXTRACT_PORT(pin_psel);
+    *res_pin = PINCTRL_PSEL_NRF_EXTRACT_PIN(pin_psel);
+
+    return 0;
+#else
+
+    LOG_ERR("Could not retrieve pinctrl pin config, because the code is only designed to run on "
+            "nrf52, but you are running on %s",
+            CONFIG_SOC_SERIES);
+
+    *res_port = -1;
+    *res_pin = -1;
+
+    return -1;
+
+#endif
+}
+
 /*
  * Reading PS2 data
  */
@@ -656,8 +705,8 @@ int ps2_uart_write_byte_debug(uint8_t byte) {
     // k_sleep(K_MSEC(1000));
     // err = ps2_uart_set_mode_write();
     // if (err != 0) {
-    // 	LOG_ERR("Could not configure driver for write mode: %d", err);
-    // 	return err;
+    //  LOG_ERR("Could not configure driver for write mode: %d", err);
+    //  return err;
     // }
     LOG_WRN("Setting Write mode: Done");
 
@@ -1176,12 +1225,23 @@ static int ps2_uart_init_gpio(void);
 static int ps2_uart_init(const struct device *dev) {
     int err;
     struct ps2_uart_data *data = dev->data;
+    struct ps2_uart_config *config = (struct ps2_uart_config *)&ps2_uart_config;
 
     // Set the ps2 device so we can retrieve it later for
     // the ps2 callback
     data->dev = dev;
 
-    LOG_INF("Inside ps2_uart_init");
+    // Get the P0.08 pin notation of the configured UART pinctrl pin.
+    // The UART TX pin is the second (index 1) of the pins
+    int pinctrl_port = -1;
+    int pinctrl_pin = -1;
+    ps2_uart_get_pinctrl_port_pin(config->pcfg, PINCTRL_STATE_DEFAULT, 1, &pinctrl_port,
+                                  &pinctrl_pin);
+
+    LOG_INF("Initializing ps2_uart driver with pins... SCL: P%d.%02d; SDA: P%d.%02d; SDA Pinctrl: "
+            "P%d.%02d",
+            config->scl_gpio_port_num, config->scl_gpio.pin, config->sda_gpio_port_num,
+            config->sda_gpio.pin, pinctrl_port, pinctrl_pin);
 
     // Init data queue for synchronous read operations
     k_msgq_init(&data->data_queue, data->data_queue_buffer, sizeof(struct ps2_uart_data_queue_item),

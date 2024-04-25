@@ -148,6 +148,9 @@ struct ps2_gpio_data_queue_item {
 struct ps2_gpio_config {
     struct gpio_dt_spec scl_gpio;
     struct gpio_dt_spec sda_gpio;
+
+    int scl_gpio_port_num;
+    int sda_gpio_port_num;
 };
 
 struct ps2_gpio_data {
@@ -198,6 +201,9 @@ struct ps2_gpio_data {
 static const struct ps2_gpio_config ps2_gpio_config = {
     .scl_gpio = GPIO_DT_SPEC_INST_GET(0, scl_gpios),
     .sda_gpio = GPIO_DT_SPEC_INST_GET(0, sda_gpios),
+
+    .scl_gpio_port_num = DT_PROP(DT_INST_PHANDLE(0, scl_gpios), port),
+    .sda_gpio_port_num = DT_PROP(DT_INST_PHANDLE(0, sda_gpios), port),
 };
 
 static struct ps2_gpio_data ps2_gpio_data = {
@@ -1315,6 +1321,11 @@ static int ps2_gpio_init_gpio(void) {
 static int ps2_gpio_init(const struct device *dev) {
 
     struct ps2_gpio_data *data = dev->data;
+    struct ps2_gpio_config *config = (struct ps2_gpio_config *)&ps2_gpio_config;
+
+    LOG_INF("Initializing ps2_gpio driver with pins... SCL: P%d.%02d; SDA: P%d.%02d",
+            config->scl_gpio_port_num, config->scl_gpio.pin, config->sda_gpio_port_num,
+            config->sda_gpio.pin);
 
     // Set the ps2 device so we can retrieve it later for
     // the ps2 callback
