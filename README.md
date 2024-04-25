@@ -61,6 +61,7 @@ If you are interested in how this project came to be, [check out the development
   - [6.2. TrackPoint Info](#62-trackpoint-info)
   - [6.3. How to figure out TrackPoint Pinout](#63-how-to-figure-out-trackpoint-pinout)
   - [6.4. Datasheets](#64-datasheets)
+  - [6.5. Other Info](#65-other-info)
 
 ## 1. Features
 
@@ -1378,3 +1379,8 @@ Here are a few resources I found useful for figuring out the pinout of my TrackP
 - [IBM TrackPoint System Version 4.0 Engineering Specification](https://web.mit.edu/bbaren/Public/ykt3eext.pdf)
 - [Sprintek SK7100 PS/2 Pointing Stick Mouse Encoder](https://cdn.thomasnet.com/ccp/10110462/133782.pdf)
 - [Sprintek SK8702 Trackpoint Datasheet](https://cdn.thomasnet.com/ccp/10110462/133781.pdf)
+
+### 6.5. Other Info
+
+- [TrackPoint Cap Comparison](https://baxterhills.com/blog/trackpoints/)
+- [Aftermarked Cap Shop (Including better, rimmed shape)](https://www.etsy.com/shop/SaotoTech#about)
