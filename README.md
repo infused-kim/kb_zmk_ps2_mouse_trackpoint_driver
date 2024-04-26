@@ -8,12 +8,12 @@ But it's most commonly used with TrackPoints such as this one:
 
 ![ThinkCorney keyboard with TrackPoint](img/kb_think_corney.jpg)
 
-It is a [zmk module](#336-add-the-ps2-driver-module-to-your-configwestyml) version of my original PRs:
+It is a [zmk module](#zmk-module) version of my original PRs:
 
 1. [zmk PR #1751](https://github.com/zmkfirmware/zmk/pull/1751) - Add PS/2 Mouse / TrackPoint / Trackpad / Trackball support
 2. [zephyr PR #15](https://github.com/zmkfirmware/zephyr/pull/15) - Add PS/2 GPIO Bit-banging driver
 
-If you are interested in how this project came to be, [check out the development journey "blog post" at the bottom](#5-development-journey-blog--implementation-details).
+If you are interested in how this project came to be, [check out the development journey "blog post" at the bottom](#blog-post).
 
 ## Table Of Contents <!-- omit from toc -->
 
@@ -75,7 +75,7 @@ TrackPoints send data at a rate of almost 15,000 times per second and unfortunat
 
 However, I found a way to take advantage of the UART hardware chip to process the data. This ensures great performance even without proper PS/2 hardware support on the MCU.
 
-If you are interested in how this works, [you can read more about it in the development journey section](#5-development-journey-blog--implementation-details).
+If you are interested in how this works, [you can read more about it in the development journey section](#blog-post).
 
 ### 1.2. Automatic Layer Toggling on mouse movement
 
@@ -443,6 +443,8 @@ You won't need to adjust most of the settings in `your_keyboard.conf`, but one o
 
 It is necessary if you want to use [urob's popular zmk fork](https://github.com/urob/zmk).
 
+<a name="zmk-module"></a>
+
 #### 3.4.5. Add the PS/2 driver module to your `config/west.yml`
 
 This version of the driver is a zmk module.
@@ -501,10 +503,8 @@ This means you must use a fork of zmk that has this PR merged into it.
    - It has traditionally been the recommended fork for people who wanted to add mouse support to their keyboards because urob frequently updates it with the latest improvements that get added to the original zmk main version.
    - If you are not familiar with it, you should definitely check out [his fork](https://github.com/urob/zmk) and his [zmk-config](https://github.com/urob/zmk-config) to learn about all these extra features and especially his `timeless homerow mods`.
    - Please also enable `CONFIG_ZMK_INPUT_MOUSE_PS2_ENABLE_UROB_COMPAT=y` to account for API changes in urob's fork.
-   - **IMPORTANT:** At the time of publishing this, his fork used an older version of PR #2027, which is not compatible with this module. But I am sure urob will update it soon.
 4. [infused-kim - pr-testing/mouse_ps2_module_base_urob](https://github.com/infused-kim/zmk/tree/pr-testing/mouse_ps2_module_base_urob)
    - This fork is the same as #2 above but also includes urob's features on top of the latest mouse implementation.
-   - So it's good to use if you want urob's features before he updates his fork.
    - Please also enable `CONFIG_ZMK_INPUT_MOUSE_PS2_ENABLE_UROB_COMPAT=y` to account for API changes in urob's fork.
 
 ##### How to add the zmk fork to your `config/west.yml` <!-- omit from toc -->
@@ -673,12 +673,6 @@ compilation terminated.
 ```
 
 Then, it's a sign that you are building using a zmk fork that is using an outdated version of the [zmk mouse PR #2027](https://github.com/zmkfirmware/zmk/pull/2027).
-
-At the time of publishing this, urob's fork had an outdated version and this could be causing it.
-
-I have asked him to update his fork, but in the meantime, I have a copy of urob's fork with the updated mouse PR, which you can try to use.
-
-Check out the [example zmk-config's west.yml](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver-zmk_config/blob/main/config/west.yml) or [instructions above for more information](#34-switch-to-a-zmk-fork-with-mouse-support).
 
 #### 4.1.4. Other build errors
 
@@ -1053,6 +1047,8 @@ When you switch which side is central and peripheral, then the old Bluetooth set
 So, try to [wipe the controller flash with reset firmware](https://zmk.dev/docs/troubleshooting#split-keyboard-halves-unable-to-pair).
 
 You can [download the reset firmware from my example zmk-config releases page](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver-zmk_config/releases/).
+
+<a name="blog-post"></a>
 
 ## 5. Development Journey Blog & Implementation Details
 
