@@ -672,7 +672,7 @@ struct zmk_mouse_ps2_send_cmd_resp zmk_mouse_ps2_send_cmd(char *cmd, int cmd_len
     // Don't send the string termination NULL byte
     int cmd_bytes = cmd_len - 1;
     if (cmd_bytes < 1) {
-        err = 1;
+        resp.err = -10;
         snprintf(resp.err_msg, sizeof(resp.err_msg),
                  "Cannot send cmd with less than 1 byte length");
 
@@ -680,7 +680,7 @@ struct zmk_mouse_ps2_send_cmd_resp zmk_mouse_ps2_send_cmd(char *cmd, int cmd_len
     }
 
     if (resp_len > sizeof(resp.resp_buffer)) {
-        err = 2;
+        resp.err = -11;
         snprintf(resp.err_msg, sizeof(resp.err_msg),
                  "Response can't be longer than the resp_buffer (%d)", sizeof(resp.err_msg));
 
@@ -690,9 +690,8 @@ struct zmk_mouse_ps2_send_cmd_resp zmk_mouse_ps2_send_cmd(char *cmd, int cmd_len
     if (pause_reporting == true && data->activity_reporting_on == true) {
         LOG_DBG("Disabling mouse activity reporting...");
 
-        err = zmk_mouse_ps2_activity_reporting_disable();
-        if (err) {
-            resp.err = err;
+        resp.err = zmk_mouse_ps2_activity_reporting_disable();
+        if (resp.err) {
             snprintf(resp.err_msg, sizeof(resp.err_msg), "Could not disable data reporting (%d)",
                      err);
         }
@@ -702,9 +701,8 @@ struct zmk_mouse_ps2_send_cmd_resp zmk_mouse_ps2_send_cmd(char *cmd, int cmd_len
         LOG_DBG("Sending cmd...");
 
         for (int i = 0; i < cmd_bytes; i++) {
-            err = ps2_write(ps2_device, cmd[i]);
-            if (err) {
-                resp.err = err;
+            resp.err = ps2_write(ps2_device, cmd[i]);
+            if (resp.err) {
                 snprintf(resp.err_msg, sizeof(resp.err_msg), "Could not send cmd byte %d/%d (%d)",
                          i + 1, cmd_bytes, err);
                 break;
@@ -714,9 +712,8 @@ struct zmk_mouse_ps2_send_cmd_resp zmk_mouse_ps2_send_cmd(char *cmd, int cmd_len
 
     if (resp.err == 0 && arg != NULL) {
         LOG_DBG("Sending arg...");
-        err = ps2_write(ps2_device, *arg);
-        if (err) {
-            resp.err = err;
+        resp.err = ps2_write(ps2_device, *arg);
+        if (resp.err) {
             snprintf(resp.err_msg, sizeof(resp.err_msg), "Could not send arg (%d)", err);
         }
     }
@@ -724,9 +721,8 @@ struct zmk_mouse_ps2_send_cmd_resp zmk_mouse_ps2_send_cmd(char *cmd, int cmd_len
     if (resp.err == 0 && resp_len > 0) {
         LOG_DBG("Reading response...");
         for (int i = 0; i < resp_len; i++) {
-            err = ps2_read(ps2_device, &resp.resp_buffer[i]);
-            if (err) {
-                resp.err = err;
+            resp.err = ps2_read(ps2_device, &resp.resp_buffer[i]);
+            if (resp.err) {
                 snprintf(resp.err_msg, sizeof(resp.err_msg),
                          "Could not read response cmd byte %d/%d (%d)", i + 1, resp_len, err);
                 break;
