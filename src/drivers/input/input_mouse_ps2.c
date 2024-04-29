@@ -1434,7 +1434,7 @@ int zmk_mouse_ps2_settings_reset_setting(char *setting_name) {
 static void zmk_mouse_ps2_settings_save_work(struct k_work *work) {
     struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
 
-    LOG_DBG("");
+    LOG_INF("Saving PS/2 Mouse Settings.");
 
     zmk_mouse_ps2_settings_save_setting(MOUSE_PS2_ST_TP_SENSITIVITY, &data->tp_sensitivity,
                                         sizeof(data->tp_sensitivity));
