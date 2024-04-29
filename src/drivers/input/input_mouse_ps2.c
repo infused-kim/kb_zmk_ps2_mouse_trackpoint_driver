@@ -1045,6 +1045,7 @@ char *zmk_mouse_ps2_get_manufacturer_str(uint8_t manufacturer_id) {
 int zmk_mouse_ps2_tp_get_device_info(bool *is_tp, uint8_t *tp_manufacturer_id,
                                      uint8_t *tp_secondary_id, uint8_t *tp_rom_id, char *device_str,
                                      int device_str_size) {
+
     int err = zmk_mouse_ps2_tp_get_secondary_id(tp_manufacturer_id, tp_secondary_id);
     if (err) {
         // Only TPs implement this command. So, if it fails, it means the
@@ -1072,8 +1073,8 @@ int zmk_mouse_ps2_tp_get_device_info(bool *is_tp, uint8_t *tp_manufacturer_id,
     char *manufacturer_str = zmk_mouse_ps2_get_manufacturer_str(*tp_manufacturer_id);
 
     snprintf(device_str, device_str_size,
-             "Trackpoint by %s (0x%02X); Rom Version: %02X; Secondary ID: 0x%02X", manufacturer_str,
-             *tp_manufacturer_id, *tp_rom_id, *tp_secondary_id);
+             "Trackpoint by %s (0x%02X); Secondary ID: 0x%02X; Rom Version: %02X", manufacturer_str,
+             *tp_manufacturer_id, *tp_secondary_id, *tp_rom_id);
 
     return err;
 }
@@ -1647,7 +1648,7 @@ static void zmk_mouse_ps2_init_thread(int dev_ptr, int unused) {
         }
     }
 
-    char device_descr[64];
+    char device_descr[64] = "undetermined device";
     zmk_mouse_ps2_tp_get_device_info(&data->is_trackpoint, &data->manufacturer_id,
                                      &data->secondary_id, &data->rom_id, device_descr,
                                      sizeof(device_descr));
