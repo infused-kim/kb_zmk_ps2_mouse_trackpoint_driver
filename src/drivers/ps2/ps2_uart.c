@@ -50,7 +50,7 @@ PINCTRL_DT_DEFINE(DT_INST_BUS(0));
 // But we also don't want to hand it off at a low priority, since the PS/2
 // packets must be dealt with quickly. So we use a fairly high priority.
 #define PS2_UART_WORK_QUEUE_CB_PRIORITY 2
-#define PS2_UART_WORK_QUEUE_CB_STACK_SIZE 1024
+#define PS2_UART_WORK_QUEUE_CB_STACK_SIZE 2048
 
 /*
  * PS/2 Defines

@@ -40,7 +40,7 @@ LOG_MODULE_REGISTER(ps2_gpio);
 // But we also don't want to hand it off at a low priority, since the PS/2
 // packets must be dealt with quickly. So we use a fairly high priority.
 #define PS2_GPIO_WORK_QUEUE_CB_PRIORITY 2
-#define PS2_GPIO_WORK_QUEUE_CB_STACK_SIZE 1024
+#define PS2_GPIO_WORK_QUEUE_CB_STACK_SIZE 2048
 
 /*
  * PS/2 Defines
