@@ -7,6 +7,7 @@
 #define DT_DRV_COMPAT zmk_input_mouse_ps2
 
 #include <stdlib.h>
+#include <math.h>
 
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
@@ -651,20 +652,20 @@ struct vector2d_int32_t zmk_mouse_ps2_activity_move_get_accelerated_mov(int16_t 
         with_buffer_y += data->move_buffer.y;
     }
 
-    // Make sure new movements send at least the value 1.
+    // Make low sensitivity more responsive.
     //
-    // When the sensitivity is set below 1 all movement is effectively
+    // When the sensitivity is set below 1, all movement is effectively
     // decelerated. Movement can start feeling sluggish, because it might take
-    // a few movement packets until the decelerated values add up to 1 and are
-    // sent.
+    // a few movement packets until the decelerated values add up to 1 and the
+    // cursor finally makes its initial move.
     //
     // So, here we make sure that whenever a new movement starts we send the
-    // value 1 whenver the prev packet was more than 200ms ago or the direction
-    // changes.
-    if (is_new_mov_x == true && orig_x != 0 && abs(with_buffer_x) < 1) {
+    // value 1 immediately and only decelerate future movements in the same
+    // direction.
+    if (is_new_mov_x == true && orig_x != 0 && fabsf(with_buffer_x) < 1) {
         with_buffer_x = 1 * direction_factor_x;
     }
-    if (is_new_mov_y == true && orig_y != 0 && abs(with_buffer_y) < 1) {
+    if (is_new_mov_y == true && orig_y != 0 && fabsf(with_buffer_y) < 1) {
         with_buffer_y = 1 * direction_factor_y;
     }
 
@@ -682,15 +683,15 @@ struct vector2d_int32_t zmk_mouse_ps2_activity_move_get_accelerated_mov(int16_t 
             "Interval: %4lld ms; "
             "Received X: %+3d, Y: %+3d; "
             // "Received Speed X: %+4.2f, Y: %+4.2f; "
-            "Sensitive X: %+4.2f, Y: %+4.2f; "
             "Sensitive Speed X: %+4.2f, Y: %+4.2f; "
+            "Sensitive X: %+4.2f, Y: %+4.2f; "
             "Accelerated X: %+7.2f (%4.2fx), Y: %+7.2f (%4.2fx); "
             "With Buffer X: %+4.2f, Y: %+4.2f; "
             "Final X: %+3d, Y: %+3d; "
             "New Buffer X: %+4.2f, Y: %+4.2f; ",
             packet_interval, orig_x, orig_y,
             // orig_speed_x, orig_speed_y,
-            sensitive_x, sensitive_y, sensitive_speed_x, sensitive_speed_y, acc_x, acc_factor_x,
+            sensitive_speed_x, sensitive_speed_y, sensitive_x, sensitive_y, acc_x, acc_factor_x,
             acc_y, acc_factor_y, with_buffer_x, with_buffer_y, to_send_x, to_send_y,
             data->move_buffer.x, data->move_buffer.y);
 
@@ -765,7 +766,7 @@ float zmk_mouse_ps2_activity_move_calc_acceleration_tp(float speed, float thresh
 
     float speed_acc = speed;
 
-    if (abs(speed) <= threshold) {
+    if (fabsf(speed) <= threshold) {
 
         // Do no acceleration below the threshold
     } else {
@@ -775,8 +776,8 @@ float zmk_mouse_ps2_activity_move_calc_acceleration_tp(float speed, float thresh
     }
 
     // Cap the acceleration at max speed
-    if (abs(speed_acc) > max_speed) {
-        float pos_neg_factor = (speed_acc / abs(speed_acc));
+    if (fabsf(speed_acc) > max_speed) {
+        float pos_neg_factor = (speed_acc / fabsf(speed_acc));
         speed_acc = max_speed * pos_neg_factor;
     }
 
