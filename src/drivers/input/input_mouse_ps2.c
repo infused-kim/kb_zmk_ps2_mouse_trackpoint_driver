@@ -539,6 +539,7 @@ struct vector2d_int32_t zmk_mouse_ps2_activity_move_get_accelerated_mov(int16_t 
                                                                         int64_t packet_interval,
                                                                         int sampling_rate);
 float zmk_mouse_ps2_activity_move_calc_speed(float mov, int64_t packet_interval, int sampling_rate);
+int zmk_mouse_ps2_activity_move_get_direction_factor(int mov_val);
 bool zmk_mouse_ps2_activity_move_direction_changed(float val, float prev_val);
 bool zmk_mouse_ps2_activity_move_is_new(float val, float prev_val, int64_t interval);
 float zmk_mouse_ps2_activity_move_calc_acceleration_tp(float speed, float threshold,
@@ -547,12 +548,6 @@ static bool zmk_mouse_ps2_is_non_zero_1d_movement(int mov) { return mov != 0; }
 
 void zmk_mouse_ps2_activity_move_mouse(struct zmk_mouse_ps2_packet packet) {
     struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
-
-    size_t unused_stack = 0;
-    k_thread_stack_space_get(k_current_get(), &unused_stack);
-    LOG_INF("zmk_mouse_ps2_activity_move_mouse unused stack: %d", unused_stack);
-
-#if 1
     const struct zmk_mouse_ps2_config *config = &zmk_mouse_ps2_config;
 
     int64_t packet_interval = packet.received_at - data->prev_packet.received_at;
@@ -560,9 +555,6 @@ void zmk_mouse_ps2_activity_move_mouse(struct zmk_mouse_ps2_packet packet) {
     struct vector2d_int32_t acc_mov = zmk_mouse_ps2_activity_move_get_accelerated_mov(
         packet.mov_x, packet.mov_y, data->prev_packet.mov_x, data->prev_packet.mov_y,
         packet_interval, config->sampling_rate);
-#else
-    struct vector2d_int32_t acc_mov = {packet.mov_x, packet.mov_y};
-#endif
 
     bool have_x = zmk_mouse_ps2_is_non_zero_1d_movement(acc_mov.x);
     bool have_y = zmk_mouse_ps2_is_non_zero_1d_movement(acc_mov.y);
@@ -593,8 +585,9 @@ struct vector2d_int32_t zmk_mouse_ps2_activity_move_get_accelerated_mov(int16_t 
 
     // -1 for negative direction and +1 for positive.
     // Can be used to adjust a value to the correct direction
-    int direction_factor_x = abs(orig_x) / orig_x;
-    int direction_factor_y = abs(orig_y) / orig_y;
+
+    int direction_factor_x = zmk_mouse_ps2_activity_move_get_direction_factor(orig_x);
+    int direction_factor_y = zmk_mouse_ps2_activity_move_get_direction_factor(orig_y);
 
     // Calculate the speed of movement per millisecond.
     //
@@ -706,11 +699,25 @@ struct vector2d_int32_t zmk_mouse_ps2_activity_move_get_accelerated_mov(int16_t 
     return ret;
 }
 
+int zmk_mouse_ps2_activity_move_get_direction_factor(int mov_val) {
+    if (mov_val == 0) {
+        return 0;
+    } else {
+        return abs(mov_val) / mov_val;
+    }
+}
+
 bool zmk_mouse_ps2_activity_move_direction_changed(float val, float prev_val) {
 
+    if (val == 0 && prev_val == 0) {
+        return false;
+    }
+
     // If one value is negative and the other is positive then the result will
-    // be negative, therefore direction did change
-    if (val * prev_val > 0) {
+    // be negative, therefore direction did change.
+    // If the result is 0 and the prev statement was not true, then it means
+    // one of the directions was 0 and it changed
+    if (val * prev_val <= 0) {
         return true;
     }
 
@@ -739,8 +746,12 @@ bool zmk_mouse_ps2_activity_move_is_new(float val, float prev_val, int64_t inter
 float zmk_mouse_ps2_activity_move_calc_speed(float mov, int64_t packet_interval,
                                              int sampling_rate) {
 
+    if (sampling_rate <= 0) {
+        sampling_rate = 100;
+    }
+
     int64_t interval = 1000 / sampling_rate;
-    if (packet_interval <= MOUSE_PS2_CONTINUOUS_MOVE_MAX_INTERVAL) {
+    if (packet_interval != 0 && packet_interval <= MOUSE_PS2_CONTINUOUS_MOVE_MAX_INTERVAL) {
         interval = packet_interval;
     }
 
