@@ -548,6 +548,8 @@ static bool zmk_mouse_ps2_is_non_zero_1d_movement(int mov) { return mov != 0; }
 
 void zmk_mouse_ps2_activity_move_mouse(struct zmk_mouse_ps2_packet packet) {
     struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
+
+#if 1
     const struct zmk_mouse_ps2_config *config = &zmk_mouse_ps2_config;
 
     int64_t packet_interval = packet.received_at - data->prev_packet.received_at;
@@ -555,6 +557,11 @@ void zmk_mouse_ps2_activity_move_mouse(struct zmk_mouse_ps2_packet packet) {
     struct vector2d_int32_t acc_mov = zmk_mouse_ps2_activity_move_get_accelerated_mov(
         packet.mov_x, packet.mov_y, data->prev_packet.mov_x, data->prev_packet.mov_y,
         packet_interval, config->sampling_rate);
+#else
+
+    struct vector2d_int32_t acc_mov = {.x = packet.mov_x, .y = packet.mov_y};
+
+#endif
 
     bool have_x = zmk_mouse_ps2_is_non_zero_1d_movement(acc_mov.x);
     bool have_y = zmk_mouse_ps2_is_non_zero_1d_movement(acc_mov.y);
