@@ -65,8 +65,3 @@ properties:
   tp-xy-swap:
     type: boolean
     description: Swaps the x and y axis on the trackpoint. Only works with some trackpoint devices, but may properly considered by the trackpoint's acceleration features (which may or may not have an impact). Alternatively consider achieving the same effect using the `zmk,input-configs` feature.
-
-  layer-toggle:
-    type: int
-    required: false
-    description: The layer that should be toggled when the mouse is moved.

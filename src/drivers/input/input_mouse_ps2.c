@@ -340,7 +340,6 @@ struct zmk_mouse_ps2_packet
 zmk_mouse_ps2_activity_parse_packet_buffer(zmk_mouse_ps2_packet_mode packet_mode,
                                            uint8_t packet_state, uint8_t packet_x, uint8_t packet_y,
                                            uint8_t packet_extra);
-void zmk_mouse_ps2_activity_toggle_layer();
 
 // Called by the PS/2 driver whenver the mouse sends a byte and
 // reporting is enabled through `zmk_mouse_ps2_activity_reporting_enable`.
