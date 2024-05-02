@@ -516,12 +516,45 @@ void zmk_mouse_ps2_activity_move_mouse(int16_t mov_x, int16_t mov_y) {
     bool have_x = zmk_mouse_ps2_is_non_zero_1d_movement(mov_x);
     bool have_y = zmk_mouse_ps2_is_non_zero_1d_movement(mov_y);
 
+
+#if CONFIG_ZMK_INPUT_MOUSE_PS2_REPORT_INTERVAL_MIN > 0
+
+    static int64_t adx = 0;
+    static int64_t ady = 0;
+    static int64_t last_smp_time = 0;
+    static int64_t last_rpt_time = 0;
+    int64_t now = k_uptime_get();
+    if (now - last_smp_time >= CONFIG_ZMK_INPUT_MOUSE_PS2_REPORT_INTERVAL_MIN) {
+        adx = ady = 0;
+    }
+    last_smp_time = now;
+    adx += mov_x;
+    ady += mov_y;
+    if (now - last_rpt_time < CONFIG_ZMK_INPUT_MOUSE_PS2_REPORT_INTERVAL_MIN) {
+        return;
+    }
+    if (have_x || have_y) {
+        last_rpt_time = now;
+        if (have_x) {
+            ret = input_report_rel(data->dev, INPUT_REL_X, adx, !have_y, K_NO_WAIT);
+        }
+        if (have_y) {
+            ret = input_report_rel(data->dev, INPUT_REL_Y, ady, true, K_NO_WAIT);
+        }
+        adx = ady = 0;
+    }
+
+#else /* CONFIG_ZMK_INPUT_MOUSE_PS2_REPORT_INTERVAL_MIN > 0 */
+
     if (have_x) {
         ret = input_report_rel(data->dev, INPUT_REL_X, mov_x, !have_y, K_NO_WAIT);
     }
     if (have_y) {
         ret = input_report_rel(data->dev, INPUT_REL_Y, mov_y, true, K_NO_WAIT);
     }
+
+#endif /* CONFIG_ZMK_INPUT_MOUSE_PS2_REPORT_INTERVAL_MIN > 0 */
+
 }
 
 void zmk_mouse_ps2_activity_click_buttons(bool button_l, bool button_m, bool button_r) {
