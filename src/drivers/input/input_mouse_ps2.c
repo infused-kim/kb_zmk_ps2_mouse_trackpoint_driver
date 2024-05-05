@@ -538,7 +538,8 @@ struct vector2d_int32_t zmk_mouse_ps2_activity_move_get_accelerated_mov(int16_t 
                                                                         int16_t prev_y,
                                                                         int64_t packet_interval,
                                                                         int sampling_rate);
-float zmk_mouse_ps2_activity_move_calc_speed(float mov, int64_t packet_interval, int sampling_rate);
+float zmk_mouse_ps2_activity_move_calc_speed_2d(float mov_x, float mov_y, int64_t packet_interval,
+                                                int sampling_rate);
 int zmk_mouse_ps2_activity_move_get_direction_factor(int mov_val);
 bool zmk_mouse_ps2_activity_move_direction_changed(float val, float prev_val);
 bool zmk_mouse_ps2_activity_move_is_new(float val, float prev_val, int64_t interval);
@@ -591,7 +592,7 @@ struct vector2d_int32_t zmk_mouse_ps2_activity_move_get_accelerated_mov(int16_t 
     float threshold = 7;
     float acceleration = 0.2;
     float max_sensitivity = 1.2;
-    int max_speed = 120;
+    int max_speed = 50;
 
     int16_t orig_x = x;
     int16_t orig_y = y;
@@ -602,7 +603,7 @@ struct vector2d_int32_t zmk_mouse_ps2_activity_move_get_accelerated_mov(int16_t 
     int direction_factor_x = zmk_mouse_ps2_activity_move_get_direction_factor(orig_x);
     int direction_factor_y = zmk_mouse_ps2_activity_move_get_direction_factor(orig_y);
 
-    // Calculate the speed of movement per millisecond.
+    // Calculate the actual speed of movement.
     //
     // We need to do this, because TrackPoints don't always send
     // data at the sampling rate.
@@ -614,26 +615,17 @@ struct vector2d_int32_t zmk_mouse_ps2_activity_move_get_accelerated_mov(int16_t 
     //
     // Here we calculate the actual speed per millisecond based on
     // the time that has elapsed since the previous mouse packet.
-    //
-    // This value is only used for logging purposes.
-    //
-    // We calculate another speed after we adjust sensitivity, which is then
-    // used for the acceleration curve.
-    float orig_speed_x =
-        zmk_mouse_ps2_activity_move_calc_speed((float)orig_x, packet_interval, sampling_rate);
-    float orig_speed_y =
-        zmk_mouse_ps2_activity_move_calc_speed((float)orig_y, packet_interval, sampling_rate);
+    float speed = zmk_mouse_ps2_activity_move_calc_speed_2d((float)orig_x, (float)orig_y,
+                                                            packet_interval, sampling_rate);
 
     // We use the speed to calculate the acceleration factor, which we
     // then apply to the actual movement data
-    float acc_factor_x = zmk_mouse_ps2_activity_move_calc_acceleration_sigmoid(
-        orig_speed_x, sensitivity, max_sensitivity, acceleration, max_speed, threshold, true);
-    float acc_factor_y = zmk_mouse_ps2_activity_move_calc_acceleration_sigmoid(
-        orig_speed_y, sensitivity, max_sensitivity, acceleration, max_speed, threshold, true);
+    float acc_factor = zmk_mouse_ps2_activity_move_calc_acceleration_sigmoid(
+        speed, sensitivity, max_sensitivity, acceleration, max_speed, threshold, true);
 
     // Calculate the actual movement using the acceleration factor
-    float acc_x = (float)orig_x * acc_factor_x;
-    float acc_y = (float)orig_y * acc_factor_y;
+    float acc_x = (float)orig_x * acc_factor;
+    float acc_y = (float)orig_y * acc_factor;
 
     // If the previous packet was more than 200ms ago or the direction
     // of the movement changed (e.g. pos to neg), then we consider this
@@ -683,14 +675,13 @@ struct vector2d_int32_t zmk_mouse_ps2_activity_move_get_accelerated_mov(int16_t 
     LOG_INF("PS2 Mouse Move "
             "Interval: %4lld ms; "
             "Received X: %+3d, Y: %+3d; "
-            "Received Speed X: %+4.2f, Y: %+4.2f; "
-            "Accelerated X: %+7.2f (%4.2fx), Y: %+7.2f (%4.2fx); "
+            "Speed: %+4.2f; "
+            "Acceleration Factor: %4.2fx, X: %+7.2f, Y: %+7.2f; "
             "With Buffer X: %+4.2f, Y: %+4.2f; "
             "Final X: %+3d, Y: %+3d; "
             "New Buffer X: %+4.2f, Y: %+4.2f; ",
-            packet_interval, orig_x, orig_y, orig_speed_x, orig_speed_y, acc_x, acc_factor_x, acc_y,
-            acc_factor_y, with_buffer_x, with_buffer_y, to_send_x, to_send_y, data->move_buffer.x,
-            data->move_buffer.y);
+            packet_interval, orig_x, orig_y, speed, acc_factor, acc_x, acc_y, with_buffer_x,
+            with_buffer_y, to_send_x, to_send_y, data->move_buffer.x, data->move_buffer.y);
 
     struct vector2d_int32_t ret = {.x = to_send_x, .y = to_send_y};
 
@@ -733,29 +724,43 @@ bool zmk_mouse_ps2_activity_move_is_new(float val, float prev_val, int64_t inter
     return false;
 }
 
-// Returns the mouse movement speed in movement-unit per millisecond as a
-// float.
+// Returns the mouse movement speed in movement-unit per reporting interval as
+// a float.
 //
 // If the previous movement was within the continuous move
 // interval, then we use that for the speed calculation.
 //
 // Otherwise we use the interval at which the device should be sending
 // movement updates (calculated using the sampling rate).
-float zmk_mouse_ps2_activity_move_calc_speed(float mov, int64_t packet_interval,
-                                             int sampling_rate) {
+float zmk_mouse_ps2_activity_move_calc_speed_1d(float mov, int64_t packet_interval,
+                                                int sampling_rate) {
 
     if (sampling_rate <= 0) {
         sampling_rate = 100;
     }
+    int64_t default_interval = 1000 / sampling_rate;
 
-    int64_t interval = 1000 / sampling_rate;
+    int64_t interval = default_interval;
     if (packet_interval != 0 && packet_interval <= MOUSE_PS2_CONTINUOUS_MOVE_MAX_INTERVAL) {
         interval = packet_interval;
     }
 
-    float speed = mov / interval * 10;
+    float speed = mov / interval * default_interval;
 
     return speed;
+}
+
+float zmk_mouse_ps2_activity_move_calc_speed_2d(float mov_x, float mov_y, int64_t packet_interval,
+                                                int sampling_rate) {
+
+    float speed_x =
+        zmk_mouse_ps2_activity_move_calc_speed_1d(mov_x, packet_interval, sampling_rate);
+    float speed_y =
+        zmk_mouse_ps2_activity_move_calc_speed_1d(mov_y, packet_interval, sampling_rate);
+
+    float overall_speed = sqrtf(speed_x * speed_x + speed_y * speed_y);
+
+    return overall_speed;
 }
 
 float zmk_mouse_ps2_activity_move_calc_acceleration_tp(float speed, float base_sensitivity,
