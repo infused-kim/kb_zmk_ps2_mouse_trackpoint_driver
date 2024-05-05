@@ -613,32 +613,21 @@ struct vector2d_int32_t zmk_mouse_ps2_activity_move_get_accelerated_mov(int16_t 
     //
     // We calculate another speed after we adjust sensitivity, which is then
     // used for the acceleration curve.
-    float orig_speed_x __attribute__((unused)) =
+    float orig_speed_x =
         zmk_mouse_ps2_activity_move_calc_speed((float)orig_x, packet_interval, sampling_rate);
-    float orig_speed_y __attribute__((unused)) =
+    float orig_speed_y =
         zmk_mouse_ps2_activity_move_calc_speed((float)orig_y, packet_interval, sampling_rate);
-
-    // Adjust the entire acceleration with the sensitivity.
-    // This allows us to accelerate or decelerate the entire curve.
-    float sensitive_x = sensitivity * (float)orig_x;
-    float sensitive_y = sensitivity * (float)orig_y;
-
-    // Calculate speed based on the new sensitive movements
-    float sensitive_speed_x =
-        zmk_mouse_ps2_activity_move_calc_speed(sensitive_x, packet_interval, sampling_rate);
-    float sensitive_speed_y =
-        zmk_mouse_ps2_activity_move_calc_speed(sensitive_y, packet_interval, sampling_rate);
 
     // We use the speed to calculate the acceleration factor, which we
     // then apply to the actual movement data
     float acc_factor_x = zmk_mouse_ps2_activity_move_calc_acceleration_tp(
-        sensitive_speed_x, threshold, acceleration, max_speed);
+        orig_speed_x, sensitivity, threshold, acceleration, max_speed);
     float acc_factor_y = zmk_mouse_ps2_activity_move_calc_acceleration_tp(
-        sensitive_speed_y, threshold, acceleration, max_speed);
+        orig_speed_y, sensitivity, threshold, acceleration, max_speed);
 
     // Calculate the actual movement using the acceleration factor
-    float acc_x = sensitive_x * acc_factor_x;
-    float acc_y = sensitive_y * acc_factor_y;
+    float acc_x = (float)orig_x * acc_factor_x;
+    float acc_y = (float)orig_y * acc_factor_y;
 
     // If the previous packet was more than 200ms ago or the direction
     // of the movement changed (e.g. pos to neg), then we consider this
@@ -688,18 +677,14 @@ struct vector2d_int32_t zmk_mouse_ps2_activity_move_get_accelerated_mov(int16_t 
     LOG_INF("PS2 Mouse Move "
             "Interval: %4lld ms; "
             "Received X: %+3d, Y: %+3d; "
-            // "Received Speed X: %+4.2f, Y: %+4.2f; "
-            "Sensitive Speed X: %+4.2f, Y: %+4.2f; "
-            "Sensitive X: %+4.2f, Y: %+4.2f; "
+            "Received Speed X: %+4.2f, Y: %+4.2f; "
             "Accelerated X: %+7.2f (%4.2fx), Y: %+7.2f (%4.2fx); "
             "With Buffer X: %+4.2f, Y: %+4.2f; "
             "Final X: %+3d, Y: %+3d; "
             "New Buffer X: %+4.2f, Y: %+4.2f; ",
-            packet_interval, orig_x, orig_y,
-            // orig_speed_x, orig_speed_y,
-            sensitive_speed_x, sensitive_speed_y, sensitive_x, sensitive_y, acc_x, acc_factor_x,
-            acc_y, acc_factor_y, with_buffer_x, with_buffer_y, to_send_x, to_send_y,
-            data->move_buffer.x, data->move_buffer.y);
+            packet_interval, orig_x, orig_y, orig_speed_x, orig_speed_y, acc_x, acc_factor_x, acc_y,
+            acc_factor_y, with_buffer_x, with_buffer_y, to_send_x, to_send_y, data->move_buffer.x,
+            data->move_buffer.y);
 
     struct vector2d_int32_t ret = {.x = to_send_x, .y = to_send_y};
 
@@ -767,31 +752,34 @@ float zmk_mouse_ps2_activity_move_calc_speed(float mov, int64_t packet_interval,
     return speed;
 }
 
-float zmk_mouse_ps2_activity_move_calc_acceleration_tp(float speed, float threshold,
-                                                       float acceleration, float max_speed) {
+float zmk_mouse_ps2_activity_move_calc_acceleration_tp(float speed, float base_sensitivity,
+                                                       float threshold, float acceleration,
+                                                       float max_sensitivity) {
 
-    float speed_acc = speed;
+    float new_speed = speed * base_sensitivity;
 
     if (fabsf(speed) <= threshold) {
 
         // Do no acceleration below the threshold
+        new_speed = new_speed * 1;
     } else {
 
         // Simple linear accelertion
-        speed_acc = speed * acceleration;
+        new_speed = new_speed * acceleration;
     }
 
-    // Cap the acceleration at max speed
-    if (fabsf(speed_acc) > max_speed) {
-        float pos_neg_factor = (speed_acc / fabsf(speed_acc));
-        speed_acc = max_speed * pos_neg_factor;
+    // Convert the new speed into the new sensitivity (acceleration factor)
+    float new_sensitivity = 1;
+    if (speed != 0) {
+        new_sensitivity = fabsf(new_speed / speed);
     }
 
-    // Convert the new speed into an acceleration factor and apply it to
-    // the actual movement data.
-    float acc_factor = speed_acc / speed;
+    // Cap the acceleration at max sensitivity
+    if (new_sensitivity > max_sensitivity) {
+        new_sensitivity = max_sensitivity;
+    }
 
-    return acc_factor;
+    return new_sensitivity;
 }
 
 /*
