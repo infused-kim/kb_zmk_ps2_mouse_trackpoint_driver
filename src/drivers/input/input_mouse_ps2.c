@@ -542,8 +542,13 @@ float zmk_mouse_ps2_activity_move_calc_speed(float mov, int64_t packet_interval,
 int zmk_mouse_ps2_activity_move_get_direction_factor(int mov_val);
 bool zmk_mouse_ps2_activity_move_direction_changed(float val, float prev_val);
 bool zmk_mouse_ps2_activity_move_is_new(float val, float prev_val, int64_t interval);
-float zmk_mouse_ps2_activity_move_calc_acceleration_tp(float speed, float threshold,
-                                                       float acceleration, float max_speed);
+float zmk_mouse_ps2_activity_move_calc_acceleration_tp(float speed, float base_sensitivity,
+                                                       float threshold, float acceleration,
+                                                       float max_sensitivity);
+float zmk_mouse_ps2_activity_move_calc_acceleration_sigmoid(float x, float base_sensitivity,
+                                                            float max_sensitivity,
+                                                            float accel_slope, float max_speed,
+                                                            float offset, int should_round);
 static bool zmk_mouse_ps2_is_non_zero_1d_movement(int mov) { return mov != 0; }
 
 void zmk_mouse_ps2_activity_move_mouse(struct zmk_mouse_ps2_packet packet) {
@@ -582,10 +587,11 @@ struct vector2d_int32_t zmk_mouse_ps2_activity_move_get_accelerated_mov(int16_t 
     struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
 
     // Acceleration curve settings
-    float sensitivity = 0.8;
-    float threshold = 0.6;
-    float acceleration = 1.5;
-    float max_speed = 4;
+    float sensitivity = 0.6;
+    float threshold = 7;
+    float acceleration = 0.2;
+    float max_sensitivity = 1.2;
+    int max_speed = 120;
 
     int16_t orig_x = x;
     int16_t orig_y = y;
@@ -620,10 +626,10 @@ struct vector2d_int32_t zmk_mouse_ps2_activity_move_get_accelerated_mov(int16_t 
 
     // We use the speed to calculate the acceleration factor, which we
     // then apply to the actual movement data
-    float acc_factor_x = zmk_mouse_ps2_activity_move_calc_acceleration_tp(
-        orig_speed_x, sensitivity, threshold, acceleration, max_speed);
-    float acc_factor_y = zmk_mouse_ps2_activity_move_calc_acceleration_tp(
-        orig_speed_y, sensitivity, threshold, acceleration, max_speed);
+    float acc_factor_x = zmk_mouse_ps2_activity_move_calc_acceleration_sigmoid(
+        orig_speed_x, sensitivity, max_sensitivity, acceleration, max_speed, threshold, true);
+    float acc_factor_y = zmk_mouse_ps2_activity_move_calc_acceleration_sigmoid(
+        orig_speed_y, sensitivity, max_sensitivity, acceleration, max_speed, threshold, true);
 
     // Calculate the actual movement using the acceleration factor
     float acc_x = (float)orig_x * acc_factor_x;
@@ -747,7 +753,7 @@ float zmk_mouse_ps2_activity_move_calc_speed(float mov, int64_t packet_interval,
         interval = packet_interval;
     }
 
-    float speed = mov / interval;
+    float speed = mov / interval * 10;
 
     return speed;
 }
@@ -780,6 +786,62 @@ float zmk_mouse_ps2_activity_move_calc_acceleration_tp(float speed, float base_s
     }
 
     return new_sensitivity;
+}
+
+// Standard sigmoid curve function
+float zmk_mouse_ps2_sigmoid_function(float x, float limit, float slope) {
+    return limit / (1 + expf(-slope * x));
+}
+
+// Adjusts a standard sigmoid function so that its rise starts at x=0
+// instead of the negative half of the graph.
+float zmk_mouse_ps2_sigmoid_function_from_origin(float x, float limit, float slope, float epsilon) {
+
+    // Make sure the graph starts with y=0
+    if (x <= 0) {
+        return 0;
+    }
+
+    // Sigmoid approaches 0, but never really reaches it.
+    // Here we calculate the x value where the sigmoid is epsilon, such as
+    // 0.01.
+    float start_at = -logf(limit / epsilon) / slope;
+    float offset_x = x + start_at;
+
+    return zmk_mouse_ps2_sigmoid_function(offset_x, limit, slope);
+}
+
+float zmk_mouse_ps2_activity_move_calc_acceleration_sigmoid(float mov, float base_sensitivity,
+                                                            float max_sensitivity,
+                                                            float accel_slope, float max_speed,
+                                                            float offset, int should_round) {
+    float mov_abs = fabsf(mov);
+
+    mov_abs -= offset;
+    float sigmoid_limit = max_sensitivity - base_sensitivity;
+
+    float sensitivity =
+        zmk_mouse_ps2_sigmoid_function_from_origin(mov_abs, sigmoid_limit, accel_slope, 0.01);
+
+    sensitivity += base_sensitivity;
+
+    if (max_speed > 0) {
+        float speed = mov_abs * sensitivity;
+        if (speed > max_speed) {
+            if (mov_abs == 0) {
+                sensitivity = base_sensitivity;
+            } else {
+                sensitivity = max_speed / mov_abs;
+            }
+        }
+    }
+
+    if (should_round) {
+        // Rounded to two decimal places
+        sensitivity = roundf(sensitivity * 100) / 100;
+    }
+
+    return sensitivity;
 }
 
 /*
