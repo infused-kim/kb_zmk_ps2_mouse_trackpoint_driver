@@ -1,0 +1,54 @@
+description: |
+  API that adjusts an input movement using a customizable acceleration curve.
+
+compatible: "zmk,input-accelerator"
+
+properties:
+  acceleration-curve:
+    type: string
+    required: false
+    default: none
+    description: Which acceleration curve formula should be used. Currently, available options are "none" and "sigmoid". None will only apply the base acceleration factor. Other options will increase the acceleration from the base using a mathematical curve function.
+    enum:
+      - none
+      - sigmoid
+
+  acceleration-factor-base:
+    type: int
+    required: false
+    default: 100
+    description: The start of the curve's acceleration factor as a percentage. A value above 100 means the movement will be acelerated. Below 100 means it will be decelerated and 100 means the movement will not be changed. For example, the value 50 means that the acceleration will start at 50% and then rise to the maximum based on the other options...
+
+  acceleration-factor-max:
+    type: int
+    required: false
+    default: 150
+    description: The maximum acceleration factor that will be used by the acceleration curve. The curve will rise from the base rate to this maximum rate. For example, if the base (or starting) rate is decelerated to 50% and the max is accelerated to 150%, then you have a total acceleration of 3x.
+
+  acceleration-factor-rate:
+    type: int
+    required: false
+    default: -1
+    description: The rate at which the curve will rise from the base to the max acceleration factor. For the sigmoid curve a default of 0.2 will be used.
+
+  acceleration-start-offset:
+    type: int
+    required: false
+    default: 0
+    description: The minimum input movement speed at which the acceleration should begin. Allows you to define a precise movement threshold during which no acceleration is applied.
+
+  max-speed:
+    type: int
+    required: false
+    default: -1
+    description: The maximum movement speed that will be allowed. This is useful to prevent the mouse cursor from accelerating to a speed that you can't follow on the screen anymore.
+
+  enable-interval-based-speed:
+    type: boolean
+    description: Adjust the movement speed using the time interval between movements. Necessary for input devices that slow down their sending rate to report small movements, such as PS/2 mice and Trackpoints. Please set the sampling or polling rate with the `input-default-sending-rate` parameter.
+
+  input-default-sending-rate:
+    type: int
+    required: false
+    default: 100
+    description: The rate per second of how often the input device is expected to send new movement data. It is required to correctly calculate the movement speed if `enable-interval-based-speed` is enabled.

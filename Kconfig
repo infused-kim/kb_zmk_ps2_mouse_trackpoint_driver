@@ -8,7 +8,22 @@ config ZMK_INPUT_LISTENER_PS2
         bool
         default $(dt_compat_enabled,$(DT_COMPAT_ZMK_INPUT_LISTENER_PS2))
 
+DT_COMPAT_ZMK_INPUT_ACCELERATOR := zmk,input-accelerator
+config ZMK_INPUT_ACCELERATOR
+        bool
+        default $(dt_compat_enabled,$(DT_COMPAT_ZMK_INPUT_ACCELERATOR))
+
 DT_COMPAT_ZMK_BEHAVIOR_MOUSE_SETTING := zmk,behavior-mouse-setting
 config ZMK_BEHAVIOR_MOUSE_SETTING
         bool
         default ZMK_INPUT_MOUSE_PS2 && $(dt_compat_enabled,$(DT_COMPAT_ZMK_BEHAVIOR_MOUSE_SETTING))
+
+if ZMK_INPUT_ACCELERATOR
+    config INPUT_THREAD_STACK_SIZE
+        default 1024
+
+    config ZMK_INPUT_ACCELERATOR_LOG_ENABLED
+        bool "Enable logging of accelerated movements."
+        default n
+
+endif # ZMK_INPUT_ACCELERATOR

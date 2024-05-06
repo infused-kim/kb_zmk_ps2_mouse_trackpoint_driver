@@ -19,6 +19,9 @@ properties:
   scale-divisor:
     type: int
     default: 1
+  move-accelerator:
+    type: phandle
+    required: false
   layer-toggle:
     type: int
     default: -1
