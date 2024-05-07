@@ -22,6 +22,9 @@ properties:
   move-accelerator:
     type: phandle
     required: false
+  scroll-accelerator:
+    type: phandle
+    required: false
   layer-toggle:
     type: int
     default: -1
@@ -37,3 +40,6 @@ properties:
     default: 250
     required: false
     description: How many miliseconds of mouse inactivity are required before the layer is toggled off again.
+  scroll-layers:
+    type: array
+    required: false

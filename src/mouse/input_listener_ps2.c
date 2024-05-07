@@ -16,10 +16,11 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #include <zephyr/dt-bindings/input/input-event-codes.h>
 
 #include <zmk/endpoints.h>
+#include <zmk/events/layer_state_changed.h>
+#include <zmk/input_accelerator.h>
 #include <zmk/keymap.h>
 #include <zmk/mouse/types.h>
 #include <zmk/mouse/hid.h>
-#include <zmk/input_accelerator.h>
 
 #define ONE_IF_DEV_OK(n)                                                                           \
     COND_CODE_1(DT_NODE_HAS_STATUS(DT_INST_PHANDLE(n, device), okay), (1 +), (0 +))
@@ -57,10 +58,13 @@ struct input_listener_ps2_data {
     int64_t layer_toggle_last_mouse_package_time;
     struct k_work_delayable layer_toggle_activation_delay;
     struct k_work_delayable layer_toggle_deactivation_delay;
+
+    bool scroll_layer_active;
 };
 
 struct input_listener_ps2_config {
     const struct device *move_accelerator_dev;
+    const struct device *scroll_accelerator_dev;
     bool xy_swap;
     bool x_invert;
     bool y_invert;
@@ -69,6 +73,8 @@ struct input_listener_ps2_config {
     int layer_toggle;
     int layer_toggle_delay_ms;
     int layer_toggle_timeout_ms;
+    int scroll_layers[20];
+    size_t scroll_layers_len;
 };
 
 void zmk_input_listener_ps2_layer_toggle_input_rel_received(
@@ -211,19 +217,31 @@ static void input_handler_ps2(const struct input_listener_ps2_config *config,
     }
 
     if (evt->sync) {
-        if (config->move_accelerator_dev != NULL) {
-            struct input_accelerator_result acc_mov = zmk_accelerate_input(
-                config->move_accelerator_dev, data->mouse.data.x, data->mouse.data.y);
-            data->mouse.data.x = acc_mov.x;
-            data->mouse.data.y = acc_mov.y;
-        }
 
         if (data->mouse.wheel_data.mode == INPUT_LISTENER_XY_DATA_MODE_REL) {
             zmk_hid_mouse_scroll_set(data->mouse.wheel_data.x, data->mouse.wheel_data.y);
         }
 
         if (data->mouse.data.mode == INPUT_LISTENER_XY_DATA_MODE_REL) {
-            zmk_hid_mouse_movement_set(data->mouse.data.x, data->mouse.data.y);
+            if (data->scroll_layer_active == true) {
+                if (config->scroll_accelerator_dev != NULL) {
+                    struct input_accelerator_result acc_mov = zmk_accelerate_input(
+                        config->scroll_accelerator_dev, data->mouse.data.x, data->mouse.data.y);
+                    data->mouse.data.x = acc_mov.x;
+                    data->mouse.data.y = acc_mov.y;
+                }
+
+                zmk_hid_mouse_scroll_set(data->mouse.data.x, data->mouse.data.y);
+            } else {
+                if (config->move_accelerator_dev != NULL) {
+                    struct input_accelerator_result acc_mov = zmk_accelerate_input(
+                        config->move_accelerator_dev, data->mouse.data.x, data->mouse.data.y);
+                    data->mouse.data.x = acc_mov.x;
+                    data->mouse.data.y = acc_mov.y;
+                }
+
+                zmk_hid_mouse_movement_set(data->mouse.data.x, data->mouse.data.y);
+            }
         }
 
         if (data->mouse.button_set != 0) {
@@ -328,6 +346,29 @@ static int zmk_input_listener_ps2_layer_toggle_init(const struct input_listener_
     return 0;
 }
 
+static int zmk_input_listener_ps2_layer_listener(const struct input_listener_ps2_config *config,
+                                                 struct input_listener_ps2_data *data,
+                                                 const zmk_event_t *eh) {
+    struct zmk_layer_state_changed *ev = as_zmk_layer_state_changed(eh);
+
+    LOG_DBG("Layer state changed... layer: %d, state: %d, timestamp: %lld", ev->layer, ev->state,
+            ev->timestamp);
+
+    for (int i = 0; i < config->scroll_layers_len; i++) {
+        int scroll_layer = config->scroll_layers[i];
+        if (zmk_keymap_layer_active(scroll_layer) == true) {
+            data->scroll_layer_active = true;
+            LOG_DBG("Input listener scroll layer actived: %d!", scroll_layer);
+            return ZMK_EV_EVENT_BUBBLE;
+        }
+    }
+
+    LOG_DBG("Input listener scroll layer de-actived!");
+    data->scroll_layer_active = false;
+
+    return ZMK_EV_EVENT_BUBBLE;
+}
+
 #endif // VALID_LISTENER_COUNT > 0
 
 #define IL_INST(n)                                                                                 \
@@ -337,6 +378,8 @@ static int zmk_input_listener_ps2_layer_toggle_init(const struct input_listener_
             static const struct input_listener_ps2_config config_##n =                             \
                 {                                                                                  \
                     .move_accelerator_dev = DEVICE_DT_GET(DT_INST_PHANDLE(n, move_accelerator)),   \
+                    .scroll_accelerator_dev =                                                      \
+                        DEVICE_DT_GET(DT_INST_PHANDLE(n, scroll_accelerator)),                     \
                     .xy_swap = DT_INST_PROP(n, xy_swap),                                           \
                     .x_invert = DT_INST_PROP(n, x_invert),                                         \
                     .y_invert = DT_INST_PROP(n, y_invert),                                         \
@@ -345,17 +388,25 @@ static int zmk_input_listener_ps2_layer_toggle_init(const struct input_listener_
                     .layer_toggle = DT_INST_PROP(n, layer_toggle),                                 \
                     .layer_toggle_delay_ms = DT_INST_PROP(n, layer_toggle_delay_ms),               \
                     .layer_toggle_timeout_ms = DT_INST_PROP(n, layer_toggle_timeout_ms),           \
+                    .scroll_layers = DT_INST_PROP_OR(n, scroll_layers, {}),                        \
+                    .scroll_layers_len = DT_INST_PROP_LEN_OR(n, scroll_layers, 0),                 \
                 };                                                                                 \
             static struct input_listener_ps2_data data_##n =                                       \
                 {                                                                                  \
                     .dev = DEVICE_DT_INST_GET(n),                                                  \
                     .layer_toggle_layer_enabled = false,                                           \
                     .layer_toggle_last_mouse_package_time = 0,                                     \
+                    .scroll_layer_active = false,                                                  \
                 };                                                                                 \
             void input_handler_ps2_##n(struct input_event *evt) {                                  \
                 input_handler_ps2(&config_##n, &data_##n, evt);                                    \
             } INPUT_CALLBACK_DEFINE(DEVICE_DT_GET(DT_INST_PHANDLE(n, device)),                     \
                                     input_handler_ps2_##n);                                        \
+                                                                                                   \
+            static int zmk_input_listener_ps2_layer_listener_##n(const zmk_event_t *eh) {          \
+                return zmk_input_listener_ps2_layer_listener(&config_##n, &data_##n, eh);          \
+            } ZMK_LISTENER(input_listener_ps2, zmk_input_listener_ps2_layer_listener_##n);         \
+            ZMK_SUBSCRIPTION(input_listener_ps2, zmk_layer_state_changed);                         \
                                                                                                    \
             static int zmk_input_listener_ps2_init_##n(const struct device *dev) {                 \
                 struct input_listener_ps2_data *data = dev->data;                                  \
