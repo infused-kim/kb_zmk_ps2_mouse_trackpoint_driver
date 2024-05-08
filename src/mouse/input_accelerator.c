@@ -20,10 +20,13 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 // The maximum amount of time in ms between mouse packets
 // that we consider a continuous movement. Used for the
 // calculation of movement speed and acc_rate curve
-#define MOUSE_ACCELERATOR_CONTINUOUS_MOVE_MAX_INTERVAL 200
+#define INPUT_ACCELERATOR_CONTINUOUS_MOVE_MAX_INTERVAL 200
 
 // The default rate to use for interval based speed calc
 #define INPUT_ACCELERATOR_DEFAULT_SENDING_RATE 100
+
+// The nearest sigmoid y value we treat as the beginning of the sigmoid curve
+#define SIGMOID_FUNCTION_FROM_ORIGIN_EPSILON 0.01
 
 struct vector2d {
     int32_t x;
@@ -172,7 +175,7 @@ struct input_accelerator_result zmk_accelerate_input(const struct device *accele
     data->move_remainder.x = with_buffer_x - (float)to_send_x;
     data->move_remainder.y = with_buffer_y - (float)to_send_y;
 
-#if IS_ENABLED(ZMK_INPUT_ACCELERATOR_LOG_ENABLED)
+#if IS_ENABLED(CONFIG_ZMK_INPUT_ACCELERATOR_LOG_ENABLED)
 
     int acc_factor_pct = (int)(acc_factor * 100);
 
@@ -188,7 +191,7 @@ struct input_accelerator_result zmk_accelerate_input(const struct device *accele
             acc_factor_pct, with_buffer_x, with_buffer_y, to_send_x, to_send_y,
             data->move_remainder.x, data->move_remainder.y);
 
-#endif // ZMK_INPUT_ACCELERATOR_LOG_ENABLED
+#endif // CONFIG_ZMK_INPUT_ACCELERATOR_LOG_ENABLED
 
     data->prev_mov.x = orig_x;
     data->prev_mov.y = orig_y;
@@ -238,7 +241,7 @@ float zmk_input_acc_get_interval_based_speed(float mov, int64_t mov_interval,
     int64_t default_interval = 1000 / input_default_sending_rate;
 
     int64_t interval = default_interval;
-    if (mov_interval != 0 && mov_interval <= MOUSE_ACCELERATOR_CONTINUOUS_MOVE_MAX_INTERVAL) {
+    if (mov_interval != 0 && mov_interval <= INPUT_ACCELERATOR_CONTINUOUS_MOVE_MAX_INTERVAL) {
         interval = mov_interval;
     }
 
@@ -272,12 +275,12 @@ float zmk_input_acc_get_acceleration_factor_sigmoid(float speed, float acc_facto
                                                     bool should_round) {
 
     float speed_abs = fabsf(speed);
+    float speed_offset = speed_abs - start_offset;
 
-    speed_abs -= start_offset;
     float sigmoid_limit = acc_factor_max - acc_factor_base;
 
-    float acc_factor =
-        zmk_mouse_ps2_sigmoid_function_from_origin(speed_abs, sigmoid_limit, acc_rate, 0.01);
+    float acc_factor = zmk_mouse_ps2_sigmoid_function_from_origin(
+        speed_offset, sigmoid_limit, acc_rate, SIGMOID_FUNCTION_FROM_ORIGIN_EPSILON);
 
     acc_factor += acc_factor_base;
 
@@ -375,7 +378,7 @@ bool zmk_input_acc_is_new_mov(float mov, float prev_mov, int64_t mov_interval) {
 
     bool is_new_direction = zmk_input_acc_direction_changed(mov, prev_mov);
 
-    if (is_new_direction || mov_interval > MOUSE_ACCELERATOR_CONTINUOUS_MOVE_MAX_INTERVAL) {
+    if (is_new_direction || mov_interval > INPUT_ACCELERATOR_CONTINUOUS_MOVE_MAX_INTERVAL) {
         return true;
     }
 
