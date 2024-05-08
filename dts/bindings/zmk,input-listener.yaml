@@ -43,3 +43,8 @@ properties:
   scroll-layers:
     type: array
     required: false
+    description: On which layers the mouse movement should be converted into scroll movement.
+  scroll-layers-reverse-direction-vertical:
+    type: boolean
+    required: false
+    description: Swaps the direction of vertical scrolling (up becomes down and down becomes up). Useful on macOS with their "natural scrolling", which makes sense on trackpads, but not other mouse devices.
