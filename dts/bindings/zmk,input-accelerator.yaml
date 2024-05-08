@@ -43,6 +43,12 @@ properties:
     default: -1
     description: The maximum movement speed that will be allowed. This is useful to prevent the mouse cursor from accelerating to a speed that you can't follow on the screen anymore.
 
+  divisor:
+    type: int
+    required: false
+    default: 1
+    description: By how much the accelerated speed should be divided. Useful if you need to significantly reduce the speed of the mouse movement. For example, when you are converting mouse movement into scroll movement. Values of 10-20 are good for that purpose.
+
   enable-interval-based-speed:
     type: boolean
     description: Adjust the movement speed using the time interval between movements. Necessary for input devices that slow down their sending rate to report small movements, such as PS/2 mice and Trackpoints. Please set the sampling or polling rate with the `input-default-sending-rate` parameter.

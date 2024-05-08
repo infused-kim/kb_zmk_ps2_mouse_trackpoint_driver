@@ -45,6 +45,7 @@ struct input_accelerator_config {
     int acc_rate;
     int start_offset;
     int max_speed;
+    int divisor;
 
     bool enable_interval_based_speed;
     int input_default_sending_rate;
@@ -62,6 +63,7 @@ struct input_accelerator_data {
     float acc_rate;
     int start_offset;
     int max_speed;
+    int divisor;
 };
 
 float zmk_input_acc_get_interval_based_speed(float mov, int64_t mov_interval,
@@ -130,6 +132,11 @@ struct input_accelerator_result zmk_accelerate_input(const struct device *accele
     float acc_x = (float)speed_x * acc_factor;
     float acc_y = (float)speed_y * acc_factor;
 
+    // Apply the divisor in case the movement needs to be significantly slowed down,
+    // such as when the mouse movement is converted into scrolling.
+    float with_divisor_x = acc_x / data->divisor;
+    float with_divisor_y = acc_y / data->divisor;
+
     // If the previous packet was more than 200ms ago or the direction
     // of the movement changed (e.g. pos to neg), then we consider this
     // a new movement.
@@ -139,11 +146,11 @@ struct input_accelerator_result zmk_accelerate_input(const struct device *accele
     // The zephyr input system uses integers. So, if we need to send
     // a fractional movement like 4.5 we round it down and then store the
     // remainder, which we then add to the next movement.
-    float with_buffer_x = acc_x;
+    float with_buffer_x = with_divisor_x;
     if (is_new_mov_x == false) {
         with_buffer_x += data->move_remainder.x;
     }
-    float with_buffer_y = acc_y;
+    float with_buffer_y = with_divisor_y;
     if (is_new_mov_y == false) {
         with_buffer_y += data->move_remainder.y;
     }
@@ -184,12 +191,13 @@ struct input_accelerator_result zmk_accelerate_input(const struct device *accele
             "Received X: %+3d, Y: %+3d; "
             "Speed: %+5.2f; "
             "Acceleration X: %+5.2f, Y: %+5.2f (%3d%%); "
+            "Divisor X: %+5.2f, Y: %+5.2f (/ %3d); "
             "With Buffer X: %+5.2f, Y: %+5.2f; "
             "Final X: %+3d, Y: %+3d; "
             "New Buffer X: %+4.2f, Y: %+4.2f; ",
             config->acc_curve_name, mov_interval, orig_x, orig_y, speed, acc_x, acc_y,
-            acc_factor_pct, with_buffer_x, with_buffer_y, to_send_x, to_send_y,
-            data->move_remainder.x, data->move_remainder.y);
+            acc_factor_pct, with_divisor_x, with_divisor_y, data->divisor, with_buffer_x,
+            with_buffer_y, to_send_x, to_send_y, data->move_remainder.x, data->move_remainder.y);
 
 #endif // CONFIG_ZMK_INPUT_ACCELERATOR_LOG_ENABLED
 
@@ -401,6 +409,7 @@ bool zmk_input_acc_is_new_mov(float mov, float prev_mov, int64_t mov_interval) {
         .acc_rate = DT_INST_PROP(n, acceleration_factor_rate),                                     \
         .start_offset = DT_INST_PROP(n, acceleration_start_offset),                                \
         .max_speed = DT_INST_PROP(n, max_speed),                                                   \
+        .divisor = DT_INST_PROP(n, divisor),                                                       \
         .enable_interval_based_speed = DT_INST_PROP(n, enable_interval_based_speed),               \
         .input_default_sending_rate = DT_INST_PROP(n, input_default_sending_rate),                 \
     };                                                                                             \
@@ -422,6 +431,7 @@ bool zmk_input_acc_is_new_mov(float mov, float prev_mov, int64_t mov_interval) {
         data->acc_rate = (float)config->acc_rate / 100.0;                                          \
         data->start_offset = config->start_offset;                                                 \
         data->max_speed = config->max_speed;                                                       \
+        data->divisor = config->divisor;                                                           \
                                                                                                    \
         return 0;                                                                                  \
     }                                                                                              \
