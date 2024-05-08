@@ -315,7 +315,15 @@ float zmk_mouse_ps2_sigmoid_function_from_origin(float x, float limit, float slo
     float start_at = -logf(limit / epsilon) / slope;
     float offset_x = x + start_at;
 
-    return zmk_mouse_ps2_sigmoid_function(offset_x, limit, slope);
+    // We find where the sigmoid function starts within 0.01 of 0,
+    // but it will be something like y=0.013. So we lower the y
+    // values by that amount to make sure the curve transitions
+    // smoothly from the offset y value
+    float offset_y = zmk_mouse_ps2_sigmoid_function(start_at, limit, slope);
+
+    float y = zmk_mouse_ps2_sigmoid_function(offset_x, limit, slope) - offset_y;
+
+    return y;
 }
 
 float zmk_input_acc_get_acc_factor_with_max_speed(float acc_factor, float speed, int max_speed,

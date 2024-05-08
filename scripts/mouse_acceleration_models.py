@@ -37,7 +37,15 @@ def sigmoid_function_from_origin(x, limit, slope, epsilon=0.01):
     # to rise at x=0
     offset_x = x + start_at
 
-    return sigmoid_function(offset_x, limit, slope)
+    # We find where the sigmoid function starts within 0.1 of 0,
+    # but it will be something like y=0.013. So we lower the y
+    # values by that amount to make sure the curve transitions
+    # smoothly from the offset y value
+    offset_y = sigmoid_function(start_at, limit, slope)
+
+    y = sigmoid_function(offset_x, limit, slope) - offset_y
+
+    return y
 
 
 def calc_sensitivity_curve_sigmoid(x,
