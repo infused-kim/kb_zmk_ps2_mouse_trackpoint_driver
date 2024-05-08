@@ -73,10 +73,13 @@ float zmk_input_acc_get_acceleration_factor_none(float speed, float acc_factor_b
                                                  float acc_factor_max, float acc_rate,
                                                  int start_offset, int max_speed,
                                                  bool should_round);
-float zmk_input_acc_get_acceleration_factor_sigmoid(float speed, float acc_factor_base,
-                                                    float acc_factor_max, float acc_rate,
-                                                    int start_offset, int max_speed,
-                                                    bool should_round);
+float zmk_input_acc_get_acceleration_factor_sigmoid_accelaration_factor(
+    float speed, float acc_factor_base, float acc_factor_max, float acc_rate, int start_offset,
+    int max_speed, bool should_round);
+float zmk_input_acc_get_acceleration_factor_sigmoid_output_speed(float speed, float acc_factor_base,
+                                                                 float acc_factor_max,
+                                                                 float acc_rate, int start_offset,
+                                                                 int max_speed, bool should_round);
 float zmk_input_acc_get_acc_factor_with_max_speed(float acc_factor, float speed, int max_speed,
                                                   float acc_factor_base);
 float zmk_input_acc_roundf_2d(float value);
@@ -119,11 +122,15 @@ struct input_accelerator_result zmk_accelerate_input(const struct device *accele
     if (strcmp(config->acc_curve_name, "none") == 0) {
         acc_factor = zmk_input_acc_get_acceleration_factor_none(
             speed, data->acc_factor_base, data->acc_factor_max, data->acc_rate, data->start_offset,
-            data->max_speed, true);
-    } else if (strcmp(config->acc_curve_name, "sigmoid") == 0) {
-        acc_factor = zmk_input_acc_get_acceleration_factor_sigmoid(
+            data->max_speed, false);
+    } else if (strcmp(config->acc_curve_name, "sigmoid_accelaration_factor") == 0) {
+        acc_factor = zmk_input_acc_get_acceleration_factor_sigmoid_accelaration_factor(
             speed, data->acc_factor_base, data->acc_factor_max, data->acc_rate, data->start_offset,
-            data->max_speed, true);
+            data->max_speed, false);
+    } else if (strcmp(config->acc_curve_name, "sigmoid_output_speed") == 0) {
+        acc_factor = zmk_input_acc_get_acceleration_factor_sigmoid_output_speed(
+            speed, data->acc_factor_base, data->acc_factor_max, data->acc_rate, data->start_offset,
+            data->max_speed, false);
     } else {
         LOG_ERR("Unknown acceleration curve: %s", config->acc_curve_name);
     }
@@ -165,13 +172,15 @@ struct input_accelerator_result zmk_accelerate_input(const struct device *accele
     // So, here we make sure that whenever a new movement starts we send the
     // value 1 immediately and only decelerate future movements in the same
     // direction.
-    if (is_new_mov_x == true && orig_x != 0 && fabsf(with_buffer_x) < 1) {
-        int direction_factor_x = zmk_input_acc_get_direction_factor(orig_x);
-        with_buffer_x = 1 * direction_factor_x;
-    }
-    if (is_new_mov_y == true && orig_y != 0 && fabsf(with_buffer_y) < 1) {
-        int direction_factor_y = zmk_input_acc_get_direction_factor(orig_y);
-        with_buffer_y = 1 * direction_factor_y;
+    if (data->divisor == 1) {
+        if (is_new_mov_x == true && orig_x != 0 && fabsf(with_buffer_x) < 1) {
+            int direction_factor_x = zmk_input_acc_get_direction_factor(orig_x);
+            with_buffer_x = 1 * direction_factor_x;
+        }
+        if (is_new_mov_y == true && orig_y != 0 && fabsf(with_buffer_y) < 1) {
+            int direction_factor_y = zmk_input_acc_get_direction_factor(orig_y);
+            with_buffer_y = 1 * direction_factor_y;
+        }
     }
 
     // The zephyr input system uses whole numbers. So, we round down.
@@ -277,10 +286,9 @@ float zmk_input_acc_get_acceleration_factor_none(float speed, float acc_factor_b
     return acc_factor;
 }
 
-float zmk_input_acc_get_acceleration_factor_sigmoid(float speed, float acc_factor_base,
-                                                    float acc_factor_max, float acc_rate,
-                                                    int start_offset, int max_speed,
-                                                    bool should_round) {
+float zmk_input_acc_get_acceleration_factor_sigmoid_accelaration_factor(
+    float speed, float acc_factor_base, float acc_factor_max, float acc_rate, int start_offset,
+    int max_speed, bool should_round) {
 
     float speed_abs = fabsf(speed);
     float speed_offset = speed_abs - start_offset;
@@ -294,6 +302,38 @@ float zmk_input_acc_get_acceleration_factor_sigmoid(float speed, float acc_facto
 
     acc_factor =
         zmk_input_acc_get_acc_factor_with_max_speed(acc_factor, speed, max_speed, acc_factor_base);
+
+    if (should_round) {
+        // Rounded to two decimal places
+        acc_factor = zmk_input_acc_roundf_2d(acc_factor);
+    }
+
+    return acc_factor;
+}
+
+float zmk_input_acc_get_acceleration_factor_sigmoid_output_speed(float speed, float acc_factor_base,
+                                                                 float acc_factor_max,
+                                                                 float acc_rate, int start_offset,
+                                                                 int max_speed, bool should_round) {
+
+    float speed_abs = fabsf(speed);
+
+    if (speed_abs < 1) {
+        return 1;
+    }
+
+    if (speed_abs <= start_offset) {
+        return (float)1 / speed;
+    }
+
+    float speed_offset = speed_abs - start_offset;
+    float sigmoid_limit = max_speed - 1;
+
+    float speed_new = zmk_mouse_ps2_sigmoid_function_from_origin(
+        speed_offset, sigmoid_limit, acc_rate, SIGMOID_FUNCTION_FROM_ORIGIN_EPSILON);
+
+    speed_new = speed_new + 1;
+    float acc_factor = speed_new / speed_abs;
 
     if (should_round) {
         // Rounded to two decimal places
