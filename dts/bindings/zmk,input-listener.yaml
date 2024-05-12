@@ -40,6 +40,10 @@ properties:
     default: 250
     required: false
     description: How many miliseconds of mouse inactivity are required before the layer is toggled off again.
+  layer-toggle-require-prior-idle-ms:
+    type: int
+    default: -1
+    description: Requires that no keys have been pressed for at least the specified time before the layer is activated. Allows you to prevent the activation of the mouse layer if the mouse device is moved is accidentally moved while typing.
   scroll-layers:
     type: array
     required: false

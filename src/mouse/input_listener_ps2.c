@@ -56,6 +56,7 @@ struct input_listener_ps2_data {
 
     bool layer_toggle_layer_enabled;
     int64_t layer_toggle_last_mouse_package_time;
+    int64_t layer_toggle_last_key_tap_time;
     struct k_work_delayable layer_toggle_activation_delay;
     struct k_work_delayable layer_toggle_deactivation_delay;
 
@@ -73,6 +74,7 @@ struct input_listener_ps2_config {
     int layer_toggle;
     int layer_toggle_delay_ms;
     int layer_toggle_timeout_ms;
+    int layer_toggle_require_prior_idle_ms;
     int scroll_layers[20];
     size_t scroll_layers_len;
     bool scroll_layers_reverse_direction_vertical;
@@ -304,23 +306,33 @@ void zmk_input_listener_ps2_layer_toggle_activate_layer(struct k_work *item) {
 
     int64_t current_time = k_uptime_get();
     int64_t last_mv_within_ms = current_time - data->layer_toggle_last_mouse_package_time;
+    int64_t last_key_tap_within_ms = current_time - data->layer_toggle_last_key_tap_time;
 
     if (last_mv_within_ms <= config->layer_toggle_timeout_ms * 0.1) {
-        LOG_INF("Activating layer %d due to mouse activity...", config->layer_toggle);
+        if (config->layer_toggle_require_prior_idle_ms != -1 &&
+            last_key_tap_within_ms < config->layer_toggle_require_prior_idle_ms) {
+            LOG_DBG("Not activating mouse layer %d, because last key tap activity was %lldms ago "
+                    "(< require_prior_idle_ms %d)",
+                    config->layer_toggle, last_key_tap_within_ms,
+                    config->layer_toggle_require_prior_idle_ms);
+        } else {
+            LOG_INF("Activating layer %d due to mouse activity... last_tap: %lld",
+                    config->layer_toggle, last_key_tap_within_ms);
 
 #if IS_ENABLED(CONFIG_ZMK_INPUT_MOUSE_PS2_ENABLE_UROB_COMPAT)
 
-        zmk_keymap_layer_activate(config->layer_toggle, false);
+            zmk_keymap_layer_activate(config->layer_toggle, false);
 
 #else
 
-        zmk_keymap_layer_activate(config->layer_toggle);
+            zmk_keymap_layer_activate(config->layer_toggle);
 
 #endif /* IS_ENABLED(CONFIG_ZMK_INPUT_MOUSE_PS2_ENABLE_UROB_COMPAT) */
 
-        data->layer_toggle_layer_enabled = true;
+            data->layer_toggle_layer_enabled = true;
+        }
     } else {
-        LOG_INF("Not activating mouse layer %d, because last mouse activity was %lldms ago",
+        LOG_DBG("Not activating mouse layer %d, because last mouse activity was %lldms ago",
                 config->layer_toggle, last_mv_within_ms);
     }
 }
@@ -374,6 +386,19 @@ static int zmk_input_listener_ps2_layer_listener(const struct input_listener_ps2
     return ZMK_EV_EVENT_BUBBLE;
 }
 
+static int zmk_input_listener_ps2_position_listener(const struct input_listener_ps2_config *config,
+                                                    struct input_listener_ps2_data *data,
+                                                    const zmk_event_t *eh) {
+    struct zmk_position_state_changed *ev = as_zmk_position_state_changed(eh);
+
+    LOG_DBG("Layer position changed... source: %d, position: %d, state: %d, timestamp: %lld",
+            ev->source, ev->position, ev->state, ev->timestamp);
+
+    data->layer_toggle_last_key_tap_time = ev->timestamp;
+
+    return ZMK_EV_EVENT_BUBBLE;
+}
+
 #endif // VALID_LISTENER_COUNT > 0
 
 #define IL_INST(n)                                                                                 \
@@ -393,6 +418,8 @@ static int zmk_input_listener_ps2_layer_listener(const struct input_listener_ps2
                     .layer_toggle = DT_INST_PROP(n, layer_toggle),                                 \
                     .layer_toggle_delay_ms = DT_INST_PROP(n, layer_toggle_delay_ms),               \
                     .layer_toggle_timeout_ms = DT_INST_PROP(n, layer_toggle_timeout_ms),           \
+                    .layer_toggle_require_prior_idle_ms =                                          \
+                        DT_INST_PROP(n, layer_toggle_require_prior_idle_ms),                       \
                     .scroll_layers = DT_INST_PROP_OR(n, scroll_layers, {}),                        \
                     .scroll_layers_len = DT_INST_PROP_LEN_OR(n, scroll_layers, 0),                 \
                     .scroll_layers_reverse_direction_vertical =                                    \
@@ -403,6 +430,7 @@ static int zmk_input_listener_ps2_layer_listener(const struct input_listener_ps2
                     .dev = DEVICE_DT_INST_GET(n),                                                  \
                     .layer_toggle_layer_enabled = false,                                           \
                     .layer_toggle_last_mouse_package_time = 0,                                     \
+                    .layer_toggle_last_key_tap_time = 0,                                           \
                     .scroll_layer_active = false,                                                  \
                 };                                                                                 \
             void input_handler_ps2_##n(struct input_event *evt) {                                  \
@@ -412,8 +440,13 @@ static int zmk_input_listener_ps2_layer_listener(const struct input_listener_ps2
                                                                                                    \
             static int zmk_input_listener_ps2_layer_listener_##n(const zmk_event_t *eh) {          \
                 return zmk_input_listener_ps2_layer_listener(&config_##n, &data_##n, eh);          \
-            } ZMK_LISTENER(input_listener_ps2, zmk_input_listener_ps2_layer_listener_##n);         \
-            ZMK_SUBSCRIPTION(input_listener_ps2, zmk_layer_state_changed);                         \
+            } ZMK_LISTENER(input_listener_ps2_layer, zmk_input_listener_ps2_layer_listener_##n);   \
+            ZMK_SUBSCRIPTION(input_listener_ps2_layer, zmk_layer_state_changed);                   \
+                                                                                                   \
+            static int zmk_input_listener_ps2_position_listener_##n(const zmk_event_t *eh) {       \
+                return zmk_input_listener_ps2_position_listener(&config_##n, &data_##n, eh);       \
+            } ZMK_LISTENER(input_listener_ps2_pos, zmk_input_listener_ps2_position_listener_##n);  \
+            ZMK_SUBSCRIPTION(input_listener_ps2_pos, zmk_position_state_changed);                  \
                                                                                                    \
             static int zmk_input_listener_ps2_init_##n(const struct device *dev) {                 \
                 struct input_listener_ps2_data *data = dev->data;                                  \
