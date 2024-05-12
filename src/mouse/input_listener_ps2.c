@@ -29,6 +29,11 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
 #if VALID_LISTENER_COUNT > 0
 
+// The maximum amount of time in ms between mouse packets
+// that we consider a continuous movement. Used for auto
+// layer toggle
+#define INPUT_LISTENER_CONTINUOUS_MOVE_MAX_INTERVAL 200
+
 enum input_listener_ps2_xy_data_mode {
     INPUT_LISTENER_XY_DATA_MODE_NONE,
     INPUT_LISTENER_XY_DATA_MODE_REL,
@@ -55,9 +60,9 @@ struct input_listener_ps2_data {
     };
 
     bool layer_toggle_layer_enabled;
-    int64_t layer_toggle_last_mouse_package_time;
+    int64_t layer_toggle_continuous_move_start_time;
     int64_t layer_toggle_last_key_tap_time;
-    struct k_work_delayable layer_toggle_activation_delay;
+    struct k_work_delayable layer_toggle_continuous_move_timeout_delay;
     struct k_work_delayable layer_toggle_deactivation_delay;
 
     bool scroll_layer_active;
@@ -81,6 +86,8 @@ struct input_listener_ps2_config {
 };
 
 void zmk_input_listener_ps2_layer_toggle_input_rel_received(
+    const struct input_listener_ps2_config *config, struct input_listener_ps2_data *data);
+void zmk_input_listener_ps2_layer_toggle_activate_layer(
     const struct input_listener_ps2_config *config, struct input_listener_ps2_data *data);
 
 static char *get_input_code_name(struct input_event *evt) {
@@ -284,11 +291,17 @@ void zmk_input_listener_ps2_layer_toggle_input_rel_received(
         return;
     }
 
-    data->layer_toggle_last_mouse_package_time = k_uptime_get();
+    if (data->layer_toggle_continuous_move_start_time == 0) {
+        data->layer_toggle_continuous_move_start_time = k_uptime_get();
+    }
+
+    // If no further movement packets come in, then this work will end the
+    // continuous move.
+    k_work_reschedule(&data->layer_toggle_continuous_move_timeout_delay,
+                      K_MSEC(INPUT_LISTENER_CONTINUOUS_MOVE_MAX_INTERVAL));
 
     if (data->layer_toggle_layer_enabled == false) {
-        k_work_schedule(&data->layer_toggle_activation_delay,
-                        K_MSEC(config->layer_toggle_delay_ms));
+        zmk_input_listener_ps2_layer_toggle_activate_layer(config, data);
     } else {
         // Deactivate the layer if no further movement within
         // layer_toggle_timeout_ms
@@ -297,27 +310,39 @@ void zmk_input_listener_ps2_layer_toggle_input_rel_received(
     }
 }
 
-void zmk_input_listener_ps2_layer_toggle_activate_layer(struct k_work *item) {
+void zmk_input_listener_ps2_layer_toggle_continuous_move_timeout_work(struct k_work *item) {
     struct k_work_delayable *d_work = k_work_delayable_from_work(item);
 
-    struct input_listener_ps2_data *data =
-        CONTAINER_OF(d_work, struct input_listener_ps2_data, layer_toggle_activation_delay);
-    const struct input_listener_ps2_config *config = data->dev->config;
+    struct input_listener_ps2_data *data = CONTAINER_OF(d_work, struct input_listener_ps2_data,
+                                                        layer_toggle_continuous_move_timeout_delay);
 
     int64_t current_time = k_uptime_get();
-    int64_t last_mv_within_ms = current_time - data->layer_toggle_last_mouse_package_time;
+    int64_t continuous_move_period = current_time - data->layer_toggle_continuous_move_start_time -
+                                     INPUT_LISTENER_CONTINUOUS_MOVE_MAX_INTERVAL;
+
+    LOG_INF("Continuous mouse move ended after %lldms", continuous_move_period);
+
+    data->layer_toggle_continuous_move_start_time = 0;
+}
+
+void zmk_input_listener_ps2_layer_toggle_activate_layer(
+    const struct input_listener_ps2_config *config, struct input_listener_ps2_data *data) {
+
+    int64_t current_time = k_uptime_get();
+    int64_t continuous_move_period = current_time - data->layer_toggle_continuous_move_start_time;
     int64_t last_key_tap_within_ms = current_time - data->layer_toggle_last_key_tap_time;
 
-    if (last_mv_within_ms <= config->layer_toggle_timeout_ms * 0.1) {
+    if (continuous_move_period >= config->layer_toggle_delay_ms) {
         if (config->layer_toggle_require_prior_idle_ms != -1 &&
             last_key_tap_within_ms < config->layer_toggle_require_prior_idle_ms) {
-            LOG_DBG("Not activating mouse layer %d, because last key tap activity was %lldms ago "
+            LOG_INF("Not activating mouse layer %d, because last key tap activity was %lldms ago "
                     "(< require_prior_idle_ms %d)",
                     config->layer_toggle, last_key_tap_within_ms,
                     config->layer_toggle_require_prior_idle_ms);
         } else {
-            LOG_INF("Activating layer %d due to mouse activity... last_tap: %lld",
-                    config->layer_toggle, last_key_tap_within_ms);
+            LOG_INF("Activating mouse auto layer %d due to %lldms of mouse activity and last key "
+                    "tap ms: %lld",
+                    config->layer_toggle, continuous_move_period, last_key_tap_within_ms);
 
 #if IS_ENABLED(CONFIG_ZMK_INPUT_MOUSE_PS2_ENABLE_UROB_COMPAT)
 
@@ -330,10 +355,13 @@ void zmk_input_listener_ps2_layer_toggle_activate_layer(struct k_work *item) {
 #endif /* IS_ENABLED(CONFIG_ZMK_INPUT_MOUSE_PS2_ENABLE_UROB_COMPAT) */
 
             data->layer_toggle_layer_enabled = true;
+
+            k_work_reschedule(&data->layer_toggle_deactivation_delay,
+                              K_MSEC(config->layer_toggle_timeout_ms));
         }
     } else {
         LOG_DBG("Not activating mouse layer %d, because last mouse activity was %lldms ago",
-                config->layer_toggle, last_mv_within_ms);
+                config->layer_toggle, continuous_move_period);
     }
 }
 
@@ -355,8 +383,8 @@ void zmk_input_listener_ps2_layer_toggle_deactivate_layer(struct k_work *item) {
 
 static int zmk_input_listener_ps2_layer_toggle_init(const struct input_listener_ps2_config *config,
                                                     struct input_listener_ps2_data *data) {
-    k_work_init_delayable(&data->layer_toggle_activation_delay,
-                          zmk_input_listener_ps2_layer_toggle_activate_layer);
+    k_work_init_delayable(&data->layer_toggle_continuous_move_timeout_delay,
+                          zmk_input_listener_ps2_layer_toggle_continuous_move_timeout_work);
     k_work_init_delayable(&data->layer_toggle_deactivation_delay,
                           zmk_input_listener_ps2_layer_toggle_deactivate_layer);
 
@@ -429,7 +457,7 @@ static int zmk_input_listener_ps2_position_listener(const struct input_listener_
                 {                                                                                  \
                     .dev = DEVICE_DT_INST_GET(n),                                                  \
                     .layer_toggle_layer_enabled = false,                                           \
-                    .layer_toggle_last_mouse_package_time = 0,                                     \
+                    .layer_toggle_continuous_move_start_time = 0,                                  \
                     .layer_toggle_last_key_tap_time = 0,                                           \
                     .scroll_layer_active = false,                                                  \
                 };                                                                                 \
