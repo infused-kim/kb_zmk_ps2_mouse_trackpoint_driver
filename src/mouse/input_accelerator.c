@@ -68,18 +68,20 @@ struct input_accelerator_data {
 
 float zmk_input_acc_get_interval_based_speed(float mov, int64_t mov_interval,
                                              int input_default_sending_rate);
-float zmk_mouse_ps2_sigmoid_function_from_origin(float x, float limit, float slope, float epsilon);
+float zmk_mouse_ps2_sigmoid_function(float x, float limit, float slope);
+float zmk_mouse_ps2_sigmoid_function_inverse(float y, float limit, float slope);
 float zmk_input_acc_get_acceleration_factor_none(float speed, float acc_factor_base,
                                                  float acc_factor_max, float acc_rate,
                                                  int start_offset, int max_speed,
                                                  bool should_round);
-float zmk_input_acc_get_acceleration_factor_sigmoid_accelaration_factor(
-    float speed, float acc_factor_base, float acc_factor_max, float acc_rate, int start_offset,
-    int max_speed, bool should_round);
-float zmk_input_acc_get_acceleration_factor_sigmoid_output_speed(float speed, float acc_factor_base,
-                                                                 float acc_factor_max,
-                                                                 float acc_rate, int start_offset,
-                                                                 int max_speed, bool should_round);
+float zmk_input_acc_get_acceleration_factor_sigmoid(float speed, float acc_factor_base,
+                                                    float acc_factor_max, float acc_rate,
+                                                    int start_offset, int max_speed,
+                                                    bool should_round);
+float zmk_input_acc_get_acceleration_factor_scroll(float speed, float acc_factor_base,
+                                                   float acc_factor_max, float acc_rate,
+                                                   int start_offset, int max_speed,
+                                                   bool should_round);
 float zmk_input_acc_get_acc_factor_with_max_speed(float acc_factor, float speed, int max_speed,
                                                   float acc_factor_base);
 float zmk_input_acc_roundf_2d(float value);
@@ -123,12 +125,12 @@ struct input_accelerator_result zmk_accelerate_input(const struct device *accele
         acc_factor = zmk_input_acc_get_acceleration_factor_none(
             speed, data->acc_factor_base, data->acc_factor_max, data->acc_rate, data->start_offset,
             data->max_speed, false);
-    } else if (strcmp(config->acc_curve_name, "sigmoid_accelaration_factor") == 0) {
-        acc_factor = zmk_input_acc_get_acceleration_factor_sigmoid_accelaration_factor(
+    } else if (strcmp(config->acc_curve_name, "sigmoid") == 0) {
+        acc_factor = zmk_input_acc_get_acceleration_factor_sigmoid(
             speed, data->acc_factor_base, data->acc_factor_max, data->acc_rate, data->start_offset,
             data->max_speed, false);
-    } else if (strcmp(config->acc_curve_name, "sigmoid_output_speed") == 0) {
-        acc_factor = zmk_input_acc_get_acceleration_factor_sigmoid_output_speed(
+    } else if (strcmp(config->acc_curve_name, "scroll") == 0) {
+        acc_factor = zmk_input_acc_get_acceleration_factor_scroll(
             speed, data->acc_factor_base, data->acc_factor_max, data->acc_rate, data->start_offset,
             data->max_speed, false);
     } else {
@@ -286,19 +288,32 @@ float zmk_input_acc_get_acceleration_factor_none(float speed, float acc_factor_b
     return acc_factor;
 }
 
-float zmk_input_acc_get_acceleration_factor_sigmoid_accelaration_factor(
-    float speed, float acc_factor_base, float acc_factor_max, float acc_rate, int start_offset,
-    int max_speed, bool should_round) {
+float zmk_input_acc_get_acceleration_factor_sigmoid(float speed, float acc_factor_base,
+                                                    float acc_factor_max, float acc_rate,
+                                                    int start_offset, int max_speed,
+                                                    bool should_round) {
 
     float speed_abs = fabsf(speed);
-    float speed_offset = speed_abs - start_offset;
-
     float sigmoid_limit = acc_factor_max - acc_factor_base;
 
-    float acc_factor = zmk_mouse_ps2_sigmoid_function_from_origin(
-        speed_offset, sigmoid_limit, acc_rate, SIGMOID_FUNCTION_FROM_ORIGIN_EPSILON);
+    // The sigmoid curve is always centered at 0 (meaning x0 = limit/2). We
+    // can shift the curve to the right by subtracting x values.
+    //
+    // We want to position the curve in such a way that we can see a meaningful,
+    // yet gradual, increase of the acceleration curve after the offset. We use
+    // 2.5% of the total acceleration-increase-range for that.
+    //
+    // So, we determine the x value where the sigmoid function returns that
+    // increase. And then we shift the curve to the right so that the curve
+    // has the 2.5% increase at exactly the offset x value.
+    float start_offset_y_value = sigmoid_limit * 0.025;
+    float start_offset_addition =
+        zmk_mouse_ps2_sigmoid_function_inverse(start_offset_y_value, sigmoid_limit, acc_rate);
+    float speed_offset = speed_abs - start_offset + start_offset_addition;
 
-    acc_factor += acc_factor_base;
+    float acc_factor = zmk_mouse_ps2_sigmoid_function(speed_offset, sigmoid_limit, acc_rate);
+
+    acc_factor = acc_factor + acc_factor_base;
 
     acc_factor =
         zmk_input_acc_get_acc_factor_with_max_speed(acc_factor, speed, max_speed, acc_factor_base);
@@ -311,10 +326,10 @@ float zmk_input_acc_get_acceleration_factor_sigmoid_accelaration_factor(
     return acc_factor;
 }
 
-float zmk_input_acc_get_acceleration_factor_sigmoid_output_speed(float speed, float acc_factor_base,
-                                                                 float acc_factor_max,
-                                                                 float acc_rate, int start_offset,
-                                                                 int max_speed, bool should_round) {
+float zmk_input_acc_get_acceleration_factor_scroll(float speed, float acc_factor_base,
+                                                   float acc_factor_max, float acc_rate,
+                                                   int start_offset, int max_speed,
+                                                   bool should_round) {
 
     float speed_abs = fabsf(speed);
 
@@ -322,17 +337,33 @@ float zmk_input_acc_get_acceleration_factor_sigmoid_output_speed(float speed, fl
         return 1;
     }
 
-    if (speed_abs <= start_offset) {
-        return (float)1 / speed;
+    float speed_new = 1;
+
+    if (speed_abs >= start_offset) {
+        float sigmoid_limit = max_speed - 1;
+
+        // The sigmoid curve is always centered at 0 (meaning x0 = limit/2). We
+        // can shift the curve to the right by subtracting x values.
+        //
+        // We want to position the curve in such a way that we can see a meaningful,
+        // yet gradual, increase of the acceleration curve after the offset.
+        //
+        // For scrolling we use a smaller rate of just 1% increase (compared to 2.5 for
+        // mouse movement in the sigmoid curve).
+        //
+        // So, we determine the x value where the sigmoid function returns that
+        // increase. And then we shift the curve to the right so that the curve
+        // has the 2.5% increase at exactly the offset x value.
+        float start_offset_y_value = sigmoid_limit * 0.025;
+        float start_offset_addition =
+            zmk_mouse_ps2_sigmoid_function_inverse(start_offset_y_value, sigmoid_limit, acc_rate);
+        float speed_offset = speed_abs - start_offset + start_offset_addition;
+
+        speed_new = zmk_mouse_ps2_sigmoid_function(speed_offset, sigmoid_limit, acc_rate);
+
+        speed_new = speed_new + 1;
     }
 
-    float speed_offset = speed_abs - start_offset;
-    float sigmoid_limit = max_speed - 1;
-
-    float speed_new = zmk_mouse_ps2_sigmoid_function_from_origin(
-        speed_offset, sigmoid_limit, acc_rate, SIGMOID_FUNCTION_FROM_ORIGIN_EPSILON);
-
-    speed_new = speed_new + 1;
     float acc_factor = speed_new / speed_abs;
 
     if (should_round) {
@@ -348,30 +379,17 @@ float zmk_mouse_ps2_sigmoid_function(float x, float limit, float slope) {
     return limit / (1 + expf(-slope * x));
 }
 
-// Adjusts a standard sigmoid function so that its rise starts at x=0
-// instead of the negative half of the graph.
-float zmk_mouse_ps2_sigmoid_function_from_origin(float x, float limit, float slope, float epsilon) {
+float zmk_mouse_ps2_sigmoid_function_inverse(float y, float limit, float slope) {
 
-    // Make sure the graph starts with y=0
-    if (x <= 0) {
-        return 0;
+    if (y <= 0) {
+        y = 0.001;
     }
 
-    // Sigmoid approaches 0, but never really reaches it.
-    // Here we calculate the x value where the sigmoid is epsilon, such as
-    // 0.01.
-    float start_at = -logf(limit / epsilon) / slope;
-    float offset_x = x + start_at;
+    if (y >= limit) {
+        y = limit - 0.001;
+    }
 
-    // We find where the sigmoid function starts within 0.01 of 0,
-    // but it will be something like y=0.013. So we lower the y
-    // values by that amount to make sure the curve transitions
-    // smoothly from the offset y value
-    float offset_y = zmk_mouse_ps2_sigmoid_function(start_at, limit, slope);
-
-    float y = zmk_mouse_ps2_sigmoid_function(offset_x, limit, slope) - offset_y;
-
-    return y;
+    return -1 / slope * logf((limit - y) / y);
 }
 
 float zmk_input_acc_get_acc_factor_with_max_speed(float acc_factor, float speed, int max_speed,

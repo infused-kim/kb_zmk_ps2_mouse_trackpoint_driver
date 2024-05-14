@@ -49,35 +49,6 @@ def sigmoid_function_inverse(y, limit, slope, raise_error=True):
     return -1 / slope * math.log((limit - y) / y)
 
 
-def sigmoid_function_from_origin(x, limit, slope, epsilon=D_EPSILON):
-    '''
-    Adjusts a standard sigmoid function so that its rise starts at x=0
-    instead of the negative half of the graph.
-    '''
-
-    # Make sure the graph starts with y=0
-    if x <= 0:
-        return 0
-
-    # Sigmoid approaches 0, but never really reaches it.
-    # Here we calculate the x value where the sigmoid is epsilon, such as 0.01.
-    start_at = -math.log((limit) / epsilon) / slope
-
-    # Then we shift the whole range by that amount to make the curve start
-    # to rise at x=0
-    offset_x = x + start_at
-
-    # We find where the sigmoid function starts within 0.01 of 0,
-    # but it will be something like y=0.013. So we lower the y
-    # values by that amount to make sure the curve transitions
-    # smoothly from the offset y value
-    offset_y = sigmoid_function(start_at, limit, slope)
-
-    y = sigmoid_function(offset_x, limit, slope) - offset_y
-
-    return y
-
-
 def get_acc_factor_with_max_speed(acc_factor,
                                   speed,
                                   max_speed,
@@ -114,13 +85,13 @@ def calc_acceleration_factor_sigmoid_pure(speed,
     return acc_factor
 
 
-def calc_acceleration_factor_sigmoid_acceleration_factor_new(speed,
-                                                             acc_factor_base,
-                                                             acc_factor_max,
-                                                             acc_rate,
-                                                             max_speed=D_MAX_SPEED,
-                                                             start_offset=D_OFFSET,
-                                                             should_round=D_SHOULD_ROUND):
+def calc_acceleration_factor_sigmoid(speed,
+                                     acc_factor_base,
+                                     acc_factor_max,
+                                     acc_rate,
+                                     max_speed=D_MAX_SPEED,
+                                     start_offset=D_OFFSET,
+                                     should_round=D_SHOULD_ROUND):
     speed_abs = abs(speed)
     sigmoid_limit = acc_factor_max - acc_factor_base
 
@@ -159,106 +130,45 @@ def calc_acceleration_factor_sigmoid_acceleration_factor_new(speed,
     return acc_factor
 
 
-def calc_acceleration_factor_sigmoid_acceleration_factor(speed,
-                                                         acc_factor_base,
-                                                         acc_factor_max,
-                                                         acc_rate,
-                                                         max_speed=D_MAX_SPEED,
-                                                         start_offset=D_OFFSET,
-                                                         should_round=D_SHOULD_ROUND):
-    speed_abs = abs(speed)
-    speed_offset = speed_abs - start_offset
-
-    sigmoid_limit = acc_factor_max - acc_factor_base
-
-    acc_factor = sigmoid_function_from_origin(
-        speed_offset, sigmoid_limit, acc_rate, epsilon=D_EPSILON
-    )
-
-    acc_factor = acc_factor + acc_factor_base * 1
-
-    acc_factor = get_acc_factor_with_max_speed(
-        acc_factor,
-        speed,
-        max_speed,
-        acc_factor_base,
-    )
-
-    if should_round is True:
-        acc_factor = round(acc_factor, 2)
-
-    return acc_factor
-
-
-def calc_acceleration_factor_sigmoid_output_speed_new(speed,
-                                                      acc_factor_base,
-                                                      acc_factor_max,
-                                                      acc_rate,
-                                                      max_speed=D_MAX_SPEED,
-                                                      start_offset=D_OFFSET,
-                                                      should_round=D_SHOULD_ROUND):
+def calc_acceleration_factor_scroll(speed,
+                                    acc_factor_base,
+                                    acc_factor_max,
+                                    acc_rate,
+                                    max_speed=D_MAX_SPEED,
+                                    start_offset=D_OFFSET,
+                                    should_round=D_SHOULD_ROUND):
     speed_abs = abs(speed)
 
     if speed_abs < 1:
         return 1
 
+    speed_new = 1
+    if speed_abs >= start_offset:
+        sigmoid_limit = max_speed - 1
 
-    speed_abs = abs(speed)
-    sigmoid_limit = max_speed - 1
+        # The sigmoid curve is always centered at 0 (meaning x0 = limit/2). We
+        # can shift the curve to the right by subtracting x values.
+        #
+        # We want to position the curve in such a way that we can see a meaningful,
+        # yet gradual, increase of the acceleration curve after the offset.
+        #
+        # For scrolling we use a smaller rate of just 1% increase (compared to 2.5 for
+        # mouse movement in the sigmoid curve).
+        #
+        # So, we determine the x value where the sigmoid function returns that
+        # increase. And then we shift the curve to the right so that the curve
+        # has the 2.5% increase at exactly the offset x value.
+        start_offset_y_value = sigmoid_limit * 0.01
+        start_offset_addition = sigmoid_function_inverse(
+            start_offset_y_value, sigmoid_limit, acc_rate
+        )
+        speed_offset = speed_abs - start_offset + start_offset_addition
 
-    # The sigmoid curve is always centered at 0 (meaning x0 = limit/2). We
-    # can shift the curve to the right by subtracting x values.
-    #
-    # We want to position the curve in such a way that we can see a meaningful,
-    # yet gradual, increase of the acceleration curve after the offset. We use
-    # 2.5% of the total acceleration-increase-range for that.
-    #
-    # So, we determine the x value where the sigmoid function returns that
-    # increase. And then we shift the curve to the right so that the curve
-    # has the 2.5% increase at exactly the offset x value.
-    start_offset_y_value = sigmoid_limit * 0.025
-    start_offset_addition = sigmoid_function_inverse(
-        start_offset_y_value, sigmoid_limit, acc_rate
-    )
-    speed_offset = speed_abs - start_offset + start_offset_addition
+        speed_new = sigmoid_function(
+            speed_offset, sigmoid_limit, acc_rate
+        )
+        speed_new = speed_new + 1
 
-    speed_new = sigmoid_function(
-        speed_offset, sigmoid_limit, acc_rate
-    )
-
-    speed_new = speed_new + 1
-    acc_factor = speed_new / speed_abs
-
-    if should_round is True:
-        acc_factor = round(acc_factor, 2)
-
-    return acc_factor
-
-
-def calc_acceleration_factor_sigmoid_output_speed(speed,
-                                                  acc_factor_base,
-                                                  acc_factor_max,
-                                                  acc_rate,
-                                                  max_speed=D_MAX_SPEED,
-                                                  start_offset=D_OFFSET,
-                                                  should_round=D_SHOULD_ROUND):
-    speed_abs = abs(speed)
-
-    if speed_abs < 1:
-        return 1
-
-    # Cap speed to 1 in start_offset range
-    if speed_abs <= start_offset:
-        return 1 / speed
-
-    speed_offset = speed_abs - start_offset
-    sigmoid_limit = max_speed - 1
-
-    speed_new = sigmoid_function_from_origin(
-        speed_offset, sigmoid_limit, acc_rate, epsilon=D_EPSILON
-    )
-
-    speed_new = speed_new + 1
     acc_factor = speed_new / speed_abs
 
     if should_round is True:
@@ -279,14 +189,10 @@ def gen_acceleration_factor_range(curve,
 
     if curve == 'sigmoid_pure':
         calc_curve = calc_acceleration_factor_sigmoid_pure
-    elif curve == 'sigmoid_accelaration_factor':
-        calc_curve = calc_acceleration_factor_sigmoid_acceleration_factor
-    elif curve == 'sigmoid_accelaration_factor_new':
-        calc_curve = calc_acceleration_factor_sigmoid_acceleration_factor_new
-    elif curve == 'sigmoid_output_speed':
-        calc_curve = calc_acceleration_factor_sigmoid_output_speed
-    elif curve == 'sigmoid_output_speed_new':
-        calc_curve = calc_acceleration_factor_sigmoid_output_speed_new
+    elif curve == 'sigmoid':
+        calc_curve = calc_acceleration_factor_sigmoid
+    elif curve == 'scroll':
+        calc_curve = calc_acceleration_factor_scroll
     else:
         raise ValueError(f'Unknown curve: {curve}')
 
@@ -346,7 +252,7 @@ def gen_acceleration_factor_df(curve,
     return df
 
 
-def gen_acceleration_factor_sigmoid_accelaration_factor_range(range_start,
+def gen_acceleration_factor_sigmoid_range(range_start,
                                                               range_end,
                                                               acc_factor_base,
                                                               acc_factor_max,
@@ -355,7 +261,7 @@ def gen_acceleration_factor_sigmoid_accelaration_factor_range(range_start,
                                                               start_offset=D_OFFSET,
                                                               should_round=D_SHOULD_ROUND):
     return gen_acceleration_factor_range(
-        'sigmoid_accelaration_factor',
+        'sigmoid',
         range_start,
         range_end,
         acc_factor_base,
@@ -394,7 +300,7 @@ def gen_acceleration_factor_sigmoid_df(range_start,
     )
 
 
-def gen_acceleration_factor_sigmoid_output_speed_range(range_start,
+def gen_acceleration_factor_scroll_range(range_start,
                                          range_end,
                                          acc_factor_base,
                                          acc_factor_max,
@@ -403,7 +309,7 @@ def gen_acceleration_factor_sigmoid_output_speed_range(range_start,
                                          start_offset=D_OFFSET,
                                          should_round=D_SHOULD_ROUND):
     return gen_acceleration_factor_range(
-        'sigmoid_output_speed',
+        'scroll',
         range_start,
         range_end,
         acc_factor_base,
@@ -415,7 +321,7 @@ def gen_acceleration_factor_sigmoid_output_speed_range(range_start,
     )
 
 
-def gen_acceleration_factor_sigmoid_output_speed_df(range_start,
+def gen_acceleration_factor_scroll_df(range_start,
                                       range_end,
                                       acc_factor_base,
                                       acc_factor_max,
