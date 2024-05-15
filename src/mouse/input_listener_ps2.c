@@ -320,7 +320,7 @@ void zmk_input_listener_ps2_layer_toggle_continuous_move_timeout_work(struct k_w
     int64_t continuous_move_period = current_time - data->layer_toggle_continuous_move_start_time -
                                      INPUT_LISTENER_CONTINUOUS_MOVE_MAX_INTERVAL;
 
-    LOG_INF("Continuous mouse move ended after %lldms", continuous_move_period);
+    LOG_DBG("Continuous mouse move ended after %lldms", continuous_move_period);
 
     data->layer_toggle_continuous_move_start_time = 0;
 }
@@ -335,12 +335,12 @@ void zmk_input_listener_ps2_layer_toggle_activate_layer(
     if (continuous_move_period >= config->layer_toggle_delay_ms) {
         if (config->layer_toggle_require_prior_idle_ms != -1 &&
             last_key_tap_within_ms < config->layer_toggle_require_prior_idle_ms) {
-            LOG_INF("Not activating mouse layer %d, because last key tap activity was %lldms ago "
+            LOG_DBG("Not activating mouse layer %d, because last key tap activity was %lldms ago "
                     "(< require_prior_idle_ms %d)",
                     config->layer_toggle, last_key_tap_within_ms,
                     config->layer_toggle_require_prior_idle_ms);
         } else {
-            LOG_INF("Activating mouse auto layer %d due to %lldms of mouse activity and last key "
+            LOG_DBG("Activating mouse auto layer %d due to %lldms of mouse activity and last key "
                     "tap ms: %lld",
                     config->layer_toggle, continuous_move_period, last_key_tap_within_ms);
 
@@ -372,7 +372,7 @@ void zmk_input_listener_ps2_layer_toggle_deactivate_layer(struct k_work *item) {
         CONTAINER_OF(d_work, struct input_listener_ps2_data, layer_toggle_deactivation_delay);
     const struct input_listener_ps2_config *config = data->dev->config;
 
-    LOG_INF("Deactivating layer %d due to mouse activity...", config->layer_toggle);
+    LOG_DBG("Deactivating layer %d due to mouse activity...", config->layer_toggle);
 
     if (zmk_keymap_layer_active(config->layer_toggle)) {
         zmk_keymap_layer_deactivate(config->layer_toggle);

@@ -57,6 +57,11 @@ struct input_accelerator_data {
     int64_t prev_mov_received_at;
     struct vector2df move_remainder;
 
+    // For logging of move summary
+    int64_t continuous_move_start_time;
+    float continuous_move_max_speed;
+    struct k_work_delayable continuous_move_timeout_delay;
+
     // Config settings converted to float values
     float acc_factor_base;
     float acc_factor_max;
@@ -195,20 +200,39 @@ struct input_accelerator_result zmk_accelerate_input(const struct device *accele
 
 #if IS_ENABLED(CONFIG_ZMK_INPUT_ACCELERATOR_LOG_ENABLED)
 
+    if (data->continuous_move_start_time == 0) {
+        data->continuous_move_start_time = mov_received_at;
+    }
+
+    if (data->continuous_move_max_speed < speed) {
+        data->continuous_move_max_speed = speed;
+    }
+
+    // If no further movement packets come in, then this work will end the
+    // continuous move.
+    k_work_reschedule(&data->continuous_move_timeout_delay,
+                      K_MSEC(INPUT_ACCELERATOR_CONTINUOUS_MOVE_MAX_INTERVAL));
+
     int acc_factor_pct = (int)(acc_factor * 100);
+
+    char divisor_info[64] = "";
+    if (data->divisor != 1) {
+        snprintf(divisor_info, sizeof(divisor_info), "Divisor X: %+5.2f, Y: %+5.2f (/ %d); ",
+                 with_divisor_x, with_divisor_y, data->divisor);
+    }
 
     LOG_INF("Input Accel %s - "
             "Interval: %4lld ms; "
             "Received X: %+3d, Y: %+3d; "
-            "Speed: %+5.2f; "
+            "Speed: %5.2f; "
             "Acceleration X: %+5.2f, Y: %+5.2f (%3d%%); "
-            "Divisor X: %+5.2f, Y: %+5.2f (/ %3d); "
+            "%s"
             "With Buffer X: %+5.2f, Y: %+5.2f; "
             "Final X: %+3d, Y: %+3d; "
             "New Buffer X: %+4.2f, Y: %+4.2f; ",
             config->acc_curve_name, mov_interval, orig_x, orig_y, speed, acc_x, acc_y,
-            acc_factor_pct, with_divisor_x, with_divisor_y, data->divisor, with_buffer_x,
-            with_buffer_y, to_send_x, to_send_y, data->move_remainder.x, data->move_remainder.y);
+            acc_factor_pct, divisor_info, with_buffer_x, with_buffer_y, to_send_x, to_send_y,
+            data->move_remainder.x, data->move_remainder.y);
 
 #endif // CONFIG_ZMK_INPUT_ACCELERATOR_LOG_ENABLED
 
@@ -220,6 +244,33 @@ struct input_accelerator_result zmk_accelerate_input(const struct device *accele
 
     return ret;
 }
+
+#if IS_ENABLED(CONFIG_ZMK_INPUT_ACCELERATOR_LOG_ENABLED)
+
+void zmk_input_accelerator_continuous_move_timeout_work(struct k_work *item) {
+
+    struct k_work_delayable *d_work = k_work_delayable_from_work(item);
+
+    struct input_accelerator_data *data =
+        CONTAINER_OF(d_work, struct input_accelerator_data, continuous_move_timeout_delay);
+
+    int64_t current_time = k_uptime_get();
+    int64_t continuous_move_period = current_time - data->continuous_move_start_time -
+                                     INPUT_ACCELERATOR_CONTINUOUS_MOVE_MAX_INTERVAL;
+
+    LOG_INF(
+        "Accelerated continuous mouse move ended after %lldms with unaccelerated max speed: %4.2f",
+        continuous_move_period, data->continuous_move_max_speed);
+
+#if !IS_ENABLED(CONFIG_CBPRINTF_COMPLETE)
+    LOG_WRN("Enable CONFIG_CBPRINTF_COMPLETE=y to see proper speed values instead of *float*.");
+#endif // CONFIG_CBPRINTF_COMPLETE
+
+    data->continuous_move_start_time = 0;
+    data->continuous_move_max_speed = 0;
+}
+
+#endif // CONFIG_ZMK_INPUT_ACCELERATOR_LOG_ENABLED
 
 // Calculates the speed of a movement for input devices that don't have a
 // consistent sending rate, such as PS/2 mice and Trackpoints.
@@ -466,6 +517,27 @@ bool zmk_input_acc_is_new_mov(float mov, float prev_mov, int64_t mov_interval) {
     return false;
 }
 
+static int zmk_input_accelerator_init(const struct device *dev,
+                                      const struct input_accelerator_config *config,
+                                      struct input_accelerator_data *data) {
+
+    LOG_DBG("Initialized input accelerator: %s", dev->name);
+
+    data->acc_factor_base = (float)config->acc_factor_base / 100.0;
+    data->acc_factor_max = (float)config->acc_factor_max / 100.0;
+    data->acc_rate = (float)config->acc_rate / 100.0;
+    data->start_offset = config->start_offset;
+    data->max_speed = config->max_speed;
+    data->divisor = config->divisor;
+
+#if IS_ENABLED(CONFIG_ZMK_INPUT_ACCELERATOR_LOG_ENABLED)
+    k_work_init_delayable(&data->continuous_move_timeout_delay,
+                          zmk_input_accelerator_continuous_move_timeout_work);
+#endif // CONFIG_ZMK_INPUT_ACCELERATOR_LOG_ENABLED
+
+    return 0;
+}
+
 #define IL_INST(n)                                                                                 \
     static const struct input_accelerator_config config_##n = {                                    \
         .acc_curve_name = DT_INST_PROP(n, acceleration_curve),                                     \
@@ -483,22 +555,15 @@ bool zmk_input_acc_is_new_mov(float mov, float prev_mov, int64_t mov_interval) {
         .prev_mov = {x : 0, y : 0},                                                                \
         .prev_mov_received_at = 0,                                                                 \
         .move_remainder = {x : 0, y : 0},                                                          \
+        .continuous_move_start_time = 0,                                                           \
+        .continuous_move_max_speed = 0,                                                            \
     };                                                                                             \
                                                                                                    \
     static int zmk_input_accelerator_init_##n(const struct device *dev) {                          \
         struct input_accelerator_data *data = dev->data;                                           \
         const struct input_accelerator_config *config = dev->config;                               \
                                                                                                    \
-        LOG_DBG("Initialized input accelerator: %s", dev->name);                                   \
-                                                                                                   \
-        data->acc_factor_base = (float)config->acc_factor_base / 100.0;                            \
-        data->acc_factor_max = (float)config->acc_factor_max / 100.0;                              \
-        data->acc_rate = (float)config->acc_rate / 100.0;                                          \
-        data->start_offset = config->start_offset;                                                 \
-        data->max_speed = config->max_speed;                                                       \
-        data->divisor = config->divisor;                                                           \
-                                                                                                   \
-        return 0;                                                                                  \
+        return zmk_input_accelerator_init(dev, config, data);                                      \
     }                                                                                              \
                                                                                                    \
     DEVICE_DT_INST_DEFINE(n, &zmk_input_accelerator_init_##n, NULL, &data_##n, &config_##n,        \

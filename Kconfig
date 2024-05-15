@@ -26,4 +26,15 @@ if ZMK_INPUT_ACCELERATOR
         bool "Enable logging of accelerated movements."
         default n
 
+    if ZMK_INPUT_ACCELERATOR_LOG_ENABLED
+
+        choice CBPRINTF_IMPLEMENTATION
+            default CBPRINTF_COMPLETE
+        endchoice
+
+        config CBPRINTF_FP_SUPPORT
+            default y
+
+    endif # ZMK_INPUT_ACCELERATOR_LOG_ENABLED
+
 endif # ZMK_INPUT_ACCELERATOR
