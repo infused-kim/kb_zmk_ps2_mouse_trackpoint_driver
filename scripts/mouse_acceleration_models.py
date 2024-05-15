@@ -22,15 +22,15 @@ D_OUTPUT_TITLE = 'output'
 D_ZOOM_MAX_X = 30
 
 
-def sigmoid_function(x, limit, slope):
+def sigmoid_function(x, limit, acc_rate):
     '''
     Standard sigmoid function
     '''
 
-    return (limit) / (1 + math.exp(-slope * x))
+    return (limit) / (1 + math.exp(-acc_rate * x))
 
 
-def sigmoid_function_inverse(y, limit, slope, raise_error=True):
+def sigmoid_function_inverse(y, limit, acc_rate, raise_error=True):
     '''
     Inverse of the sigmoid function. Takes a y value as input and returns the
     corresponding x value.
@@ -46,7 +46,34 @@ def sigmoid_function_inverse(y, limit, slope, raise_error=True):
         if y <= 0 or y >= limit:
             raise ValueError("y must be within the range (0, limit)")
 
-    return -1 / slope * math.log((limit - y) / y)
+    return -1 / acc_rate * math.log((limit - y) / y)
+
+
+def sigmoid_function_with_offset(x, limit, acc_rate, start_offset, start_offset_y_value):
+    # The sigmoid curve is always centered at 0 (meaning x0 = limit/2). We
+    # can shift the curve to the right by subtracting x values.
+    #
+    # This function allows us to pass the y value we wish the sigmoid curve
+    # to start with after the offset.
+    #
+    # A reasonable value, for example, is 2.5% of the limit.
+    #
+    # This way, we position the curve in such a way that we can see a meaningful,
+    # yet gradual, increase of the acceleration curve after the offset.
+    #
+    # So, we determine the x value where the sigmoid function returns that
+    # increase. And then we shift the curve to the right so that the curve
+    # has the 2.5% increase at exactly the offset x value.
+    start_offset_addition = sigmoid_function_inverse(
+        start_offset_y_value, limit, acc_rate
+    )
+    speed_offset = x - start_offset + start_offset_addition
+
+    acc_factor = sigmoid_function(
+        speed_offset, limit, acc_rate
+    )
+
+    return acc_factor
 
 
 def get_acc_factor_with_max_speed(acc_factor,
@@ -95,24 +122,9 @@ def calc_acceleration_factor_sigmoid(speed,
     speed_abs = abs(speed)
     sigmoid_limit = acc_factor_max - acc_factor_base
 
-    # The sigmoid curve is always centered at 0 (meaning x0 = limit/2). We
-    # can shift the curve to the right by subtracting x values.
-    #
-    # We want to position the curve in such a way that we can see a meaningful,
-    # yet gradual, increase of the acceleration curve after the offset. We use
-    # 2.5% of the total acceleration-increase-range for that.
-    #
-    # So, we determine the x value where the sigmoid function returns that
-    # increase. And then we shift the curve to the right so that the curve
-    # has the 2.5% increase at exactly the offset x value.
     start_offset_y_value = sigmoid_limit * 0.025
-    start_offset_addition = sigmoid_function_inverse(
-        start_offset_y_value, sigmoid_limit, acc_rate
-    )
-    speed_offset = speed_abs - start_offset + start_offset_addition
-
-    acc_factor = sigmoid_function(
-        speed_offset, sigmoid_limit, acc_rate
+    acc_factor = sigmoid_function_with_offset(
+        speed_abs, sigmoid_limit, acc_rate, start_offset, start_offset_y_value
     )
 
     acc_factor = acc_factor + acc_factor_base
@@ -146,28 +158,15 @@ def calc_acceleration_factor_scroll(speed,
     if speed_abs >= start_offset:
         sigmoid_limit = max_speed - 1
 
-        # The sigmoid curve is always centered at 0 (meaning x0 = limit/2). We
-        # can shift the curve to the right by subtracting x values.
-        #
-        # We want to position the curve in such a way that we can see a meaningful,
-        # yet gradual, increase of the acceleration curve after the offset.
-        #
-        # For scrolling we use a smaller rate of just 1% increase (compared to 2.5 for
-        # mouse movement in the sigmoid curve).
-        #
-        # So, we determine the x value where the sigmoid function returns that
-        # increase. And then we shift the curve to the right so that the curve
-        # has the 2.5% increase at exactly the offset x value.
         start_offset_y_value = sigmoid_limit * 0.01
-        start_offset_addition = sigmoid_function_inverse(
-            start_offset_y_value, sigmoid_limit, acc_rate
+        speed_new = sigmoid_function_with_offset(
+            speed_abs,
+            sigmoid_limit,
+            acc_rate,
+            start_offset,
+            start_offset_y_value,
         )
-        speed_offset = speed_abs - start_offset + start_offset_addition
-
-        speed_new = sigmoid_function(
-            speed_offset, sigmoid_limit, acc_rate
-        )
-        speed_new = speed_new + 1
+        speed_new = speed_new + 1 - start_offset_y_value
 
     acc_factor = speed_new / speed_abs
 
