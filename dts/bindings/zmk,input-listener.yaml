@@ -52,3 +52,7 @@ properties:
     type: boolean
     required: false
     description: Swaps the direction of vertical scrolling (up becomes down and down becomes up). Useful on macOS with their "natural scrolling", which makes sense on trackpads, but not other mouse devices.
+  scroll-layers-reverse-direction-horizontal:
+    type: boolean
+    required: false
+    description: Swaps the direction of vertical scrolling (up becomes down and down becomes up). Useful on macOS with their "natural scrolling", which makes sense on trackpads, but not other mouse devices.

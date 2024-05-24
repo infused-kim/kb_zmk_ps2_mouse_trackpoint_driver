@@ -82,6 +82,7 @@ struct input_listener_ps2_config {
     int layer_toggle_require_prior_idle_ms;
     int scroll_layers[20];
     size_t scroll_layers_len;
+    bool scroll_layers_reverse_direction_horizontal;
     bool scroll_layers_reverse_direction_vertical;
 };
 
@@ -240,6 +241,9 @@ static void input_handler_ps2(const struct input_listener_ps2_config *config,
                     data->mouse.data.x = acc_mov.x;
                     data->mouse.data.y = acc_mov.y;
 
+                    if (config->scroll_layers_reverse_direction_horizontal == true) {
+                        data->mouse.data.x = data->mouse.data.x * -1;
+                    }
                     if (config->scroll_layers_reverse_direction_vertical == true) {
                         data->mouse.data.y = data->mouse.data.y * -1;
                     }
@@ -450,6 +454,8 @@ static int zmk_input_listener_ps2_position_listener(const struct input_listener_
                         DT_INST_PROP(n, layer_toggle_require_prior_idle_ms),                       \
                     .scroll_layers = DT_INST_PROP_OR(n, scroll_layers, {}),                        \
                     .scroll_layers_len = DT_INST_PROP_LEN_OR(n, scroll_layers, 0),                 \
+                    .scroll_layers_reverse_direction_horizontal =                                  \
+                        DT_INST_PROP(n, scroll_layers_reverse_direction_horizontal),               \
                     .scroll_layers_reverse_direction_vertical =                                    \
                         DT_INST_PROP(n, scroll_layers_reverse_direction_vertical),                 \
                 };                                                                                 \
