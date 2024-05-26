@@ -56,12 +56,13 @@ If you are interested in how this project came to be, [check out the development
   - [4.3. If you get bad battery life](#43-if-you-get-bad-battery-life)
   - [4.4. If your split keyboard halves refuse to pair](#44-if-your-split-keyboard-halves-refuse-to-pair)
 - [5. Development Journey Blog \& Implementation Details](#5-development-journey-blog--implementation-details)
-- [6. Related Resources](#6-related-resources)
-  - [6.1. Zmk Related](#61-zmk-related)
-  - [6.2. TrackPoint Info](#62-trackpoint-info)
-  - [6.3. How to figure out TrackPoint Pinout](#63-how-to-figure-out-trackpoint-pinout)
-  - [6.4. Datasheets](#64-datasheets)
-  - [6.5. Other Info](#65-other-info)
+- [6. Related Resources \& Projects](#6-related-resources--projects)
+  - [6.1. My Other TrackPoint Related Repos](#61-my-other-trackpoint-related-repos)
+  - [6.2. Zmk Related](#62-zmk-related)
+  - [6.3. TrackPoint Info](#63-trackpoint-info)
+  - [6.4. How to figure out TrackPoint Pinout](#64-how-to-figure-out-trackpoint-pinout)
+  - [6.5. Datasheets](#65-datasheets)
+  - [6.6. Other Info](#66-other-info)
 
 ## 1. Features
 
@@ -217,7 +218,9 @@ To help you better understand the example zmk-config, here are the things you ha
 
 If you don't have a zmk-config yet, then you can [follow the zmk documentation for instructions on how to create a new config](https://zmk.dev/docs/user-setup).
 
-> **Notice for long-time zmk users**
+> [!TIP]
+>
+> **For long-time zmk users**
 >
 > The zmk-config format was recently updated to be a module. If you created your zmk config a long time ago, you may need to update your zmk-config directory structure.
 >
@@ -273,7 +276,7 @@ Next, rename the files in your personal config directory (not the shield directo
 - Keymap, such as `zmk-config/config/corne.keymap` -> `corne_tp.keymap`
 - Config file, such as `zmk-config/config/corne.conf` -> `corne_tp.conf`
 
-> **Important**
+> [!IMPORTANT]
 >
 > The keymap and config files are present in both the `zmk-config/boards/shields` directory, as well as the `zmk-config/config` directory.
 >
@@ -344,7 +347,7 @@ You will need to add the config in these places:
 
 ##### In your config directory... <!-- omit from toc -->
 
-> **Warning**
+> [!TIP]
 >
 > Make sure you edit these files inside the `zmk-config/config/` directory. The same files also exist within the shield directory, but you should edit your personal keymap and config.
 
@@ -549,7 +552,7 @@ If not, please refer to the troubleshooting section below.
 
 ### 3.7. Or, build your firmware using a local toolchain (for developers only)
 
-> **Notice**
+> [!NOTE]
 >
 > This sub-section is for developers who are building zmk locally on their computers instead of using GitHub Actions. Most people can ignore this sub-section.
 
@@ -1343,9 +1346,14 @@ If you have any comments or questions, feel free to find me on the zmk discord s
 
 Kim
 
-## 6. Related Resources
+## 6. Related Resources & Projects
 
-### 6.1. Zmk Related
+### 6.1. My Other TrackPoint Related Repos
+
+- [My TrackPoint Keycap Cutter](https://github.com/infused-kim/kb_keycaps_trackpoint)
+- [My TrackPoint Extensions](https://github.com/infused-kim/kb_trackpoint_extension)
+
+### 6.2. Zmk Related
 
 - [Example zmk-config for this driver](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver-zmk_config)
 - [My personal, more advanced zmk-config](https://github.com/infused-kim/zmk-config)
@@ -1353,13 +1361,14 @@ Kim
 - [Zmk PR #2027: Mouse pointer movement/scrolling](https://github.com/zmkfirmware/zmk/pull/2027)
 - [Zmk PR #1751: Add PS/2 Mouse / TrackPoint / Trackpad / Trackball support](https://github.com/zmkfirmware/zmk/pull/1751)
 
-### 6.2. TrackPoint Info
+### 6.3. TrackPoint Info
 
 - [Deskthority - Trackpoint Pinout Wiki](https://deskthority.net/wiki/TrackPoint_Hardware)
 - [Alon Swartz's TrackPoint Info (Includes Reset Circuit Info)](https://github.com/alonswartz/TrackPoint?tab=readme-ov-file#q-how-do-i-identify-the-trackpoint-pinout)
 - [Manna Harbour's TrackPoint Info](https://github.com/manna-harbour/crkbd/tree/master/trackpoint)
+- [TrackPoint VIK module](https://github.com/sadekbaroudi/vik/tree/master/pcb/trackpoint-2-piece)
 
-### 6.3. How to figure out TrackPoint Pinout
+### 6.4. How to figure out TrackPoint Pinout
 
 Here are a few resources I found useful for figuring out the pinout of my TrackPoint (in no particular order):
 
@@ -1370,13 +1379,13 @@ Here are a few resources I found useful for figuring out the pinout of my TrackP
 - [English version of half of the post](https://geekhack.org/index.php?topic=115912.0)
 - [Another forum thread with people giving tips on how to identify](https://deskthority.net/viewtopic.php?f=7&t=7678&start=)
 
-### 6.4. Datasheets
+### 6.5. Datasheets
 
 - [IBM TrackPoint System Version 4.0 Engineering Specification](https://web.mit.edu/bbaren/Public/ykt3eext.pdf)
 - [Sprintek SK7100 PS/2 Pointing Stick Mouse Encoder](https://cdn.thomasnet.com/ccp/10110462/133782.pdf)
 - [Sprintek SK8702 Trackpoint Datasheet](https://cdn.thomasnet.com/ccp/10110462/133781.pdf)
 
-### 6.5. Other Info
+### 6.6. Other Info
 
 - [TrackPoint Cap Comparison](https://baxterhills.com/blog/trackpoints/)
 - [Aftermarked Cap Shop (Including better, rimmed shape)](https://www.etsy.com/shop/SaotoTech#about)
