@@ -159,6 +159,7 @@ typedef enum {
 
 struct zmk_mouse_ps2_config {
     const struct device *ps2_device;
+    bool has_rst_gpio;
     struct gpio_dt_spec rst_gpio;
     int rst_gpio_port_num;
 
@@ -199,6 +200,9 @@ struct zmk_mouse_ps2_data {
     int packet_idx;
     struct zmk_mouse_ps2_packet prev_packet;
     struct k_work_delayable packet_buffer_timeout;
+#if IS_ENABLED(CONFIG_SETTINGS)
+    struct k_work_delayable zmk_mouse_ps2_save_work;
+#endif
 
     bool button_l_is_held;
     bool button_m_is_held;
@@ -215,72 +219,17 @@ struct zmk_mouse_ps2_data {
     uint8_t tp_neg_inertia;
     uint8_t tp_value6;
     uint8_t tp_pts_threshold;
+
+    void *activity_callback;
+    void *activity_resend_callback;
 };
 
-static const struct zmk_mouse_ps2_config zmk_mouse_ps2_config = {
-    .ps2_device = DEVICE_DT_GET(DT_INST_PHANDLE(0, ps2_device)),
-
-#if DT_INST_NODE_HAS_PROP(0, rst_gpios)
-    .rst_gpio = GPIO_DT_SPEC_INST_GET(0, rst_gpios),
-    .rst_gpio_port_num = DT_PROP(DT_INST_PHANDLE(0, rst_gpios), port),
-#else
-    .rst_gpio =
-        {
-            .port = NULL,
-            .pin = 0,
-            .dt_flags = 0,
-        },
-    .rst_gpio_port_num = 0,
-#endif
-
-    .scroll_mode = DT_INST_PROP_OR(0, scroll_mode, false),
-    .disable_clicking = DT_INST_PROP_OR(0, disable_clicking, false),
-    .sampling_rate = DT_INST_PROP_OR(0, sampling_rate, MOUSE_PS2_CMD_SET_SAMPLING_RATE_DEFAULT),
-    .tp_press_to_select = DT_INST_PROP_OR(0, tp_press_to_select, false),
-    .tp_press_to_select_threshold = DT_INST_PROP_OR(0, tp_press_to_select_threshold, -1),
-    .tp_sensitivity = DT_INST_PROP_OR(0, tp_sensitivity, -1),
-    .tp_neg_inertia = DT_INST_PROP_OR(0, tp_neg_inertia, -1),
-    .tp_val6_upper_speed = DT_INST_PROP_OR(0, tp_val6_upper_speed, -1),
-    .tp_x_invert = DT_INST_PROP_OR(0, tp_x_invert, false),
-    .tp_y_invert = DT_INST_PROP_OR(0, tp_y_invert, false),
-    .tp_xy_swap = DT_INST_PROP_OR(0, tp_xy_swap, false),
-};
-
-static struct zmk_mouse_ps2_data zmk_mouse_ps2_data = {
-    .packet_mode = MOUSE_PS2_PACKET_MODE_PS2_DEFAULT,
-    .packet_idx = 0,
-    .prev_packet =
-        {
-            .button_l = false,
-            .button_r = false,
-            .button_m = false,
-            .overflow_x = 0,
-            .overflow_y = 0,
-            .mov_x = 0,
-            .mov_y = 0,
-            .scroll = 0,
-        },
-
-    .button_l_is_held = false,
-    .button_m_is_held = false,
-    .button_r_is_held = false,
-
-    // Data reporting is disabled on init
-    .activity_reporting_on = false,
-
-    // Device Info
-    .is_trackpoint = false,
-    .manufacturer_id = 0x0,
-    .secondary_id = 0x0,
-    .rom_id = 0x0,
-
-    // PS2 devices initialize with this rate
-    .sampling_rate = MOUSE_PS2_CMD_SET_SAMPLING_RATE_DEFAULT,
-    .tp_sensitivity = MOUSE_PS2_CMD_TP_SET_SENSITIVITY_DEFAULT,
-    .tp_neg_inertia = MOUSE_PS2_CMD_TP_SET_NEG_INERTIA_DEFAULT,
-    .tp_value6 = MOUSE_PS2_CMD_TP_SET_VALUE6_UPPER_PLATEAU_SPEED_DEFAULT,
-    .tp_pts_threshold = MOUSE_PS2_CMD_TP_SET_PTS_THRESHOLD_DEFAULT,
-};
+// declare datas and configs for all devices
+// NOTES: Settings will be assigned to all devices via exposed api from behaviors
+#define ZMK_PS2_MOUSE_DEFINE_DATA_N_CFG(n)                  \
+    static struct zmk_mouse_ps2_data data##n;               \
+    static const struct zmk_mouse_ps2_config config##n;
+DT_INST_FOREACH_STATUS_OKAY(ZMK_PS2_MOUSE_DEFINE_DATA_N_CFG)
 
 static int allowed_sampling_rates[] = {
     10, 20, 40, 60, 80, 100, 200,
@@ -303,23 +252,26 @@ int zmk_mouse_ps2_settings_save();
  * Mouse Activity Packet Reading
  */
 
-void zmk_mouse_ps2_activity_process_cmd(zmk_mouse_ps2_packet_mode packet_mode, uint8_t packet_state,
+void zmk_mouse_ps2_activity_process_cmd(const struct device *dev, 
+                                        zmk_mouse_ps2_packet_mode packet_mode, uint8_t packet_state,
                                         uint8_t packet_x, uint8_t packet_y, uint8_t packet_extra);
-void zmk_mouse_ps2_activity_abort_cmd();
-void zmk_mouse_ps2_activity_move_mouse(int16_t mov_x, int16_t mov_y);
-void zmk_mouse_ps2_activity_scroll(int8_t scroll_y);
-void zmk_mouse_ps2_activity_click_buttons(bool button_l, bool button_m, bool button_r);
-void zmk_mouse_ps2_activity_reset_packet_buffer();
+void zmk_mouse_ps2_activity_abort_cmd(const struct device *dev, char *reason);
+void zmk_mouse_ps2_activity_move_mouse(const struct device *dev, int16_t mov_x, int16_t mov_y);
+void zmk_mouse_ps2_activity_scroll(const struct device *dev, int8_t scroll_y);
+void zmk_mouse_ps2_activity_click_buttons(const struct device *dev, 
+                                          bool button_l, bool button_m, bool button_r);
+void zmk_mouse_ps2_activity_reset_packet_buffer(const struct device *dev);
+
 struct zmk_mouse_ps2_packet
 zmk_mouse_ps2_activity_parse_packet_buffer(zmk_mouse_ps2_packet_mode packet_mode,
                                            uint8_t packet_state, uint8_t packet_x, uint8_t packet_y,
                                            uint8_t packet_extra);
-void zmk_mouse_ps2_activity_toggle_layer();
 
 // Called by the PS/2 driver whenver the mouse sends a byte and
 // reporting is enabled through `zmk_mouse_ps2_activity_reporting_enable`.
-void zmk_mouse_ps2_activity_callback(const struct device *ps2_device, uint8_t byte) {
-    struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
+void zmk_mouse_ps2_activity_callback(const struct device *dev,
+                                     const struct device *ps2_device, uint8_t byte) {
+    struct zmk_mouse_ps2_data *data = dev->data;
 
     k_work_cancel_delayable(&data->packet_buffer_timeout);
 
@@ -336,7 +288,7 @@ void zmk_mouse_ps2_activity_callback(const struct device *ps2_device, uint8_t by
         int alignment_bit = MOUSE_PS2_GET_BIT(byte, 3);
         if (alignment_bit != 1) {
 
-            zmk_mouse_ps2_activity_abort_cmd("Bit 3 of packet is 0 instead of 1");
+            zmk_mouse_ps2_activity_abort_cmd(data->dev, "Bit 3 of packet is 0 instead of 1");
             return;
         }
     } else if (data->packet_idx == 1) {
@@ -344,10 +296,11 @@ void zmk_mouse_ps2_activity_callback(const struct device *ps2_device, uint8_t by
     } else if ((data->packet_mode == MOUSE_PS2_PACKET_MODE_PS2_DEFAULT && data->packet_idx == 2) ||
                (data->packet_mode == MOUSE_PS2_PACKET_MODE_SCROLL && data->packet_idx == 3)) {
 
-        zmk_mouse_ps2_activity_process_cmd(data->packet_mode, data->packet_buffer[0],
+        zmk_mouse_ps2_activity_process_cmd(data->dev,
+                                           data->packet_mode, data->packet_buffer[0],
                                            data->packet_buffer[1], data->packet_buffer[2],
                                            data->packet_buffer[3]);
-        zmk_mouse_ps2_activity_reset_packet_buffer();
+        zmk_mouse_ps2_activity_reset_packet_buffer(data->dev);
         return;
     }
 
@@ -356,9 +309,9 @@ void zmk_mouse_ps2_activity_callback(const struct device *ps2_device, uint8_t by
     k_work_schedule(&data->packet_buffer_timeout, MOUSE_PS2_TIMEOUT_ACTIVITY_PACKET);
 }
 
-void zmk_mouse_ps2_activity_abort_cmd(char *reason) {
-    struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
-    const struct zmk_mouse_ps2_config *config = &zmk_mouse_ps2_config;
+void zmk_mouse_ps2_activity_abort_cmd(const struct device *dev, char *reason) {
+    struct zmk_mouse_ps2_data *data = dev->data;
+    const struct zmk_mouse_ps2_config *config = dev->config;
     const struct device *ps2_device = config->ps2_device;
 
     LOG_ERR("PS/2 Mouse cmd buffer is out of aligment. Requesting resend: %s", reason);
@@ -366,48 +319,56 @@ void zmk_mouse_ps2_activity_abort_cmd(char *reason) {
     data->packet_idx = 0;
     ps2_write(ps2_device, MOUSE_PS2_CMD_RESEND[0]);
 
-    zmk_mouse_ps2_activity_reset_packet_buffer();
+    zmk_mouse_ps2_activity_reset_packet_buffer(dev);
 }
-
-#if IS_ENABLED(CONFIG_ZMK_INPUT_MOUSE_PS2_ENABLE_PS2_RESEND_CALLBACK)
 
 // Called if the PS/2 driver encounters a transmission error and asks the
 // device to resend the packet.
 // The device will resend all bytes of the packet. So we need to reset our
 // buffer.
-void zmk_mouse_ps2_activity_resend_callback(const struct device *ps2_device) {
-    struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
+void zmk_mouse_ps2_activity_resend_callback(const struct device *dev, 
+                                            const struct device *ps2_device) {
+
+#if IS_ENABLED(CONFIG_ZMK_INPUT_MOUSE_PS2_ENABLE_PS2_RESEND_CALLBACK)
+
+    struct zmk_mouse_ps2_data *data = dev->data;
 
     LOG_WRN("Mouse movement cmd had transmission error on idx=%d", data->packet_idx);
 
-    zmk_mouse_ps2_activity_reset_packet_buffer();
-}
+    zmk_mouse_ps2_activity_reset_packet_buffer(dev);
 
 #endif /* IS_ENABLED(CONFIG_ZMK_INPUT_MOUSE_PS2_ENABLE_PS2_RESEND_CALLBACK) */
+}
 
 // Called if no new byte arrives within
 // MOUSE_PS2_TIMEOUT_ACTIVITY_PACKET
 void zmk_mouse_ps2_activity_packet_timout(struct k_work *item) {
-    struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
+
+    struct k_work_delayable *work_delayable = (struct k_work_delayable *)item;
+    struct zmk_mouse_ps2_data *data = CONTAINER_OF(work_delayable,
+                                                   struct zmk_mouse_ps2_data,
+                                                   packet_buffer_timeout);
+    const struct device *dev = data->dev;
 
     LOG_DBG("Mouse movement cmd timed out on idx=%d", data->packet_idx);
 
     // Reset the cmd buffer in case we are out of alignment.
     // This way if the mouse ever gets out of alignment, the user
     // can reset it by just not moving it for a second.
-    zmk_mouse_ps2_activity_reset_packet_buffer();
+    zmk_mouse_ps2_activity_reset_packet_buffer(dev);
 }
 
-void zmk_mouse_ps2_activity_reset_packet_buffer() {
-    struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
+void zmk_mouse_ps2_activity_reset_packet_buffer(const struct device *dev) {
+    struct zmk_mouse_ps2_data *data = dev->data;
 
     data->packet_idx = 0;
     memset(data->packet_buffer, 0x0, sizeof(data->packet_buffer));
 }
 
-void zmk_mouse_ps2_activity_process_cmd(zmk_mouse_ps2_packet_mode packet_mode, uint8_t packet_state,
+void zmk_mouse_ps2_activity_process_cmd(const struct device *dev,
+                                        zmk_mouse_ps2_packet_mode packet_mode, uint8_t packet_state,
                                         uint8_t packet_x, uint8_t packet_y, uint8_t packet_extra) {
-    struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
+    struct zmk_mouse_ps2_data *data = dev->data;
     struct zmk_mouse_ps2_packet packet;
     packet = zmk_mouse_ps2_activity_parse_packet_buffer(packet_mode, packet_state, packet_x,
                                                         packet_y, packet_extra);
@@ -427,7 +388,7 @@ void zmk_mouse_ps2_activity_process_cmd(zmk_mouse_ps2_packet_mode packet_mode, u
         LOG_WRN("Detected overflow in both x and y. "
                 "Probably mistransmission. Aborting...");
 
-        zmk_mouse_ps2_activity_abort_cmd("Overflow in both x and y");
+        zmk_mouse_ps2_activity_abort_cmd(data->dev, "Overflow in both x and y");
         return;
     }
 
@@ -442,13 +403,13 @@ void zmk_mouse_ps2_activity_process_cmd(zmk_mouse_ps2_packet_mode packet_mode, u
                 "x_delta=%d, y_delta=%d)",
                 packet.mov_x, packet.mov_y, packet.overflow_x, packet.overflow_y, packet.scroll,
                 packet.button_l, packet.button_m, packet.button_r, x_delta, y_delta);
-        zmk_mouse_ps2_activity_abort_cmd("Exceeds movement threshold.");
+        zmk_mouse_ps2_activity_abort_cmd(data->dev, "Exceeds movement threshold.");
         return;
     }
 #endif
 
-    zmk_mouse_ps2_activity_move_mouse(packet.mov_x, packet.mov_y);
-    zmk_mouse_ps2_activity_click_buttons(packet.button_l, packet.button_m, packet.button_r);
+    zmk_mouse_ps2_activity_move_mouse(data->dev, packet.mov_x, packet.mov_y);
+    zmk_mouse_ps2_activity_click_buttons(data->dev, packet.button_l, packet.button_m, packet.button_r);
 
     data->prev_packet = packet;
 }
@@ -509,8 +470,8 @@ zmk_mouse_ps2_activity_parse_packet_buffer(zmk_mouse_ps2_packet_mode packet_mode
 
 static bool zmk_mouse_ps2_is_non_zero_1d_movement(int16_t speed) { return speed != 0; }
 
-void zmk_mouse_ps2_activity_move_mouse(int16_t mov_x, int16_t mov_y) {
-    struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
+void zmk_mouse_ps2_activity_move_mouse(const struct device *dev, int16_t mov_x, int16_t mov_y) {
+    struct zmk_mouse_ps2_data *data = dev->data;
     int ret = 0;
 
     bool have_x = zmk_mouse_ps2_is_non_zero_1d_movement(mov_x);
@@ -557,9 +518,10 @@ void zmk_mouse_ps2_activity_move_mouse(int16_t mov_x, int16_t mov_y) {
 
 }
 
-void zmk_mouse_ps2_activity_click_buttons(bool button_l, bool button_m, bool button_r) {
-    struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
-    const struct zmk_mouse_ps2_config *config = &zmk_mouse_ps2_config;
+void zmk_mouse_ps2_activity_click_buttons(const struct device *dev, 
+                                          bool button_l, bool button_m, bool button_r) {
+    struct zmk_mouse_ps2_data *data = dev->data;
+    const struct zmk_mouse_ps2_config *config = dev->config;
 
     // TODO: Integrate this with the proper button mask instead
     // of hardcoding the mouse button indeces.
@@ -618,7 +580,7 @@ void zmk_mouse_ps2_activity_click_buttons(bool button_l, bool button_m, bool but
                 "Probably tranmission error.",
                 buttons_pressed, buttons_released);
 
-        zmk_mouse_ps2_activity_abort_cmd("Multiple button presses");
+        zmk_mouse_ps2_activity_abort_cmd(dev, "Multiple button presses");
         return;
     }
 
@@ -677,8 +639,8 @@ void zmk_mouse_ps2_activity_click_buttons(bool button_l, bool button_m, bool but
 /*
  * PS/2 Command Sending Wrapper
  */
-int zmk_mouse_ps2_activity_reporting_enable();
-int zmk_mouse_ps2_activity_reporting_disable();
+int zmk_mouse_ps2_activity_reporting_enable(const struct device *dev);
+int zmk_mouse_ps2_activity_reporting_disable(const struct device *dev);
 
 struct zmk_mouse_ps2_send_cmd_resp {
     int err;
@@ -687,10 +649,11 @@ struct zmk_mouse_ps2_send_cmd_resp {
     int resp_len;
 };
 
-struct zmk_mouse_ps2_send_cmd_resp zmk_mouse_ps2_send_cmd(char *cmd, int cmd_len, uint8_t *arg,
+struct zmk_mouse_ps2_send_cmd_resp zmk_mouse_ps2_send_cmd(const struct device *dev,
+                                                          char *cmd, int cmd_len, uint8_t *arg,
                                                           int resp_len, bool pause_reporting) {
-    struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
-    const struct zmk_mouse_ps2_config *config = &zmk_mouse_ps2_config;
+    struct zmk_mouse_ps2_data *data = dev->data;
+    const struct zmk_mouse_ps2_config *config = dev->config;
     const struct device *ps2_device = config->ps2_device;
     int err = 0;
     bool prev_activity_reporting_on = data->activity_reporting_on;
@@ -723,7 +686,7 @@ struct zmk_mouse_ps2_send_cmd_resp zmk_mouse_ps2_send_cmd(char *cmd, int cmd_len
     if (pause_reporting == true && data->activity_reporting_on == true) {
         LOG_DBG("Disabling mouse activity reporting...");
 
-        resp.err = zmk_mouse_ps2_activity_reporting_disable();
+        resp.err = zmk_mouse_ps2_activity_reporting_disable(dev);
         if (resp.err) {
             snprintf(resp.err_msg, sizeof(resp.err_msg), "Could not disable data reporting (%d)",
                      err);
@@ -766,7 +729,7 @@ struct zmk_mouse_ps2_send_cmd_resp zmk_mouse_ps2_send_cmd(char *cmd, int cmd_len
     if (pause_reporting == true && prev_activity_reporting_on == true) {
         LOG_DBG("Enabling mouse activity reporting...");
 
-        err = zmk_mouse_ps2_activity_reporting_enable();
+        err = zmk_mouse_ps2_activity_reporting_enable(dev);
         if (err) {
             // Don' overwrite existing error
             if (resp.err == 0) {
@@ -780,9 +743,9 @@ struct zmk_mouse_ps2_send_cmd_resp zmk_mouse_ps2_send_cmd(char *cmd, int cmd_len
     return resp;
 }
 
-int zmk_mouse_ps2_activity_reporting_enable() {
-    struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
-    const struct zmk_mouse_ps2_config *config = &zmk_mouse_ps2_config;
+int zmk_mouse_ps2_activity_reporting_enable(const struct device *dev) {
+    struct zmk_mouse_ps2_data *data = dev->data;
+    const struct zmk_mouse_ps2_config *config = dev->config;
     const struct device *ps2_device = config->ps2_device;
 
     if (data->activity_reporting_on == true) {
@@ -807,9 +770,9 @@ int zmk_mouse_ps2_activity_reporting_enable() {
     return 0;
 }
 
-int zmk_mouse_ps2_activity_reporting_disable() {
-    struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
-    const struct zmk_mouse_ps2_config *config = &zmk_mouse_ps2_config;
+int zmk_mouse_ps2_activity_reporting_disable(const struct device *dev) {
+    struct zmk_mouse_ps2_data *data = dev->data;
+    const struct zmk_mouse_ps2_config *config = dev->config;
     const struct device *ps2_device = config->ps2_device;
 
     if (data->activity_reporting_on == false) {
@@ -882,9 +845,10 @@ int zmk_mouse_ps2_array_get_prev_elem(int elem, int *array, size_t array_size) {
  * PS/2 Commands
  */
 
-int zmk_mouse_ps2_reset(const struct device *ps2_device) {
+int zmk_mouse_ps2_reset(const struct device *dev, const struct device *ps2_device) {
     struct zmk_mouse_ps2_send_cmd_resp resp =
-        zmk_mouse_ps2_send_cmd(MOUSE_PS2_CMD_RESET, sizeof(MOUSE_PS2_CMD_RESET), NULL,
+        zmk_mouse_ps2_send_cmd(dev,
+                               MOUSE_PS2_CMD_RESET, sizeof(MOUSE_PS2_CMD_RESET), NULL,
                                MOUSE_PS2_CMD_RESET_RESP_LEN, false);
     if (resp.err) {
         LOG_ERR("Could not send reset cmd");
@@ -893,8 +857,8 @@ int zmk_mouse_ps2_reset(const struct device *ps2_device) {
     return resp.err;
 }
 
-int zmk_mouse_ps2_set_sampling_rate(uint8_t sampling_rate) {
-    struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
+int zmk_mouse_ps2_set_sampling_rate(const struct device *dev, uint8_t sampling_rate) {
+    struct zmk_mouse_ps2_data *data = dev->data;
 
     int rate_idx = zmk_mouse_ps2_array_get_elem_index(sampling_rate, allowed_sampling_rates,
                                                       sizeof(allowed_sampling_rates));
@@ -904,6 +868,7 @@ int zmk_mouse_ps2_set_sampling_rate(uint8_t sampling_rate) {
     }
 
     struct zmk_mouse_ps2_send_cmd_resp resp = zmk_mouse_ps2_send_cmd(
+        dev,
         MOUSE_PS2_CMD_SET_SAMPLING_RATE, sizeof(MOUSE_PS2_CMD_SET_SAMPLING_RATE), &sampling_rate,
         MOUSE_PS2_CMD_SET_SAMPLING_RATE_RESP_LEN, true);
     if (resp.err) {
@@ -918,8 +883,9 @@ int zmk_mouse_ps2_set_sampling_rate(uint8_t sampling_rate) {
     return resp.err;
 }
 
-int zmk_mouse_ps2_get_device_id(uint8_t *device_id) {
+int zmk_mouse_ps2_get_device_id(const struct device *dev, uint8_t *device_id) {
     struct zmk_mouse_ps2_send_cmd_resp resp = zmk_mouse_ps2_send_cmd(
+        dev,
         MOUSE_PS2_CMD_GET_DEVICE_ID, sizeof(MOUSE_PS2_CMD_GET_DEVICE_ID), NULL, 1, true);
     if (resp.err) {
         LOG_ERR("Could not get device id");
@@ -931,8 +897,8 @@ int zmk_mouse_ps2_get_device_id(uint8_t *device_id) {
     return 0;
 }
 
-int zmk_mouse_ps2_set_packet_mode(zmk_mouse_ps2_packet_mode mode) {
-    struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
+int zmk_mouse_ps2_set_packet_mode(const struct device *dev, zmk_mouse_ps2_packet_mode mode) {
+    struct zmk_mouse_ps2_data *data = dev->data;
 
     if (mode == MOUSE_PS2_PACKET_MODE_PS2_DEFAULT) {
         // Do nothing. Mouse devices enable this by
@@ -941,16 +907,16 @@ int zmk_mouse_ps2_set_packet_mode(zmk_mouse_ps2_packet_mode mode) {
     }
 
     bool prev_activity_reporting_on = data->activity_reporting_on;
-    zmk_mouse_ps2_activity_reporting_disable();
+    zmk_mouse_ps2_activity_reporting_disable(dev);
 
     // Setting a mouse mode is a bit like using a cheat code
     // in a video game.
     // You have to send a specific sequence of sampling rates.
     if (mode == MOUSE_PS2_PACKET_MODE_SCROLL) {
 
-        zmk_mouse_ps2_set_sampling_rate(200);
-        zmk_mouse_ps2_set_sampling_rate(100);
-        zmk_mouse_ps2_set_sampling_rate(80);
+        zmk_mouse_ps2_set_sampling_rate(dev, 200);
+        zmk_mouse_ps2_set_sampling_rate(dev, 100);
+        zmk_mouse_ps2_set_sampling_rate(dev, 80);
     }
 
     // Scroll mouse + 5 buttons mode can be enabled with the
@@ -958,13 +924,13 @@ int zmk_mouse_ps2_set_packet_mode(zmk_mouse_ps2_packet_mode mode) {
     // test it, I am commenting it out for now.
     // else if(mode == MOUSE_PS2_PACKET_MODE_SCROLL_5_BUTTONS) {
 
-    //     zmk_mouse_ps2_set_sampling_rate(200);
-    //     zmk_mouse_ps2_set_sampling_rate(200);
-    //     zmk_mouse_ps2_set_sampling_rate(80);
+    //     zmk_mouse_ps2_set_sampling_rate(dev, 200);
+    //     zmk_mouse_ps2_set_sampling_rate(dev, 200);
+    //     zmk_mouse_ps2_set_sampling_rate(dev, 80);
     // }
 
     uint8_t device_id;
-    int err = zmk_mouse_ps2_get_device_id(&device_id);
+    int err = zmk_mouse_ps2_get_device_id(dev, &device_id);
     if (err) {
         LOG_ERR("Could not enable packet mode %d. Failed to get device id with "
                 "error %d",
@@ -1005,10 +971,10 @@ int zmk_mouse_ps2_set_packet_mode(zmk_mouse_ps2_packet_mode mode) {
     }
 
     // Restore sampling rate to prev value
-    zmk_mouse_ps2_set_sampling_rate(data->sampling_rate);
+    zmk_mouse_ps2_set_sampling_rate(dev, data->sampling_rate);
 
     if (prev_activity_reporting_on == true) {
-        zmk_mouse_ps2_activity_reporting_enable();
+        zmk_mouse_ps2_activity_reporting_enable(dev);
     }
 
     return err;
@@ -1018,8 +984,10 @@ int zmk_mouse_ps2_set_packet_mode(zmk_mouse_ps2_packet_mode mode) {
  * Trackpoint Commands
  */
 
-int zmk_mouse_ps2_tp_get_secondary_id(uint8_t *manufacturer_id, uint8_t *secondary_id) {
+int zmk_mouse_ps2_tp_get_secondary_id(const struct device *dev,
+                                      uint8_t *manufacturer_id, uint8_t *secondary_id) {
     struct zmk_mouse_ps2_send_cmd_resp resp = zmk_mouse_ps2_send_cmd(
+        dev,
         MOUSE_PS2_CMD_TP_GET_SECONDARY_ID, sizeof(MOUSE_PS2_CMD_TP_GET_SECONDARY_ID), NULL,
         MOUSE_PS2_CMD_TP_GET_SECONDARY_ID_RESP_LEN, true);
     if (resp.err) {
@@ -1033,9 +1001,10 @@ int zmk_mouse_ps2_tp_get_secondary_id(uint8_t *manufacturer_id, uint8_t *seconda
     return 0;
 }
 
-int zmk_mouse_ps2_tp_get_rom_id(uint8_t *rom_id) {
+int zmk_mouse_ps2_tp_get_rom_id(const struct device *dev, uint8_t *rom_id) {
     struct zmk_mouse_ps2_send_cmd_resp resp =
-        zmk_mouse_ps2_send_cmd(MOUSE_PS2_CMD_TP_GET_ROM_ID, sizeof(MOUSE_PS2_CMD_TP_GET_ROM_ID),
+        zmk_mouse_ps2_send_cmd(dev,
+                               MOUSE_PS2_CMD_TP_GET_ROM_ID, sizeof(MOUSE_PS2_CMD_TP_GET_ROM_ID),
                                NULL, MOUSE_PS2_CMD_TP_GET_ROM_ID_RESP_LEN, true);
     if (resp.err) {
         LOG_ERR("Could not get secondary id");
@@ -1075,11 +1044,12 @@ char *zmk_mouse_ps2_get_manufacturer_str(uint8_t manufacturer_id) {
 // trackpoints. After that they started to use other manufacturers.
 //
 // Page 19 of the IBM TP spec describes the features of different firmware ids.
-int zmk_mouse_ps2_tp_get_device_info(bool *is_tp, uint8_t *tp_manufacturer_id,
+int zmk_mouse_ps2_tp_get_device_info(const struct device *dev,
+                                     bool *is_tp, uint8_t *tp_manufacturer_id,
                                      uint8_t *tp_secondary_id, uint8_t *tp_rom_id, char *device_str,
                                      int device_str_size) {
 
-    int err = zmk_mouse_ps2_tp_get_secondary_id(tp_manufacturer_id, tp_secondary_id);
+    int err = zmk_mouse_ps2_tp_get_secondary_id(dev, tp_manufacturer_id, tp_secondary_id);
     if (err) {
         // Only TPs implement this command. So, if it fails, it means the
         // device is not a TP.
@@ -1096,7 +1066,7 @@ int zmk_mouse_ps2_tp_get_device_info(bool *is_tp, uint8_t *tp_manufacturer_id,
 
     *is_tp = true;
 
-    err = zmk_mouse_ps2_tp_get_rom_id(tp_rom_id);
+    err = zmk_mouse_ps2_tp_get_rom_id(dev, tp_rom_id);
     if (err) {
         LOG_ERR("Could not determine TP rom id: %d", err);
         *tp_rom_id = 0x0;
@@ -1112,8 +1082,9 @@ int zmk_mouse_ps2_tp_get_device_info(bool *is_tp, uint8_t *tp_manufacturer_id,
     return err;
 }
 
-int zmk_mouse_ps2_tp_get_config_byte(uint8_t *config_byte) {
+int zmk_mouse_ps2_tp_get_config_byte(const struct device* dev, uint8_t *config_byte) {
     struct zmk_mouse_ps2_send_cmd_resp resp = zmk_mouse_ps2_send_cmd(
+        dev,
         MOUSE_PS2_CMD_TP_GET_CONFIG_BYTE, sizeof(MOUSE_PS2_CMD_TP_GET_CONFIG_BYTE), NULL,
         MOUSE_PS2_CMD_TP_GET_CONFIG_BYTE_RESP_LEN, true);
     if (resp.err) {
@@ -1126,9 +1097,10 @@ int zmk_mouse_ps2_tp_get_config_byte(uint8_t *config_byte) {
     return 0;
 }
 
-int zmk_mouse_ps2_tp_set_config_option(int config_bit, bool enabled, char *descr) {
+int zmk_mouse_ps2_tp_set_config_option(const struct device *dev,
+                                       int config_bit, bool enabled, char *descr) {
     uint8_t config_byte;
-    int err = zmk_mouse_ps2_tp_get_config_byte(&config_byte);
+    int err = zmk_mouse_ps2_tp_get_config_byte(dev, &config_byte);
     if (err) {
         return err;
     }
@@ -1146,6 +1118,7 @@ int zmk_mouse_ps2_tp_set_config_option(int config_bit, bool enabled, char *descr
     MOUSE_PS2_SET_BIT(config_byte, enabled, config_bit);
 
     struct zmk_mouse_ps2_send_cmd_resp resp = zmk_mouse_ps2_send_cmd(
+        dev,
         MOUSE_PS2_CMD_TP_SET_CONFIG_BYTE, sizeof(MOUSE_PS2_CMD_TP_SET_CONFIG_BYTE), &config_byte,
         MOUSE_PS2_CMD_TP_SET_CONFIG_BYTE_RESP_LEN, true);
     if (resp.err) {
@@ -1158,36 +1131,41 @@ int zmk_mouse_ps2_tp_set_config_option(int config_bit, bool enabled, char *descr
     return 0;
 }
 
-int zmk_mouse_ps2_tp_press_to_select_set(bool enabled) {
-    int err = zmk_mouse_ps2_tp_set_config_option(MOUSE_PS2_TP_CONFIG_BIT_PRESS_TO_SELECT, enabled,
+int zmk_mouse_ps2_tp_press_to_select_set(const struct device *dev, bool enabled) {
+    int err = zmk_mouse_ps2_tp_set_config_option(dev,
+                                                 MOUSE_PS2_TP_CONFIG_BIT_PRESS_TO_SELECT, enabled,
                                                  "Press To Select");
 
     return err;
 }
 
-int zmk_mouse_ps2_tp_invert_x_set(bool enabled) {
-    int err =
-        zmk_mouse_ps2_tp_set_config_option(MOUSE_PS2_TP_CONFIG_BIT_INVERT_X, enabled, "Invert X");
+int zmk_mouse_ps2_tp_invert_x_set(const struct device *dev, bool enabled) {
+    int err = zmk_mouse_ps2_tp_set_config_option(dev,
+                                                 MOUSE_PS2_TP_CONFIG_BIT_INVERT_X, enabled,
+                                                 "Invert X");
 
     return err;
 }
 
-int zmk_mouse_ps2_tp_invert_y_set(bool enabled) {
-    int err =
-        zmk_mouse_ps2_tp_set_config_option(MOUSE_PS2_TP_CONFIG_BIT_INVERT_Y, enabled, "Invert Y");
+int zmk_mouse_ps2_tp_invert_y_set(const struct device *dev, bool enabled) {
+    int err = zmk_mouse_ps2_tp_set_config_option(dev,
+                                                 MOUSE_PS2_TP_CONFIG_BIT_INVERT_Y, enabled,
+                                                 "Invert Y");
 
     return err;
 }
 
-int zmk_mouse_ps2_tp_swap_xy_set(bool enabled) {
-    int err =
-        zmk_mouse_ps2_tp_set_config_option(MOUSE_PS2_TP_CONFIG_BIT_SWAP_XY, enabled, "Swap XY");
+int zmk_mouse_ps2_tp_swap_xy_set(const struct device *dev, bool enabled) {
+    int err = zmk_mouse_ps2_tp_set_config_option(dev,
+                                                 MOUSE_PS2_TP_CONFIG_BIT_SWAP_XY, enabled,
+                                                 "Swap XY");
 
     return err;
 }
 
-int zmk_mouse_ps2_tp_sensitivity_get(uint8_t *sensitivity) {
+int zmk_mouse_ps2_tp_sensitivity_get(const struct device *dev, uint8_t *sensitivity) {
     struct zmk_mouse_ps2_send_cmd_resp resp = zmk_mouse_ps2_send_cmd(
+        dev,
         MOUSE_PS2_CMD_TP_GET_SENSITIVITY, sizeof(MOUSE_PS2_CMD_TP_GET_SENSITIVITY), NULL,
         MOUSE_PS2_CMD_TP_GET_SENSITIVITY_RESP_LEN, true);
     if (resp.err) {
@@ -1205,8 +1183,8 @@ int zmk_mouse_ps2_tp_sensitivity_get(uint8_t *sensitivity) {
     return 0;
 }
 
-int zmk_mouse_ps2_tp_sensitivity_set(int sensitivity) {
-    struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
+int zmk_mouse_ps2_tp_sensitivity_set(const struct device *dev, int sensitivity) {
+    struct zmk_mouse_ps2_data *data = dev->data;
 
     if (sensitivity < MOUSE_PS2_CMD_TP_SET_SENSITIVITY_MIN ||
         sensitivity > MOUSE_PS2_CMD_TP_SET_SENSITIVITY_MAX) {
@@ -1218,6 +1196,7 @@ int zmk_mouse_ps2_tp_sensitivity_set(int sensitivity) {
     uint8_t arg = sensitivity;
 
     struct zmk_mouse_ps2_send_cmd_resp resp = zmk_mouse_ps2_send_cmd(
+        dev,
         MOUSE_PS2_CMD_TP_SET_SENSITIVITY, sizeof(MOUSE_PS2_CMD_TP_SET_SENSITIVITY), &arg,
         MOUSE_PS2_CMD_TP_SET_SENSITIVITY_RESP_LEN, true);
     if (resp.err) {
@@ -1232,23 +1211,32 @@ int zmk_mouse_ps2_tp_sensitivity_set(int sensitivity) {
     return 0;
 }
 
-int zmk_mouse_ps2_tp_sensitivity_change(int amount) {
-    struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
+int zmk_mouse_ps2_tp_sensitivity_change_dev(const struct device *dev, int amount) {
+    struct zmk_mouse_ps2_data *data = dev->data;
 
     int new_val = data->tp_sensitivity + amount;
 
     LOG_INF("Setting trackpoint sensitivity to %d", new_val);
-    int err = zmk_mouse_ps2_tp_sensitivity_set(new_val);
+    int err = zmk_mouse_ps2_tp_sensitivity_set(dev, new_val);
     if (err == 0) {
-
-        zmk_mouse_ps2_settings_save();
+        zmk_mouse_ps2_settings_save(dev);
     }
 
     return err;
 }
 
-int zmk_mouse_ps2_tp_negative_inertia_get(uint8_t *neg_inertia) {
+int zmk_mouse_ps2_tp_sensitivity_change(int amount) {
+
+    #define ZMK_PS2_MOUSE_DEFINE_SETTINGS_SEN_CHG_DEV(n) \
+        zmk_mouse_ps2_tp_sensitivity_change_dev(data##n.dev, amount);
+    DT_INST_FOREACH_STATUS_OKAY(ZMK_PS2_MOUSE_DEFINE_SETTINGS_SEN_CHG_DEV)
+
+    return 0;
+}
+
+int zmk_mouse_ps2_tp_negative_inertia_get(const struct device *dev, uint8_t *neg_inertia) {
     struct zmk_mouse_ps2_send_cmd_resp resp = zmk_mouse_ps2_send_cmd(
+        dev,
         MOUSE_PS2_CMD_TP_GET_NEG_INERTIA, sizeof(MOUSE_PS2_CMD_TP_GET_NEG_INERTIA), NULL,
         MOUSE_PS2_CMD_TP_GET_NEG_INERTIA_RESP_LEN, true);
     if (resp.err) {
@@ -1264,8 +1252,8 @@ int zmk_mouse_ps2_tp_negative_inertia_get(uint8_t *neg_inertia) {
     return 0;
 }
 
-int zmk_mouse_ps2_tp_neg_inertia_set(int neg_inertia) {
-    struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
+int zmk_mouse_ps2_tp_neg_inertia_set(const struct device *dev, int neg_inertia) {
+    struct zmk_mouse_ps2_data *data = dev->data;
 
     if (neg_inertia < MOUSE_PS2_CMD_TP_SET_NEG_INERTIA_MIN ||
         neg_inertia > MOUSE_PS2_CMD_TP_SET_NEG_INERTIA_MAX) {
@@ -1277,6 +1265,7 @@ int zmk_mouse_ps2_tp_neg_inertia_set(int neg_inertia) {
     uint8_t arg = neg_inertia;
 
     struct zmk_mouse_ps2_send_cmd_resp resp = zmk_mouse_ps2_send_cmd(
+        dev,
         MOUSE_PS2_CMD_TP_SET_NEG_INERTIA, sizeof(MOUSE_PS2_CMD_TP_SET_NEG_INERTIA), &arg,
         MOUSE_PS2_CMD_TP_SET_NEG_INERTIA_RESP_LEN, true);
     if (resp.err) {
@@ -1291,24 +1280,33 @@ int zmk_mouse_ps2_tp_neg_inertia_set(int neg_inertia) {
     return 0;
 }
 
-int zmk_mouse_ps2_tp_neg_inertia_change(int amount) {
-    struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
+int zmk_mouse_ps2_tp_neg_inertia_change_dev(const struct device *dev, int amount) {
+    struct zmk_mouse_ps2_data *data = dev->data;
 
     int new_val = data->tp_neg_inertia + amount;
 
     LOG_INF("Setting negative inertia to %d", new_val);
-    int err = zmk_mouse_ps2_tp_neg_inertia_set(new_val);
+    int err = zmk_mouse_ps2_tp_neg_inertia_set(dev, new_val);
     if (err == 0) {
-
-        zmk_mouse_ps2_settings_save();
+        zmk_mouse_ps2_settings_save(dev);
     }
 
     return err;
 }
 
-int zmk_mouse_ps2_tp_value6_upper_plateau_speed_get(uint8_t *value6) {
+int zmk_mouse_ps2_tp_neg_inertia_change(int amount) {
+
+    #define ZMK_PS2_MOUSE_DEFINE_NEG_INERTIA_CHG_DEV(n) \
+        zmk_mouse_ps2_tp_neg_inertia_change_dev(data##n.dev, amount);
+    DT_INST_FOREACH_STATUS_OKAY(ZMK_PS2_MOUSE_DEFINE_NEG_INERTIA_CHG_DEV)
+
+    return 0;
+}
+
+int zmk_mouse_ps2_tp_value6_upper_plateau_speed_get(const struct device *dev, uint8_t *value6) {
     struct zmk_mouse_ps2_send_cmd_resp resp =
-        zmk_mouse_ps2_send_cmd(MOUSE_PS2_CMD_TP_GET_VALUE6_UPPER_PLATEAU_SPEED,
+        zmk_mouse_ps2_send_cmd(dev,
+                               MOUSE_PS2_CMD_TP_GET_VALUE6_UPPER_PLATEAU_SPEED,
                                sizeof(MOUSE_PS2_CMD_TP_GET_VALUE6_UPPER_PLATEAU_SPEED), NULL,
                                MOUSE_PS2_CMD_TP_GET_VALUE6_UPPER_PLATEAU_SPEED_RESP_LEN, true);
     if (resp.err) {
@@ -1324,8 +1322,8 @@ int zmk_mouse_ps2_tp_value6_upper_plateau_speed_get(uint8_t *value6) {
     return 0;
 }
 
-int zmk_mouse_ps2_tp_value6_upper_plateau_speed_set(int value6) {
-    struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
+int zmk_mouse_ps2_tp_value6_upper_plateau_speed_set(const struct device *dev, int value6) {
+    struct zmk_mouse_ps2_data *data = dev->data;
 
     if (value6 < MOUSE_PS2_CMD_TP_SET_VALUE6_UPPER_PLATEAU_SPEED_MIN ||
         value6 > MOUSE_PS2_CMD_TP_SET_VALUE6_UPPER_PLATEAU_SPEED_MAX) {
@@ -1338,7 +1336,8 @@ int zmk_mouse_ps2_tp_value6_upper_plateau_speed_set(int value6) {
     uint8_t arg = value6;
 
     struct zmk_mouse_ps2_send_cmd_resp resp =
-        zmk_mouse_ps2_send_cmd(MOUSE_PS2_CMD_TP_SET_VALUE6_UPPER_PLATEAU_SPEED,
+        zmk_mouse_ps2_send_cmd(dev,
+                               MOUSE_PS2_CMD_TP_SET_VALUE6_UPPER_PLATEAU_SPEED,
                                sizeof(MOUSE_PS2_CMD_TP_SET_VALUE6_UPPER_PLATEAU_SPEED), &arg,
                                MOUSE_PS2_CMD_TP_SET_VALUE6_UPPER_PLATEAU_SPEED_RESP_LEN, true);
     if (resp.err) {
@@ -1353,23 +1352,32 @@ int zmk_mouse_ps2_tp_value6_upper_plateau_speed_set(int value6) {
     return 0;
 }
 
-int zmk_mouse_ps2_tp_value6_upper_plateau_speed_change(int amount) {
-    struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
+int zmk_mouse_ps2_tp_value6_upper_plateau_speed_change_dev(const struct device *dev, int amount) {
+    struct zmk_mouse_ps2_data *data = dev->data;
 
     int new_val = data->tp_value6 + amount;
 
     LOG_INF("Setting value6 upper plateau speed to %d", new_val);
-    int err = zmk_mouse_ps2_tp_value6_upper_plateau_speed_set(new_val);
+    int err = zmk_mouse_ps2_tp_value6_upper_plateau_speed_set(dev, new_val);
     if (err == 0) {
-
-        zmk_mouse_ps2_settings_save();
+        zmk_mouse_ps2_settings_save(dev);
     }
 
     return err;
 }
 
-int zmk_mouse_ps2_tp_pts_threshold_get(uint8_t *pts_threshold) {
+int zmk_mouse_ps2_tp_value6_upper_plateau_speed_change(int amount) {
+
+    #define ZMK_PS2_MOUSE_DEFINE_VALUE6_CHG_DEV(n) \
+        zmk_mouse_ps2_tp_value6_upper_plateau_speed_change_dev(data##n.dev, amount);
+    DT_INST_FOREACH_STATUS_OKAY(ZMK_PS2_MOUSE_DEFINE_VALUE6_CHG_DEV)
+
+    return 0;
+}
+
+int zmk_mouse_ps2_tp_pts_threshold_get(const struct device *dev, uint8_t *pts_threshold) {
     struct zmk_mouse_ps2_send_cmd_resp resp = zmk_mouse_ps2_send_cmd(
+        dev,
         MOUSE_PS2_CMD_TP_GET_PTS_THRESHOLD, sizeof(MOUSE_PS2_CMD_TP_GET_PTS_THRESHOLD), NULL,
         MOUSE_PS2_CMD_TP_GET_PTS_THRESHOLD_RESP_LEN, true);
     if (resp.err) {
@@ -1385,8 +1393,8 @@ int zmk_mouse_ps2_tp_pts_threshold_get(uint8_t *pts_threshold) {
     return 0;
 }
 
-int zmk_mouse_ps2_tp_pts_threshold_set(int pts_threshold) {
-    struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
+int zmk_mouse_ps2_tp_pts_threshold_set(const struct device *dev, int pts_threshold) {
+    struct zmk_mouse_ps2_data *data = dev->data;
 
     if (pts_threshold < MOUSE_PS2_CMD_TP_SET_PTS_THRESHOLD_MIN ||
         pts_threshold > MOUSE_PS2_CMD_TP_SET_PTS_THRESHOLD_MAX) {
@@ -1398,6 +1406,7 @@ int zmk_mouse_ps2_tp_pts_threshold_set(int pts_threshold) {
     uint8_t arg = pts_threshold;
 
     struct zmk_mouse_ps2_send_cmd_resp resp = zmk_mouse_ps2_send_cmd(
+        dev,
         MOUSE_PS2_CMD_TP_SET_PTS_THRESHOLD, sizeof(MOUSE_PS2_CMD_TP_SET_PTS_THRESHOLD), &arg,
         MOUSE_PS2_CMD_TP_SET_PTS_THRESHOLD_RESP_LEN, true);
     if (resp.err) {
@@ -1412,28 +1421,33 @@ int zmk_mouse_ps2_tp_pts_threshold_set(int pts_threshold) {
     return 0;
 }
 
-int zmk_mouse_ps2_tp_pts_threshold_change(int amount) {
-    struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
+int zmk_mouse_ps2_tp_pts_threshold_change_dev(const struct device *dev, int amount) {
+    struct zmk_mouse_ps2_data *data = dev->data;
 
     int new_val = data->tp_pts_threshold + amount;
 
     LOG_INF("Setting press-to-select threshold to %d", new_val);
-    int err = zmk_mouse_ps2_tp_pts_threshold_set(new_val);
+    int err = zmk_mouse_ps2_tp_pts_threshold_set(dev, new_val);
     if (err == 0) {
-
-        zmk_mouse_ps2_settings_save();
+        zmk_mouse_ps2_settings_save(dev);
     }
 
     return err;
 }
 
+int zmk_mouse_ps2_tp_pts_threshold_change(int amount) {
+
+    #define ZMK_PS2_MOUSE_DEFINE_PTS_THRESHOLD_CHG_DEV(n) \
+        zmk_mouse_ps2_tp_pts_threshold_change_dev(data##n.dev, amount);
+    DT_INST_FOREACH_STATUS_OKAY(ZMK_PS2_MOUSE_DEFINE_PTS_THRESHOLD_CHG_DEV)
+
+    return 0;
+}
 /*
  * State Saving
  */
 
 #if IS_ENABLED(CONFIG_SETTINGS)
-
-struct k_work_delayable zmk_mouse_ps2_save_work;
 
 int zmk_mouse_ps2_settings_save_setting(char *setting_name, const void *value, size_t val_len) {
     char setting_path[40];
@@ -1462,7 +1476,12 @@ int zmk_mouse_ps2_settings_reset_setting(char *setting_name) {
 }
 
 static void zmk_mouse_ps2_settings_save_work(struct k_work *work) {
-    struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
+
+    struct k_work_delayable *work_delayable = (struct k_work_delayable *)work;
+    struct zmk_mouse_ps2_data *data = CONTAINER_OF(work_delayable,
+                                                   struct zmk_mouse_ps2_data,
+                                                   zmk_mouse_ps2_save_work);
+    // const struct device *dev = data->dev;
 
     LOG_INF("Saving PS/2 Mouse Settings.");
 
@@ -1477,19 +1496,20 @@ static void zmk_mouse_ps2_settings_save_work(struct k_work *work) {
 }
 #endif
 
-int zmk_mouse_ps2_settings_save() {
+int zmk_mouse_ps2_settings_save(const struct device *dev) {
     LOG_DBG("");
+    struct zmk_mouse_ps2_data *data = dev->data;
 
 #if IS_ENABLED(CONFIG_SETTINGS)
     int ret =
-        k_work_reschedule(&zmk_mouse_ps2_save_work, K_MSEC(CONFIG_ZMK_SETTINGS_SAVE_DEBOUNCE));
+        k_work_reschedule(&data->zmk_mouse_ps2_save_work, K_MSEC(CONFIG_ZMK_SETTINGS_SAVE_DEBOUNCE));
     return MIN(ret, 0);
 #else
     return 0;
 #endif
 }
 
-int zmk_mouse_ps2_settings_reset() {
+int zmk_mouse_ps2_settings_reset_dev(const struct device *dev) {
 
     LOG_INF("Deleting runtime settings...");
     zmk_mouse_ps2_settings_reset_setting(MOUSE_PS2_ST_TP_SENSITIVITY);
@@ -1498,20 +1518,30 @@ int zmk_mouse_ps2_settings_reset() {
     zmk_mouse_ps2_settings_reset_setting(MOUSE_PS2_ST_TP_PTS_THRESHOLD);
 
     LOG_INF("Restoring default settings to TP..");
-    zmk_mouse_ps2_tp_sensitivity_set(MOUSE_PS2_CMD_TP_SET_SENSITIVITY_DEFAULT);
+    zmk_mouse_ps2_tp_sensitivity_set(dev, MOUSE_PS2_CMD_TP_SET_SENSITIVITY_DEFAULT);
 
-    zmk_mouse_ps2_tp_neg_inertia_set(MOUSE_PS2_CMD_TP_SET_NEG_INERTIA_DEFAULT);
+    zmk_mouse_ps2_tp_neg_inertia_set(dev, MOUSE_PS2_CMD_TP_SET_NEG_INERTIA_DEFAULT);
 
     zmk_mouse_ps2_tp_value6_upper_plateau_speed_set(
+        dev,
         MOUSE_PS2_CMD_TP_SET_VALUE6_UPPER_PLATEAU_SPEED_DEFAULT);
 
-    zmk_mouse_ps2_tp_pts_threshold_set(MOUSE_PS2_CMD_TP_SET_PTS_THRESHOLD_DEFAULT);
+    zmk_mouse_ps2_tp_pts_threshold_set(dev, MOUSE_PS2_CMD_TP_SET_PTS_THRESHOLD_DEFAULT);
 
     return 0;
 }
 
-int zmk_mouse_ps2_settings_log() {
-    struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
+int zmk_mouse_ps2_settings_reset() {
+
+    #define ZMK_PS2_MOUSE_DEFINE_SETTINGS_RESET_DEV(n) \
+        zmk_mouse_ps2_settings_reset_dev(data##n.dev);
+    DT_INST_FOREACH_STATUS_OKAY(ZMK_PS2_MOUSE_DEFINE_SETTINGS_RESET_DEV)
+
+    return 0;
+}
+
+int zmk_mouse_ps2_settings_log_dev(const struct device *dev) {
+    struct zmk_mouse_ps2_data *data = dev->data;
 
     char settings_str[250];
 
@@ -1529,13 +1559,23 @@ int zmk_mouse_ps2_settings_log() {
     return 0;
 }
 
+int zmk_mouse_ps2_settings_log() {
+
+    #define ZMK_PS2_MOUSE_DEFINE_SETTINGS_LOG_DEV(n) \
+        zmk_mouse_ps2_settings_log_dev(data##n.dev);
+    DT_INST_FOREACH_STATUS_OKAY(ZMK_PS2_MOUSE_DEFINE_SETTINGS_LOG_DEV)
+
+    return 0;
+}
+
 // This function is called when settings are loaded from flash by
 // `settings_load_subtree`.
 // It's called once for each PS/2 mouse setting that has been stored.
-static int zmk_mouse_ps2_settings_restore(const char *name, size_t len, settings_read_cb read_cb,
-                                          void *cb_arg) {
-    struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
-    const struct zmk_mouse_ps2_config *config = &zmk_mouse_ps2_config;
+static int zmk_mouse_ps2_settings_restore_dev(const struct device *dev,
+                                              const char *name, size_t len, settings_read_cb read_cb,
+                                              void *cb_arg) {
+    struct zmk_mouse_ps2_data *data = dev->data;
+    const struct zmk_mouse_ps2_config *config = dev->config;
 
     uint8_t setting_val;
 
@@ -1569,7 +1609,7 @@ static int zmk_mouse_ps2_settings_restore(const char *name, size_t len, settings
             return 0;
         }
 
-        return zmk_mouse_ps2_tp_sensitivity_set(setting_val);
+        return zmk_mouse_ps2_tp_sensitivity_set(dev, setting_val);
     } else if (strcmp(name, MOUSE_PS2_ST_TP_NEG_INERTIA) == 0) {
         if (config->tp_neg_inertia != -1) {
             LOG_WRN("Not restoring runtime settings for %s with value %d, because deviceconfig "
@@ -1579,7 +1619,7 @@ static int zmk_mouse_ps2_settings_restore(const char *name, size_t len, settings
             return 0;
         }
 
-        return zmk_mouse_ps2_tp_neg_inertia_set(setting_val);
+        return zmk_mouse_ps2_tp_neg_inertia_set(dev, setting_val);
     } else if (strcmp(name, MOUSE_PS2_ST_TP_VALUE6) == 0) {
         if (config->tp_val6_upper_speed != -1) {
             LOG_WRN("Not restoring runtime settings for %s with value %d, because deviceconfig "
@@ -1589,7 +1629,7 @@ static int zmk_mouse_ps2_settings_restore(const char *name, size_t len, settings
             return 0;
         }
 
-        return zmk_mouse_ps2_tp_value6_upper_plateau_speed_set(setting_val);
+        return zmk_mouse_ps2_tp_value6_upper_plateau_speed_set(dev, setting_val);
     } else if (strcmp(name, MOUSE_PS2_ST_TP_PTS_THRESHOLD) == 0) {
         if (config->tp_press_to_select_threshold != -1) {
             LOG_WRN("Not restoring runtime settings for %s with value %d, because deviceconfig "
@@ -1599,8 +1639,18 @@ static int zmk_mouse_ps2_settings_restore(const char *name, size_t len, settings
             return 0;
         }
 
-        return zmk_mouse_ps2_tp_pts_threshold_set(setting_val);
+        return zmk_mouse_ps2_tp_pts_threshold_set(dev, setting_val);
     }
+
+    return -EINVAL;
+}
+
+static int zmk_mouse_ps2_settings_restore(const char *name, size_t len, settings_read_cb read_cb,
+                                          void *cb_arg) {
+
+    #define ZMK_PS2_MOUSE_DEFINE_SETTINGS_RESTORE_DEV(n) \
+        zmk_mouse_ps2_settings_restore_dev(data##n.dev, name, len, read_cb, cb_arg);
+    DT_INST_FOREACH_STATUS_OKAY(ZMK_PS2_MOUSE_DEFINE_SETTINGS_RESTORE_DEV)
 
     return -EINVAL;
 }
@@ -1610,9 +1660,10 @@ struct settings_handler zmk_mouse_ps2_settings_conf = {
     .h_set = zmk_mouse_ps2_settings_restore,
 };
 
-int zmk_mouse_ps2_settings_init() {
+int zmk_mouse_ps2_settings_init(const struct device *dev) {
 #if IS_ENABLED(CONFIG_SETTINGS)
     LOG_DBG("");
+    struct zmk_mouse_ps2_data *data = dev->data;
 
     settings_subsys_init();
 
@@ -1622,7 +1673,7 @@ int zmk_mouse_ps2_settings_init() {
         return err;
     }
 
-    k_work_init_delayable(&zmk_mouse_ps2_save_work, zmk_mouse_ps2_settings_save_work);
+    k_work_init_delayable(&data->zmk_mouse_ps2_save_work, zmk_mouse_ps2_settings_save_work);
 
     // This will load the settings and then call
     // `zmk_mouse_ps2_settings_restore`, which will set the settings
@@ -1633,18 +1684,22 @@ int zmk_mouse_ps2_settings_init() {
 }
 
 /*
- * Init
+ * Init PS2 mouse
  */
 
 static void zmk_mouse_ps2_init_thread(int dev_ptr, int unused);
-int zmk_mouse_ps2_init_power_on_reset();
+int zmk_mouse_ps2_init_power_on_reset(const struct device *dev);
 int zmk_mouse_ps2_init_wait_for_mouse(const struct device *dev);
 
 static int zmk_mouse_ps2_init(const struct device *dev) {
+    struct zmk_mouse_ps2_data *data = dev->data;
+    // const struct zmk_mouse_ps2_config *config = dev->config;
+
     LOG_DBG("Inside zmk_mouse_ps2_init");
+    data->dev = dev;
 
     LOG_DBG("Creating mouse_ps2 init thread.");
-    k_thread_create(&zmk_mouse_ps2_data.thread, zmk_mouse_ps2_data.thread_stack,
+    k_thread_create(&data->thread, data->thread_stack,
                     MOUSE_PS2_THREAD_STACK_SIZE, (k_thread_entry_t)zmk_mouse_ps2_init_thread,
                     (struct device *)dev, 0, NULL, K_PRIO_COOP(MOUSE_PS2_THREAD_PRIORITY), 0,
                     K_MSEC(ZMK_MOUSE_PS2_INIT_THREAD_DELAY_MS));
@@ -1653,17 +1708,15 @@ static int zmk_mouse_ps2_init(const struct device *dev) {
 }
 
 static void zmk_mouse_ps2_init_thread(int dev_ptr, int unused) {
-    struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
     int err;
+    const struct device *dev = INT_TO_POINTER(dev_ptr);
+    struct zmk_mouse_ps2_data *data = dev->data;
+    const struct zmk_mouse_ps2_config *config = dev->config;
 
-    data->dev = INT_TO_POINTER(dev_ptr);
-
-    const struct zmk_mouse_ps2_config *config = data->dev->config;
-
-    zmk_mouse_ps2_init_power_on_reset();
+    zmk_mouse_ps2_init_power_on_reset(dev);
 
     LOG_INF("Waiting for mouse to connect...");
-    err = zmk_mouse_ps2_init_wait_for_mouse(data->dev);
+    err = zmk_mouse_ps2_init_wait_for_mouse(dev);
     if (err) {
         LOG_ERR("Could not init a mouse in %d attempts. Giving up. "
                 "Power cycle the mouse and reset zmk to try again.",
@@ -1674,7 +1727,7 @@ static void zmk_mouse_ps2_init_thread(int dev_ptr, int unused) {
     if (config->sampling_rate != MOUSE_PS2_CMD_SET_SAMPLING_RATE_DEFAULT) {
 
         LOG_INF("Setting sample rate to %d...", config->sampling_rate);
-        zmk_mouse_ps2_set_sampling_rate(config->sampling_rate);
+        zmk_mouse_ps2_set_sampling_rate(dev, config->sampling_rate);
         if (err) {
             LOG_ERR("Could not set sampling rate to %d: %d", config->sampling_rate, err);
             return;
@@ -1682,7 +1735,8 @@ static void zmk_mouse_ps2_init_thread(int dev_ptr, int unused) {
     }
 
     char device_descr[64] = "undetermined device";
-    zmk_mouse_ps2_tp_get_device_info(&data->is_trackpoint, &data->manufacturer_id,
+    zmk_mouse_ps2_tp_get_device_info(dev,
+                                     &data->is_trackpoint, &data->manufacturer_id,
                                      &data->secondary_id, &data->rom_id, device_descr,
                                      sizeof(device_descr));
 
@@ -1692,62 +1746,62 @@ static void zmk_mouse_ps2_init_thread(int dev_ptr, int unused) {
 
         if (config->tp_press_to_select) {
             LOG_INF("Enabling TP press to select...");
-            zmk_mouse_ps2_tp_press_to_select_set(true);
+            zmk_mouse_ps2_tp_press_to_select_set(dev, true);
         }
 
         if (config->tp_press_to_select_threshold != -1) {
             LOG_INF("Setting TP press to select thereshold to %d...",
                     config->tp_press_to_select_threshold);
-            zmk_mouse_ps2_tp_pts_threshold_set(config->tp_press_to_select_threshold);
+            zmk_mouse_ps2_tp_pts_threshold_set(dev, config->tp_press_to_select_threshold);
         }
 
         if (config->tp_sensitivity != -1) {
             LOG_INF("Setting TP sensitivity to %d...", config->tp_sensitivity);
-            zmk_mouse_ps2_tp_sensitivity_set(config->tp_sensitivity);
+            zmk_mouse_ps2_tp_sensitivity_set(dev, config->tp_sensitivity);
         }
 
         if (config->tp_neg_inertia != -1) {
             LOG_INF("Setting TP inertia to %d...", config->tp_neg_inertia);
-            zmk_mouse_ps2_tp_neg_inertia_set(config->tp_neg_inertia);
+            zmk_mouse_ps2_tp_neg_inertia_set(dev, config->tp_neg_inertia);
         }
 
         if (config->tp_val6_upper_speed != -1) {
             LOG_INF("Setting TP value 6 upper speed plateau to %d...", config->tp_val6_upper_speed);
-            zmk_mouse_ps2_tp_value6_upper_plateau_speed_set(config->tp_val6_upper_speed);
+            zmk_mouse_ps2_tp_value6_upper_plateau_speed_set(dev, config->tp_val6_upper_speed);
         }
         if (config->tp_x_invert) {
             LOG_INF("Inverting trackpoint x axis.");
-            zmk_mouse_ps2_tp_invert_x_set(true);
+            zmk_mouse_ps2_tp_invert_x_set(dev, true);
         }
 
         if (config->tp_y_invert) {
             LOG_INF("Inverting trackpoint y axis.");
-            zmk_mouse_ps2_tp_invert_y_set(true);
+            zmk_mouse_ps2_tp_invert_y_set(dev, true);
         }
 
         if (config->tp_xy_swap) {
             LOG_INF("Swapping trackpoint x and y axis.");
-            zmk_mouse_ps2_tp_swap_xy_set(true);
+            zmk_mouse_ps2_tp_swap_xy_set(dev, true);
         }
     }
 
     if (config->scroll_mode) {
         LOG_INF("Enabling scroll mode.");
-        zmk_mouse_ps2_set_packet_mode(MOUSE_PS2_PACKET_MODE_SCROLL);
+        zmk_mouse_ps2_set_packet_mode(dev, MOUSE_PS2_PACKET_MODE_SCROLL);
     }
 
-    zmk_mouse_ps2_settings_init();
+    zmk_mouse_ps2_settings_init(dev);
 
     // Configure read callback
     LOG_DBG("Configuring ps2 callback...");
 #if IS_ENABLED(CONFIG_ZMK_INPUT_MOUSE_PS2_ENABLE_PS2_RESEND_CALLBACK)
 
-    err = ps2_config(config->ps2_device, &zmk_mouse_ps2_activity_callback,
-                     &zmk_mouse_ps2_activity_resend_callback);
+    err = ps2_config(config->ps2_device, data->activity_callback,
+                     data->activity_resend_callback);
 
 #else
 
-    err = ps2_config(config->ps2_device, &zmk_mouse_ps2_activity_callback);
+    err = ps2_config(config->ps2_device, data->activity_callback);
 
 #endif /* IS_ENABLED(CONFIG_ZMK_INPUT_MOUSE_PS2_ENABLE_PS2_RESEND_CALLBACK) */
 
@@ -1757,7 +1811,7 @@ static void zmk_mouse_ps2_init_thread(int dev_ptr, int unused) {
     }
 
     LOG_INF("Enabling data reporting and ps2 callback...");
-    err = zmk_mouse_ps2_activity_reporting_enable();
+    err = zmk_mouse_ps2_activity_reporting_enable(dev);
     if (err) {
         LOG_ERR("Could not activate ps2 callback: %d", err);
     } else {
@@ -1777,9 +1831,9 @@ static void zmk_mouse_ps2_init_thread(int dev_ptr, int unused) {
 //  the time power is applied to the TrackPoint controller. Activity on the
 //  clock and data lines is ignored prior to the completion of the diagnostic
 //  sequence. (See RESET mode of operation.)"
-int zmk_mouse_ps2_init_power_on_reset() {
-    struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
-    const struct zmk_mouse_ps2_config *config = &zmk_mouse_ps2_config;
+int zmk_mouse_ps2_init_power_on_reset(const struct device *dev) {
+    struct zmk_mouse_ps2_data *data = dev->data;
+    const struct zmk_mouse_ps2_config *config = dev->config;
 
     // Check if the optional rst-gpios setting was set
     if (config->rst_gpio.port == NULL) {
@@ -1841,7 +1895,7 @@ int zmk_mouse_ps2_init_wait_for_mouse(const struct device *dev) {
                 LOG_WRN("Got invalid PS/2 self-test result: 0x%x", read_val);
 
                 LOG_INF("Trying to reset PS2 device...");
-                zmk_mouse_ps2_reset(config->ps2_device);
+                zmk_mouse_ps2_reset(dev, config->ps2_device);
 
                 continue;
             }
@@ -1871,7 +1925,7 @@ int zmk_mouse_ps2_init_wait_for_mouse(const struct device *dev) {
         // So we try sending the reset command.
         if (i % 2 == 0) {
             LOG_INF("Trying to reset PS2 device...");
-            zmk_mouse_ps2_reset(config->ps2_device);
+            zmk_mouse_ps2_reset(dev, config->ps2_device);
             continue;
         }
 
@@ -1881,8 +1935,81 @@ int zmk_mouse_ps2_init_wait_for_mouse(const struct device *dev) {
     return 1;
 }
 
+
+// Define wrapper function declaration for zmk_mouse_ps2_activity*_callback
+// will assign to zmk_mouse_ps2_data in below
+#define PS2_MOUSE_CALLBACK_DEFINE(n)                                                          \
+    void zmk_mouse_ps2_activity_callback##n(const struct device *ps2_device, uint8_t byte);   \
+    void zmk_mouse_ps2_activity_resend_callback##n(const struct device *ps2_device);
+
+DT_INST_FOREACH_STATUS_OKAY(PS2_MOUSE_CALLBACK_DEFINE)
+
+
 // Depends on the UART and PS2 init priorities, which are 55 and 45 by default
 #define ZMK_MOUSE_PS2_INIT_PRIORITY 90
 
-DEVICE_DT_INST_DEFINE(0, &zmk_mouse_ps2_init, NULL, &zmk_mouse_ps2_data, &zmk_mouse_ps2_config,
-                      POST_KERNEL, ZMK_MOUSE_PS2_INIT_PRIORITY, NULL);
+#define ZMK_PS2_MOUSE_DEFINE(n)                                                               \
+    static struct zmk_mouse_ps2_data data##n = {                                              \
+        .packet_mode = MOUSE_PS2_PACKET_MODE_PS2_DEFAULT,                                     \
+        .packet_idx = 0,                                                                      \
+        .prev_packet = {                                                                      \
+            .button_l = false, .button_r = false, .button_m = false,                          \
+            .overflow_x = 0, .overflow_y = 0, .mov_x = 0, .mov_y = 0, .scroll = 0,            \
+        },                                                                                    \
+        .button_l_is_held = false,                                                            \
+        .button_m_is_held = false,                                                            \
+        .button_r_is_held = false,                                                            \
+        .activity_reporting_on = false,                                                       \
+        .is_trackpoint = false,                                                               \
+        .manufacturer_id = 0x0,                                                               \
+        .secondary_id = 0x0,                                                                  \
+        .rom_id = 0x0,                                                                        \
+        .sampling_rate = MOUSE_PS2_CMD_SET_SAMPLING_RATE_DEFAULT,                             \
+        .tp_sensitivity = MOUSE_PS2_CMD_TP_SET_SENSITIVITY_DEFAULT,                           \
+        .tp_neg_inertia = MOUSE_PS2_CMD_TP_SET_NEG_INERTIA_DEFAULT,                           \
+        .tp_value6 = MOUSE_PS2_CMD_TP_SET_VALUE6_UPPER_PLATEAU_SPEED_DEFAULT,                 \
+        .tp_pts_threshold = MOUSE_PS2_CMD_TP_SET_PTS_THRESHOLD_DEFAULT,                       \
+        .activity_callback = &zmk_mouse_ps2_activity_callback##n,                             \
+        .activity_resend_callback = &zmk_mouse_ps2_activity_resend_callback##n,               \
+    };                                                                                        \
+    static const struct zmk_mouse_ps2_config config##n = {                                    \
+        .ps2_device = DEVICE_DT_GET(DT_INST_PHANDLE(n, ps2_device)),                          \
+        .has_rst_gpio = DT_INST_NODE_HAS_PROP(n, rst_gpio),                                   \
+        .rst_gpio = COND_CODE_1(                                                              \
+            DT_INST_NODE_HAS_PROP(n, rst_gpio),                                               \
+            (GPIO_DT_SPEC_INST_GET(n, rst_gpios)),                                            \
+            ({ .port = NULL, .pin = 0, .dt_flags = 0, })),                                    \
+        .rst_gpio_port_num = COND_CODE_1(                                                     \
+            DT_INST_NODE_HAS_PROP(n, rst_gpio),                                               \
+            (DT_PROP(DT_INST_PHANDLE(n, rst_gpios), port)),                                   \
+            (0)),                                                                             \
+        .scroll_mode = DT_INST_PROP_OR(n, scroll_mode, false),                                \
+        .disable_clicking = DT_INST_PROP_OR(n, disable_clicking, false),                      \
+        .sampling_rate = DT_INST_PROP_OR(n, sampling_rate,                                    \
+                                         MOUSE_PS2_CMD_SET_SAMPLING_RATE_DEFAULT),            \
+        .tp_press_to_select = DT_INST_PROP_OR(n, tp_press_to_select, false),                  \
+        .tp_press_to_select_threshold = DT_INST_PROP_OR(n, tp_press_to_select_threshold, -1), \
+        .tp_sensitivity = DT_INST_PROP_OR(n, tp_sensitivity, -1),                             \
+        .tp_neg_inertia = DT_INST_PROP_OR(n, tp_neg_inertia, -1),                             \
+        .tp_val6_upper_speed = DT_INST_PROP_OR(n, tp_val6_upper_speed, -1),                   \
+        .tp_x_invert = DT_INST_PROP_OR(n, tp_x_invert, false),                                \
+        .tp_y_invert = DT_INST_PROP_OR(n, tp_y_invert, false),                                \
+        .tp_xy_swap = DT_INST_PROP_OR(n, tp_xy_swap, false),                                  \
+    };                                                                                        \
+    DEVICE_DT_INST_DEFINE(0, &zmk_mouse_ps2_init, NULL, &data##n, &config##n,                 \
+                        POST_KERNEL, ZMK_MOUSE_PS2_INIT_PRIORITY, NULL);
+
+DT_INST_FOREACH_STATUS_OKAY(ZMK_PS2_MOUSE_DEFINE)
+
+
+// Define wrapper function implementation for zmk_mouse_ps2_activity*_callback
+// assigned to zmk_mouse_ps2_data on above
+#define PS2_MOUSE_CALLBACK_IMPL_DEFINE(n)                                                     \
+    void zmk_mouse_ps2_activity_callback##n(const struct device *ps2_device, uint8_t byte) {  \
+        zmk_mouse_ps2_activity_callback(data##n.dev, ps2_device, byte);                       \
+    }                                                                                         \
+    void zmk_mouse_ps2_activity_resend_callback##n(const struct device *ps2_device) {         \
+        zmk_mouse_ps2_activity_resend_callback(data##n.dev, ps2_device);                      \
+    }
+
+DT_INST_FOREACH_STATUS_OKAY(PS2_MOUSE_CALLBACK_IMPL_DEFINE)
