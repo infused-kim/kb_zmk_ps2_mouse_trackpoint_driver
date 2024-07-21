@@ -439,9 +439,10 @@ static int zmk_input_listener_ps2_position_listener(const struct input_listener_
         (                                                                                          \
             static const struct input_listener_ps2_config config_##n =                             \
                 {                                                                                  \
-                    .move_accelerator_dev = DEVICE_DT_GET(DT_INST_PHANDLE(n, move_accelerator)),   \
+                    .move_accelerator_dev =                                                        \
+                        DEVICE_DT_GET_OR_NULL(DT_INST_PHANDLE(n, move_accelerator)),               \
                     .scroll_accelerator_dev =                                                      \
-                        DEVICE_DT_GET(DT_INST_PHANDLE(n, scroll_accelerator)),                     \
+                        DEVICE_DT_GET_OR_NULL(DT_INST_PHANDLE(n, scroll_accelerator)),             \
                     .xy_swap = DT_INST_PROP(n, xy_swap),                                           \
                     .x_invert = DT_INST_PROP(n, x_invert),                                         \
                     .y_invert = DT_INST_PROP(n, y_invert),                                         \
