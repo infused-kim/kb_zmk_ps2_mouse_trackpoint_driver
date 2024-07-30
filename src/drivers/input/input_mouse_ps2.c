@@ -1996,7 +1996,7 @@ DT_INST_FOREACH_STATUS_OKAY(PS2_MOUSE_CALLBACK_DEFINE)
         .tp_y_invert = DT_INST_PROP_OR(n, tp_y_invert, false),                                \
         .tp_xy_swap = DT_INST_PROP_OR(n, tp_xy_swap, false),                                  \
     };                                                                                        \
-    DEVICE_DT_INST_DEFINE(0, &zmk_mouse_ps2_init, NULL, &data##n, &config##n,                 \
+    DEVICE_DT_INST_DEFINE(n, &zmk_mouse_ps2_init, NULL, &data##n, &config##n,                 \
                         POST_KERNEL, ZMK_MOUSE_PS2_INIT_PRIORITY, NULL);
 
 DT_INST_FOREACH_STATUS_OKAY(ZMK_PS2_MOUSE_DEFINE)

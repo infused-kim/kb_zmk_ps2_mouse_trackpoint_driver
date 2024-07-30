@@ -24,7 +24,7 @@ LOG_MODULE_REGISTER(ps2_uart);
  * Pin Control
  */
 
-PINCTRL_DT_DEFINE(DT_INST_BUS(0));
+// PINCTRL_DT_DEFINE(DT_INST_BUS(0)); // moved to PS2_UART_DEFINE(n)
 
 /*
  * Settings
@@ -146,6 +146,8 @@ struct ps2_uart_data_queue_item {
 };
 
 struct ps2_uart_config {
+    int ps2_uart_idx;
+
     const struct device *uart_dev;
     struct gpio_dt_spec scl_gpio;
     struct gpio_dt_spec sda_gpio;
@@ -1259,15 +1261,17 @@ static int ps2_uart_init(const struct device *dev) {
     k_msgq_init(&data->data_queue, data->data_queue_buffer, sizeof(struct ps2_uart_data_queue_item),
                 PS2_UART_DATA_QUEUE_SIZE);
 
-    // Custom queue for background PS/2 processing work at high priority
-    k_work_queue_start(&ps2_uart_work_queue, ps2_uart_work_queue_stack_area,
-                       K_THREAD_STACK_SIZEOF(ps2_uart_work_queue_stack_area),
-                       PS2_UART_WORK_QUEUE_PRIORITY, NULL);
+    if (config->ps2_uart_idx == 0) {
+        // Custom queue for background PS/2 processing work at high priority
+        k_work_queue_start(&ps2_uart_work_queue, ps2_uart_work_queue_stack_area,
+                        K_THREAD_STACK_SIZEOF(ps2_uart_work_queue_stack_area),
+                        PS2_UART_WORK_QUEUE_PRIORITY, NULL);
 
-    // Custom queue for calling the zephyr ps/2 callback at lower priority
-    k_work_queue_start(&ps2_uart_work_queue_cb, ps2_uart_work_queue_cb_stack_area,
-                       K_THREAD_STACK_SIZEOF(ps2_uart_work_queue_cb_stack_area),
-                       PS2_UART_WORK_QUEUE_CB_PRIORITY, NULL);
+        // Custom queue for calling the zephyr ps/2 callback at lower priority
+        k_work_queue_start(&ps2_uart_work_queue_cb, ps2_uart_work_queue_cb_stack_area,
+                        K_THREAD_STACK_SIZEOF(ps2_uart_work_queue_cb_stack_area),
+                        PS2_UART_WORK_QUEUE_CB_PRIORITY, NULL);
+    }
 
     k_work_init(&data->callback_work, ps2_uart_read_callback_work_handler);
 
@@ -1382,11 +1386,13 @@ DT_INST_FOREACH_STATUS_OKAY(PS2_UART_SCL_INTERRUPT_DEFINE)
 
 
 #define PS2_UART_DEFINE(n)                                                           \
+    PINCTRL_DT_DEFINE(DT_INST_BUS(n));                                               \
     static struct ps2_uart_data data##n = {                                          \
         .scl_rupt_blocking = &ps2_uart_write_scl_interrupt_handler_blocking_##n,     \
         .scl_rupt_async = &ps2_uart_write_scl_interrupt_handler_async_##n,           \
     };                                                                               \
     static const struct ps2_uart_config config##n = {                                \
+        .ps2_uart_idx = n,                                                           \
         .uart_dev = DEVICE_DT_GET(DT_INST_BUS(n)),                                   \
         .scl_gpio = GPIO_DT_SPEC_INST_GET(n, scl_gpios),                             \
         .sda_gpio = GPIO_DT_SPEC_INST_GET(n, sda_gpios),                             \
@@ -1394,7 +1400,7 @@ DT_INST_FOREACH_STATUS_OKAY(PS2_UART_SCL_INTERRUPT_DEFINE)
         .scl_gpio_port_num = DT_PROP(DT_INST_PHANDLE(n, scl_gpios), port),           \
         .sda_gpio_port_num = DT_PROP(DT_INST_PHANDLE(n, sda_gpios), port),           \
     };                                                                               \
-    DEVICE_DT_INST_DEFINE(0, &ps2_uart_init, NULL, &data##n, &config##n,             \
+    DEVICE_DT_INST_DEFINE(n, &ps2_uart_init, NULL, &data##n, &config##n,             \
                           POST_KERNEL, 80,                                           \
                           &ps2_uart_driver_api);
 
