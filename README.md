@@ -971,6 +971,18 @@ So, if all of the solutions above fail, try soldering the cables again on both s
 
 And make sure to use soldering flux (not just within the solder, but "external") as it really helps to make sure you get a good connection.
 
+##### Make sure to clean the solder flux <!-- omit from toc -->
+
+Solder flux can be conductive and cause tiny shorts that are sometimes not measurable using a multimeter, but are still affecting the circuit.
+
+Keep in mind that we are toggling the power in the data and clock lines on and off at a rate of 15,000 times per second to communicate with the TrackPoint. And flux can disrupt that process.
+
+This is not a theoretical issue. This problem has affected my TrackPoints and other people on Discord have also experienced this. So don't ignore this solution.
+
+You can solve it by cleaning both the TrackPoint PCB as well as your keyboard with isopropyl alcohol. It must be isopropyl even though it is a bit harder to get. I didn't have success with ethynol-based alcohol.
+
+Make sure to clean both the TrackPoint PCB, any connection points on your keyboard PCB, and also the area where you connect the keyboard controller to the PCB.
+
 ##### Debug using a logic analyzer <!-- omit from toc -->
 
 If it's still not working, then you need to look "inside the wires".
