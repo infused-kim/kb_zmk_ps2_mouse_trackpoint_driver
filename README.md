@@ -687,9 +687,11 @@ If your build succeeds after switching to that known branch, then the issue is l
 
 ### 4.2. If the mouse or TrackPoint "doesn't work"
 
-The first thing you should do is enable logging in your keyboard config and connect the keyboard through USB. You can [use the options under the logging section in this example](https://github.com/infused-kim/zmk-config/blob/bde7b27d049b8a9b5a9e914cfd193583298a017e/config/think_corney.conf#L47).
+The first thing you should do is enable logging in your keyboard config and connect the keyboard through USB. You can [use the options under the logging section in this example](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver-zmk_config/blob/14b3102d969efb2fc708bba1cfc85eb1c34ac94a/config/corne_tp.conf#L14).
 
 Make sure to enable `CONFIG_ZMK_LOGGING_MINIMAL=y` or you will get an overwhelming amount of logs.
+
+If you are using the pre-built firmware of the example zmk-config, then you don't need to recompile it, because the options are already enabled.
 
 Then [follow the instructions here to view the logs](https://zmk.dev/docs/development/usb-logging).
 
