@@ -1,3 +1,4 @@
+name: zmk-driver-ps2-trackpoint
 build:
   cmake: .
   kconfig: Kconfig
