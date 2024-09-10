@@ -687,9 +687,11 @@ If your build succeeds after switching to that known branch, then the issue is l
 
 ### 4.2. If the mouse or TrackPoint "doesn't work"
 
-The first thing you should do is enable logging in your keyboard config and connect the keyboard through USB. You can [use the options under the logging section in this example](https://github.com/infused-kim/zmk-config/blob/bde7b27d049b8a9b5a9e914cfd193583298a017e/config/think_corney.conf#L47).
+The first thing you should do is enable logging in your keyboard config and connect the keyboard through USB. You can [use the options under the logging section in this example](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver-zmk_config/blob/14b3102d969efb2fc708bba1cfc85eb1c34ac94a/config/corne_tp.conf#L14).
 
 Make sure to enable `CONFIG_ZMK_LOGGING_MINIMAL=y` or you will get an overwhelming amount of logs.
+
+If you are using the pre-built firmware of the example zmk-config, then you don't need to recompile it, because the options are already enabled.
 
 Then [follow the instructions here to view the logs](https://zmk.dev/docs/development/usb-logging).
 
@@ -970,6 +972,18 @@ Re-soldering them always fixed the issue.
 So, if all of the solutions above fail, try soldering the cables again on both sides.
 
 And make sure to use soldering flux (not just within the solder, but "external") as it really helps to make sure you get a good connection.
+
+##### Make sure to clean the solder flux <!-- omit from toc -->
+
+Solder flux can be conductive and cause tiny shorts that are sometimes not measurable using a multimeter, but are still affecting the circuit.
+
+Keep in mind that we are toggling the power in the data and clock lines on and off at a rate of 15,000 times per second to communicate with the TrackPoint. And flux can disrupt that process.
+
+This is not a theoretical issue. This problem has affected my TrackPoints and other people on Discord have also experienced this. So don't ignore this solution.
+
+You can solve it by cleaning both the TrackPoint PCB as well as your keyboard with isopropyl alcohol. It must be isopropyl even though it is a bit harder to get. I didn't have success with ethynol-based alcohol.
+
+Make sure to clean both the TrackPoint PCB, any connection points on your keyboard PCB, and also the area where you connect the keyboard controller to the PCB.
 
 ##### Debug using a logic analyzer <!-- omit from toc -->
 
