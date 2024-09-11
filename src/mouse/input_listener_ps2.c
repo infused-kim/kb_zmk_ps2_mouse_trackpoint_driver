@@ -254,6 +254,10 @@ void zmk_input_listener_ps2_layer_toggle_input_rel_received(const struct input_l
     if (data->layer_toggle_layer_enabled == false) {
         k_work_schedule(&data->layer_toggle_activation_delay,
                         K_MSEC(config->layer_toggle_delay_ms));
+    } else if(config->layer_toggle_timeout_ms == 0) {
+      if(data->layer_toggle_layer_enabled == true && !zmk_keymap_layer_active(config->layer_toggle)) {
+        data->layer_toggle_layer_enabled = false;
+      }
     } else {
         // Deactivate the layer if no further movement within
         // layer_toggle_timeout_ms
@@ -272,7 +276,7 @@ void zmk_input_listener_ps2_layer_toggle_activate_layer(struct k_work *item) {
     int64_t current_time = k_uptime_get();
     int64_t last_mv_within_ms = current_time - data->layer_toggle_last_mouse_package_time;
 
-    if (last_mv_within_ms <= config->layer_toggle_timeout_ms * 0.1) {
+    if (last_mv_within_ms <= config->layer_toggle_delay_ms * 0.1) {
         LOG_INF("Activating layer %d due to mouse activity...", config->layer_toggle);
 
 #if IS_ENABLED(CONFIG_ZMK_INPUT_MOUSE_PS2_ENABLE_UROB_COMPAT)
