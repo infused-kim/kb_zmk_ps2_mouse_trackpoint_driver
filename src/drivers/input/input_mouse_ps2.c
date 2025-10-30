@@ -191,7 +191,7 @@ struct zmk_mouse_ps2_data {
     const struct device *dev;
     struct gpio_dt_spec rst_gpio; /* GPIO used for Power-On-Reset line */
 
-    K_THREAD_STACK_MEMBER(thread_stack, MOUSE_PS2_THREAD_STACK_SIZE);
+    K_KERNEL_STACK_MEMBER(thread_stack, MOUSE_PS2_THREAD_STACK_SIZE);
     struct k_thread thread;
 
     zmk_mouse_ps2_packet_mode packet_mode;
