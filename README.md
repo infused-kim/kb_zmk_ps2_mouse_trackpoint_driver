@@ -486,9 +486,9 @@ If you are a developer and are building using a local toolchain, please look for
 
 Even though the purpose of zmk modules is to not depend on any zmk forks, at the moment that's not entirely possible.
 
-This module depends on [zmk PR #2027 (Mouse pointer movement/scrolling)](https://github.com/zmkfirmware/zmk/pull/2027), which is still in active development and has not been merged into zmk main yet.
+This module depends on [zmk PR #2027 (Mouse pointer movement/scrolling)](https://github.com/zmkfirmware/zmk/pull/2027), which has been merged into zmk main however this repo has not yet been updated to work with zmk main https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver/issues/11.
 
-This means you must use a fork of zmk that has this PR merged into it.
+This means you must currently use a fork of zmk that has this PR merged into it.
 
 ##### Options for zmk forks with mouse support: <!-- omit from toc -->
 
