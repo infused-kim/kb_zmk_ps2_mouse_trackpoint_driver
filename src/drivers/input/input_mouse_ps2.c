@@ -595,20 +595,26 @@ void zmk_mouse_ps2_activity_click_buttons(bool button_l, bool button_m, bool but
 
             int buttons_need_reporting = buttons_pressed + buttons_released;
 
+            // Decrement only when a button was actually reported, so that the
+            // last reported button gets sync=true and flushes the input queue.
+            // Otherwise, when only RMB or MMB is pressed alone, the unconditional
+            // decrement in the original code reaches 0 before the report and
+            // sync=false leaves the event queued forever.
+
             // Left button
             if (button_l_pressed) {
 
                 input_report_key(data->dev, INPUT_BTN_0, 1,
                                  buttons_need_reporting == 1 ? true : false, K_FOREVER);
                 data->button_l_is_held = true;
+                buttons_need_reporting--;
             } else if (button_l_released) {
 
                 input_report_key(data->dev, INPUT_BTN_0, 0,
                                  buttons_need_reporting == 1 ? true : false, K_FOREVER);
                 data->button_l_is_held = false;
+                buttons_need_reporting--;
             }
-
-            buttons_need_reporting--;
 
             // Right button
             if (button_r_pressed) {
@@ -616,14 +622,14 @@ void zmk_mouse_ps2_activity_click_buttons(bool button_l, bool button_m, bool but
                 input_report_key(data->dev, INPUT_BTN_1, 1,
                                  buttons_need_reporting == 1 ? true : false, K_FOREVER);
                 data->button_r_is_held = true;
+                buttons_need_reporting--;
             } else if (button_r_released) {
 
                 input_report_key(data->dev, INPUT_BTN_1, 0,
                                  buttons_need_reporting == 1 ? true : false, K_FOREVER);
                 data->button_r_is_held = false;
+                buttons_need_reporting--;
             }
-
-            buttons_need_reporting--;
 
             // Middle Button
             if (button_m_pressed) {
@@ -631,11 +637,13 @@ void zmk_mouse_ps2_activity_click_buttons(bool button_l, bool button_m, bool but
                 input_report_key(data->dev, INPUT_BTN_2, 1,
                                  buttons_need_reporting == 1 ? true : false, K_FOREVER);
                 data->button_m_is_held = true;
+                buttons_need_reporting--;
             } else if (button_m_released) {
 
                 input_report_key(data->dev, INPUT_BTN_2, 0,
                                  buttons_need_reporting == 1 ? true : false, K_FOREVER);
                 data->button_m_is_held = false;
+                buttons_need_reporting--;
             }
         }
     }
