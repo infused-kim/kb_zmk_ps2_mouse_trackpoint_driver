@@ -1,5 +1,9 @@
 # PS/2 Mouse & TrackPoint Driver for zmk keyboards
 
+> [!Note]
+> 📢 Updates (Oct 2026):
+> **An alternative trackpoint controller breakout** had been developed base on [Texas Instruments ADS1220](https://www.ti.com/product/ADS1220). Check it out at [ads1220-pcb](https://github.com/badjeff/ads1220-pcb), also the zephyr/zmk **native SPI bus** driver at [ads1220-zephyr-module](https://github.com/badjeff/ads1220-zephyr-module) and 24 bit resolution [analog-axis-hires-input-zephyr-module](https://github.com/badjeff/analog-axis-hires-input-zephyr-module). On my setup, new controller could runs within 0.6mA in active mode configured with 125Hz polling rate, 16x PGA observing over the 100uA IDAC excitation current, and programmable downshift polling rate to idle state at few microampere.
+
 This is a driver module that adds support for PS/2 mouse-pointing devices to DIY keyboards running the [zmk firmware](https://zmk.dev).
 
 You can use this driver for any pointing device that uses the PS/2 protocol, such as an actual mouse, touchpad, or trackball.
