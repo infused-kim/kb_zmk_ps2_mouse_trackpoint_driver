@@ -17,8 +17,8 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
 #include <zmk/endpoints.h>
 #include <zmk/keymap.h>
-#include <zmk/mouse/types.h>
-#include <zmk/mouse/hid.h>
+#include <zmk/pointing.h>
+#include <zmk/hid.h>
 
 #define ONE_IF_DEV_OK(n)                                                                           \
     COND_CODE_1(DT_NODE_HAS_STATUS(DT_INST_PHANDLE(n, device), okay), (1 +), (0 +))
@@ -218,7 +218,7 @@ static void input_handler_ps2(const struct input_listener_ps2_config *config,
         }
 
         if (data->mouse.button_set != 0) {
-            for (int i = 0; i < ZMK_MOUSE_HID_NUM_BUTTONS; i++) {
+            for (int i = 0; i < ZMK_HID_MOUSE_NUM_BUTTONS; i++) {
                 if ((data->mouse.button_set & BIT(i)) != 0) {
                     zmk_hid_mouse_button_press(i);
                 }
@@ -226,7 +226,7 @@ static void input_handler_ps2(const struct input_listener_ps2_config *config,
         }
 
         if (data->mouse.button_clear != 0) {
-            for (int i = 0; i < ZMK_MOUSE_HID_NUM_BUTTONS; i++) {
+            for (int i = 0; i < ZMK_HID_MOUSE_NUM_BUTTONS; i++) {
                 if ((data->mouse.button_clear & BIT(i)) != 0) {
                     zmk_hid_mouse_button_release(i);
                 }
