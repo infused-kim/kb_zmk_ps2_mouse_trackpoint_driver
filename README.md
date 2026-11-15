@@ -117,35 +117,36 @@ But, unfortunately, not all TrackPoints support this feature. My older Lenovo T4
 
 ## 2. Setup Instructions for users of previous versions
 
-If you used the previous zmk fork version of this driver, then you only need to make a few small changes.
+If you used this module with a zmk fork before pointing support was merged into zmk (before v0.2), then you will need to make a few small changes.
 
-But I would recommend you check out the [new example zmk-config, which shows step-by-step how to set up the module](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver-zmk_config/).
-
-I made some changes to how the config is structured, which makes it more flexible and easier to use.
-
-You can also check how I upgraded my personal config from the old zmk fork to this new module in these commits:
-
-1. [Converted zmk-config to new module structure](https://github.com/infused-kim/zmk-config/commit/77b48aa40e95505516053652929936b7a2313cbc)
-2. [Added minimal changes to switch to new PS/2 mouse driver module](https://github.com/infused-kim/zmk-config/commit/b12931a7145445e757812d09106d5896cc99e623)
-3. [Added full changes to switch](https://github.com/infused-kim/zmk-config/commit/47bd2cc46de99f722e57e27e3a28d7ea367a880a)
+I would recommend you check out the [new example zmk-config, which shows step-by-step how to set up the module](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver-zmk_config/).
 
 But, here are the minimum changes you need to make.
 
-### Change the name of the input-listener... <!-- omit from toc -->
+### Use ZMK's input listener... <!-- omit from toc -->
 
-In `boards/shields/your_keyboard/your_keyboard.dtsi` change from `zmk,input-listener` to `zmk,input-listener-ps2`:
+This module no longer includes its own `zmk,input-listener-ps2`. Use ZMK's `zmk,input-listener` in `boards/shields/your_keyboard/your_keyboard.dtsi`:
 
 ```diff
 / {
     mouse_ps2_input_listener: mouse_ps2_input_listener {
--       compatible = "zmk,input-listener";
-+       compatible = "zmk,input-listener-ps2";
+-       compatible = "zmk,input-listener-ps2";
++       compatible = "zmk,input-listener";
         status = "disabled";
 
         device = <&mouse_ps2>;
     };
 };
 ```
+
+Its settings map to [ZMK input processors](https://zmk.dev/docs/keymaps/input-processors):
+
+| `zmk,input-listener-ps2`                  | `zmk,input-listener`                                                                                                        |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `xy-swap`, `x-invert`, `y-invert`         | `input-processors = <&zip_xy_transform (INPUT_TRANSFORM_XY_SWAP \| INPUT_TRANSFORM_X_INVERT \| INPUT_TRANSFORM_Y_INVERT)>;` |
+| `scale-multiplier`, `scale-divisor`       | `<&zip_xy_scaler mul div>`                                                                                                  |
+| `layer-toggle`, `layer-toggle-timeout-ms` | `<&zip_temp_layer layer timeout-ms>`                                                                                        |
+| `layer-toggle-delay-ms`                   | No equivalent. `require-prior-idle-ms` on `&zip_temp_layer` prevents activations right after typing.                        |
 
 ### Adjust your west.yaml to use the module <!-- omit from toc -->
 
