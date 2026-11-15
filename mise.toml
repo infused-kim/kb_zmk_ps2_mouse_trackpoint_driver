@@ -1,0 +1,6 @@
+# Dev tools for this module. Run `mise install`, then `prek install` once to
+# set up the git hooks from .pre-commit-config.yaml.
+
+[tools]
+# Runs the hooks in .pre-commit-config.yaml (drop-in replacement for pre-commit)
+prek = "latest"
