@@ -13,6 +13,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
+#include <drivers/input_processor.h>
 #include <zmk/input_accelerator.h>
 
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
@@ -51,11 +52,40 @@ struct input_accelerator_config {
     int input_default_sending_rate;
 };
 
+// Intermediate values of `zmk_input_acc_accelerate_axis`, kept for logging
+struct input_acc_axis_result {
+    float acc;
+    float with_divisor;
+    float with_buffer;
+    int32_t to_send;
+};
+
+// One axis of the report that the input processor is currently receiving
+struct input_acc_processor_axis {
+    int32_t mov;
+    float speed;
+    struct input_acc_axis_result res;
+};
+
+// The report that the input processor is currently receiving. A report
+// consists of all events up to and including the event with the sync flag.
+struct input_acc_processor_report {
+    bool started;
+    int64_t received_at;
+    int64_t mov_interval;
+    struct input_acc_processor_axis x;
+    struct input_acc_processor_axis y;
+};
+
 struct input_accelerator_data {
     const struct device *dev;
     struct vector2d prev_mov;
     int64_t prev_mov_received_at;
     struct vector2df move_remainder;
+
+    // Only used by the input processor
+    float processor_acc_factor;
+    struct input_acc_processor_report processor_report;
 
     // For logging of move summary
     int64_t continuous_move_start_time;
@@ -71,14 +101,13 @@ struct input_accelerator_data {
     int divisor;
 };
 
-// Intermediate values of `zmk_input_acc_accelerate_axis`, kept for logging
-struct input_acc_axis_result {
-    float acc;
-    float with_divisor;
-    float with_buffer;
-    int32_t to_send;
-};
-
+static void zmk_input_acc_processor_start_report(const struct input_accelerator_config *config,
+                                                 struct input_accelerator_data *data);
+static void zmk_input_acc_processor_accelerate_event(const struct input_accelerator_config *config,
+                                                     struct input_accelerator_data *data,
+                                                     struct input_event *event);
+static void zmk_input_acc_processor_finish_report(const struct input_accelerator_config *config,
+                                                  struct input_accelerator_data *data);
 static float zmk_input_acc_get_axis_speed(const struct input_accelerator_config *config,
                                           int32_t mov, int64_t mov_interval);
 static float zmk_input_acc_get_acc_factor(const struct input_accelerator_config *config,
@@ -155,6 +184,106 @@ struct input_accelerator_result zmk_accelerate_input(const struct device *accele
     struct input_accelerator_result ret = {.x = res_x.to_send, .y = res_y.to_send};
 
     return ret;
+}
+
+// Input processor API.
+//
+// Unlike `zmk_accelerate_input`, which receives the x and y movement of a
+// report together, an input processor receives one event at a time and can't
+// hold back the x event until the y event arrives. So, each axis is
+// accelerated as soon as it arrives, using the acceleration factor that was
+// calculated from the combined speed of the previous report.
+//
+// Shares its state with `zmk_accelerate_input`, so a single accelerator node
+// must not be used as input processor and `move-accelerator` at the same time.
+static int zmk_input_acc_handle_event(const struct device *dev, struct input_event *event,
+                                      uint32_t param1, uint32_t param2,
+                                      struct zmk_input_processor_state *state) {
+    const struct input_accelerator_config *config = dev->config;
+    struct input_accelerator_data *data = dev->data;
+    struct input_acc_processor_report *report = &data->processor_report;
+
+    if (event->type == INPUT_EV_REL && (event->code == INPUT_REL_X || event->code == INPUT_REL_Y)) {
+        if (!report->started) {
+            zmk_input_acc_processor_start_report(config, data);
+        }
+
+        zmk_input_acc_processor_accelerate_event(config, data, event);
+    }
+
+    if (event->sync && report->started) {
+        zmk_input_acc_processor_finish_report(config, data);
+    }
+
+    return ZMK_INPUT_PROC_CONTINUE;
+}
+
+static void zmk_input_acc_processor_start_report(const struct input_accelerator_config *config,
+                                                 struct input_accelerator_data *data) {
+    struct input_acc_processor_report *report = &data->processor_report;
+
+    report->started = true;
+    report->received_at = k_uptime_get();
+    report->mov_interval = report->received_at - data->prev_mov_received_at;
+
+    // The previous report's acceleration factor doesn't apply to a new movement
+    if (report->mov_interval > INPUT_ACCELERATOR_CONTINUOUS_MOVE_MAX_INTERVAL) {
+        data->processor_acc_factor = zmk_input_acc_get_acc_factor(config, data, 0);
+    }
+}
+
+// Accelerates the movement of a single REL_X or REL_Y event and stores the
+// axis values in the current report.
+static void zmk_input_acc_processor_accelerate_event(const struct input_accelerator_config *config,
+                                                     struct input_accelerator_data *data,
+                                                     struct input_event *event) {
+    struct input_acc_processor_report *report = &data->processor_report;
+
+    struct input_acc_processor_axis *axis;
+    int32_t prev_mov;
+    float *remainder;
+
+    if (event->code == INPUT_REL_X) {
+        axis = &report->x;
+        prev_mov = data->prev_mov.x;
+        remainder = &data->move_remainder.x;
+    } else {
+        axis = &report->y;
+        prev_mov = data->prev_mov.y;
+        remainder = &data->move_remainder.y;
+    }
+
+    axis->mov = event->value;
+    axis->speed = zmk_input_acc_get_axis_speed(config, axis->mov, report->mov_interval);
+    axis->res =
+        zmk_input_acc_accelerate_axis(data, axis->mov, prev_mov, axis->speed,
+                                      data->processor_acc_factor, report->mov_interval, remainder);
+
+    event->value = axis->res.to_send;
+}
+
+// Calculates the acceleration factor for the next report from the combined
+// speed of both axes, the same way `zmk_accelerate_input` does. An axis that
+// wasn't part of the report counts as no movement.
+static void zmk_input_acc_processor_finish_report(const struct input_accelerator_config *config,
+                                                  struct input_accelerator_data *data) {
+    struct input_acc_processor_report *report = &data->processor_report;
+
+    float speed = sqrtf(report->x.speed * report->x.speed + report->y.speed * report->y.speed);
+
+    zmk_input_acc_log_move(config, data, report->received_at, report->mov_interval, report->x.mov,
+                           report->y.mov, speed, data->processor_acc_factor, &report->x.res,
+                           &report->y.res);
+
+    data->processor_acc_factor = zmk_input_acc_get_acc_factor(config, data, speed);
+
+    data->prev_mov.x = report->x.mov;
+    data->prev_mov.y = report->y.mov;
+    data->prev_mov_received_at = report->received_at;
+
+    // Start the next report from scratch: Sets `report->started = false` and counts both
+    // axes as unmoved until their events arrive.
+    *report = (struct input_acc_processor_report){0};
 }
 
 // Speed of a single axis.
@@ -588,6 +717,10 @@ static int zmk_input_accelerator_init(const struct device *dev,
     return 0;
 }
 
+static const struct zmk_input_processor_driver_api zmk_input_accelerator_processor_api = {
+    .handle_event = zmk_input_acc_handle_event,
+};
+
 #define IL_INST(n)                                                                                 \
     static const struct input_accelerator_config config_##n = {                                    \
         .acc_curve_name = DT_INST_PROP(n, acceleration_curve),                                     \
@@ -617,6 +750,7 @@ static int zmk_input_accelerator_init(const struct device *dev,
     }                                                                                              \
                                                                                                    \
     DEVICE_DT_INST_DEFINE(n, &zmk_input_accelerator_init_##n, NULL, &data_##n, &config_##n,        \
-                          POST_KERNEL, CONFIG_APPLICATION_INIT_PRIORITY, NULL);
+                          POST_KERNEL, CONFIG_APPLICATION_INIT_PRIORITY,                           \
+                          &zmk_input_accelerator_processor_api);
 
 DT_INST_FOREACH_STATUS_OKAY(IL_INST)
