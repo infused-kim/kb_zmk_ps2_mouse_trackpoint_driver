@@ -69,8 +69,8 @@ struct input_listener_ps2_config {
     int layer_toggle_timeout_ms;
 };
 
-void zmk_input_listener_ps2_layer_toggle_input_rel_received(const struct input_listener_ps2_config *config,
-                                                        struct input_listener_ps2_data *data);
+void zmk_input_listener_ps2_layer_toggle_input_rel_received(
+    const struct input_listener_ps2_config *config, struct input_listener_ps2_data *data);
 
 static char *get_input_code_name(struct input_event *evt) {
     switch (evt->code) {
@@ -187,11 +187,12 @@ static void clear_xy_data(struct input_listener_ps2_xy_data *data) {
 }
 
 static void input_handler_ps2(const struct input_listener_ps2_config *config,
-                          struct input_listener_ps2_data *data, struct input_event *evt) {
+                              struct input_listener_ps2_data *data, struct input_event *evt) {
     // First, filter to update the event data as needed.
     filter_with_input_config(config, evt);
 
-    LOG_DBG("Got input_handler_ps2 event: %s with value 0x%x", get_input_code_name(evt), evt->value);
+    LOG_DBG("Got input_handler_ps2 event: %s with value 0x%x", get_input_code_name(evt),
+            evt->value);
 
     zmk_input_listener_ps2_layer_toggle_input_rel_received(config, data);
 
@@ -243,8 +244,8 @@ static void input_handler_ps2(const struct input_listener_ps2_config *config,
     }
 }
 
-void zmk_input_listener_ps2_layer_toggle_input_rel_received(const struct input_listener_ps2_config *config,
-                                                        struct input_listener_ps2_data *data) {
+void zmk_input_listener_ps2_layer_toggle_input_rel_received(
+    const struct input_listener_ps2_config *config, struct input_listener_ps2_data *data) {
     if (config->layer_toggle == -1) {
         return;
     }
@@ -309,7 +310,7 @@ void zmk_input_listener_ps2_layer_toggle_deactivate_layer(struct k_work *item) {
 }
 
 static int zmk_input_listener_ps2_layer_toggle_init(const struct input_listener_ps2_config *config,
-                                                struct input_listener_ps2_data *data) {
+                                                    struct input_listener_ps2_data *data) {
     k_work_init_delayable(&data->layer_toggle_activation_delay,
                           zmk_input_listener_ps2_layer_toggle_activate_layer);
     k_work_init_delayable(&data->layer_toggle_deactivation_delay,
@@ -321,41 +322,42 @@ static int zmk_input_listener_ps2_layer_toggle_init(const struct input_listener_
 #endif // VALID_LISTENER_COUNT > 0
 
 #define IL_INST(n)                                                                                 \
-    COND_CODE_1(                                                                                   \
-        DT_NODE_HAS_STATUS(DT_INST_PHANDLE(n, device), okay),                                      \
-        (                                                                                          \
-            static const struct input_listener_ps2_config config_##n =                                 \
-                {                                                                                  \
-                    .xy_swap = DT_INST_PROP(n, xy_swap),                                           \
-                    .x_invert = DT_INST_PROP(n, x_invert),                                         \
-                    .y_invert = DT_INST_PROP(n, y_invert),                                         \
-                    .scale_multiplier = DT_INST_PROP(n, scale_multiplier),                         \
-                    .scale_divisor = DT_INST_PROP(n, scale_divisor),                               \
-                    .layer_toggle = DT_INST_PROP(n, layer_toggle),                                 \
-                    .layer_toggle_delay_ms = DT_INST_PROP(n, layer_toggle_delay_ms),               \
-                    .layer_toggle_timeout_ms = DT_INST_PROP(n, layer_toggle_timeout_ms),           \
-                };                                                                                 \
-            static struct input_listener_ps2_data data_##n =                                           \
-                {                                                                                  \
-                    .dev = DEVICE_DT_INST_GET(n),                                                  \
-                    .layer_toggle_layer_enabled = false,                                           \
-                    .layer_toggle_last_mouse_package_time = 0,                                     \
-                };                                                                                 \
-            void input_handler_ps2_##n(struct input_event *evt) {                                      \
-                input_handler_ps2(&config_##n, &data_##n, evt);                                        \
-            } INPUT_CALLBACK_DEFINE(DEVICE_DT_GET(DT_INST_PHANDLE(n, device)), input_handler_ps2_##n); \
+    COND_CODE_1(DT_NODE_HAS_STATUS(DT_INST_PHANDLE(n, device), okay),                              \
+                (                                                                                  \
+                    static const struct input_listener_ps2_config config_##n =                     \
+                        {                                                                          \
+                            .xy_swap = DT_INST_PROP(n, xy_swap),                                   \
+                            .x_invert = DT_INST_PROP(n, x_invert),                                 \
+                            .y_invert = DT_INST_PROP(n, y_invert),                                 \
+                            .scale_multiplier = DT_INST_PROP(n, scale_multiplier),                 \
+                            .scale_divisor = DT_INST_PROP(n, scale_divisor),                       \
+                            .layer_toggle = DT_INST_PROP(n, layer_toggle),                         \
+                            .layer_toggle_delay_ms = DT_INST_PROP(n, layer_toggle_delay_ms),       \
+                            .layer_toggle_timeout_ms = DT_INST_PROP(n, layer_toggle_timeout_ms),   \
+                        };                                                                         \
+                    static struct input_listener_ps2_data data_##n =                               \
+                        {                                                                          \
+                            .dev = DEVICE_DT_INST_GET(n),                                          \
+                            .layer_toggle_layer_enabled = false,                                   \
+                            .layer_toggle_last_mouse_package_time = 0,                             \
+                        };                                                                         \
+                    void input_handler_ps2_##n(struct input_event *evt) {                          \
+                        input_handler_ps2(&config_##n, &data_##n, evt);                            \
+                    } INPUT_CALLBACK_DEFINE(DEVICE_DT_GET(DT_INST_PHANDLE(n, device)),             \
+                                            input_handler_ps2_##n);                                \
                                                                                                    \
-            static int zmk_input_listener_ps2_init_##n(const struct device *dev) {                     \
-                struct input_listener_ps2_data *data = dev->data;                                      \
-                const struct input_listener_ps2_config *config = dev->config;                          \
+                    static int zmk_input_listener_ps2_init_##n(const struct device *dev) {         \
+                        struct input_listener_ps2_data *data = dev->data;                          \
+                        const struct input_listener_ps2_config *config = dev->config;              \
                                                                                                    \
-                zmk_input_listener_ps2_layer_toggle_init(config, data);                                \
+                        zmk_input_listener_ps2_layer_toggle_init(config, data);                    \
                                                                                                    \
-                return 0;                                                                          \
-            }                                                                                      \
+                        return 0;                                                                  \
+                    }                                                                              \
                                                                                                    \
-            DEVICE_DT_INST_DEFINE(n, &zmk_input_listener_ps2_init_##n, NULL, &data_##n, &config_##n,   \
-                                  POST_KERNEL, CONFIG_APPLICATION_INIT_PRIORITY, NULL);),          \
-        ())
+                    DEVICE_DT_INST_DEFINE(n, &zmk_input_listener_ps2_init_##n, NULL, &data_##n,    \
+                                          &config_##n, POST_KERNEL,                                \
+                                          CONFIG_APPLICATION_INIT_PRIORITY, NULL);),               \
+                ())
 
 DT_INST_FOREACH_STATUS_OKAY(IL_INST)
