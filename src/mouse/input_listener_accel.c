@@ -30,6 +30,10 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #include <zmk/hid.h>
 #include <zmk/keymap.h>
 
+#if IS_ENABLED(CONFIG_ZMK_INPUT_ACCELERATOR)
+#include <zmk/input_accelerator.h>
+#endif // IS_ENABLED(CONFIG_ZMK_INPUT_ACCELERATOR)
+
 #define ONE_IF_DEV_OK(n)                                                                           \
     COND_CODE_1(DT_NODE_HAS_STATUS(DT_INST_PHANDLE(n, device), okay), (1 +), (0 +))
 
@@ -75,6 +79,7 @@ struct input_listener_processor_data {
 
 struct input_listener_config {
     uint8_t listener_index;
+    const struct device *move_accelerator_dev;
     struct input_listener_config_entry base;
     size_t layer_overrides_len;
     struct input_listener_layer_override layer_overrides[];
@@ -301,6 +306,18 @@ static void input_handler(const struct input_listener_config *config,
         }
 
         if (data->mouse.data.mode == INPUT_LISTENER_XY_DATA_MODE_REL) {
+#if IS_ENABLED(CONFIG_ZMK_INPUT_ACCELERATOR)
+            // Accelerate X and Y together, now that the whole report has
+            // arrived. Scrolling (wheel_data) is left alone.
+            if (config->move_accelerator_dev != NULL) {
+                struct input_accelerator_result acc =
+                    zmk_accelerate_input(config->move_accelerator_dev, data->mouse.data.x.value,
+                                         data->mouse.data.y.value);
+                data->mouse.data.x.value = acc.x;
+                data->mouse.data.y.value = acc.y;
+            }
+#endif // IS_ENABLED(CONFIG_ZMK_INPUT_ACCELERATOR)
+
             zmk_hid_mouse_movement_set(data->mouse.data.x.value, data->mouse.data.y.value);
         }
 
@@ -384,6 +401,9 @@ static void input_handler(const struct input_listener_config *config,
                                      n) static const struct input_listener_config config_##n =     \
              {                                                                                     \
                  .listener_index = n,                                                              \
+                 .move_accelerator_dev =                                                           \
+                     COND_CODE_1(DT_INST_NODE_HAS_PROP(n, move_accelerator),                       \
+                                 (DEVICE_DT_GET(DT_INST_PHANDLE(n, move_accelerator))), (NULL)),   \
                  .base = IL_EXTRACT_CONFIG(DT_DRV_INST(n), n, base),                               \
                  .layer_overrides_len = (0 DT_INST_FOREACH_CHILD(n, IL_ONE)),                      \
                  .layer_overrides = {DT_INST_FOREACH_CHILD_SEP_VARGS(n, IL_OVERRIDE, (, ), n)},    \
