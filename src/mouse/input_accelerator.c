@@ -71,6 +71,28 @@ struct input_accelerator_data {
     int divisor;
 };
 
+// Intermediate values of `zmk_input_acc_accelerate_axis`, kept for logging
+struct input_acc_axis_result {
+    float acc;
+    float with_divisor;
+    float with_buffer;
+    int32_t to_send;
+};
+
+static float zmk_input_acc_get_axis_speed(const struct input_accelerator_config *config,
+                                          int32_t mov, int64_t mov_interval);
+static float zmk_input_acc_get_acc_factor(const struct input_accelerator_config *config,
+                                          const struct input_accelerator_data *data, float speed);
+static struct input_acc_axis_result
+zmk_input_acc_accelerate_axis(const struct input_accelerator_data *data, int32_t orig,
+                              int32_t prev_orig, float speed, float acc_factor,
+                              int64_t mov_interval, float *remainder);
+static void zmk_input_acc_log_move(const struct input_accelerator_config *config,
+                                   struct input_accelerator_data *data, int64_t mov_received_at,
+                                   int64_t mov_interval, int32_t orig_x, int32_t orig_y,
+                                   float speed, float acc_factor,
+                                   const struct input_acc_axis_result *res_x,
+                                   const struct input_acc_axis_result *res_y);
 float zmk_input_acc_get_interval_based_speed(float mov, int64_t mov_interval,
                                              int input_default_sending_rate);
 float zmk_mouse_ps2_sigmoid_function_with_offset(float x, float limit, float acc_rate,
@@ -105,17 +127,8 @@ struct input_accelerator_result zmk_accelerate_input(const struct device *accele
     int64_t mov_received_at = k_uptime_get();
     int64_t mov_interval = mov_received_at - data->prev_mov_received_at;
 
-    float speed_x = (float)orig_x;
-    float speed_y = (float)orig_y;
-
-    // Check the comments in `zmk_input_acc_get_interval_based_speed` for why
-    // this is necessary.
-    if (config->enable_interval_based_speed) {
-        speed_x = zmk_input_acc_get_interval_based_speed(speed_x, mov_interval,
-                                                         config->input_default_sending_rate);
-        speed_y = zmk_input_acc_get_interval_based_speed(speed_y, mov_interval,
-                                                         config->input_default_sending_rate);
-    }
+    float speed_x = zmk_input_acc_get_axis_speed(config, orig_x, mov_interval);
+    float speed_y = zmk_input_acc_get_axis_speed(config, orig_y, mov_interval);
 
     // We calculate the acceleration curve on the combined speed of
     // both the x and y movements. Otherwise we would skew the
@@ -125,6 +138,43 @@ struct input_accelerator_result zmk_accelerate_input(const struct device *accele
 
     // We use the speed to calculate the acceleration factor, which we
     // then apply to the actual movement data
+    float acc_factor = zmk_input_acc_get_acc_factor(config, data, speed);
+
+    struct input_acc_axis_result res_x = zmk_input_acc_accelerate_axis(
+        data, orig_x, data->prev_mov.x, speed_x, acc_factor, mov_interval, &data->move_remainder.x);
+    struct input_acc_axis_result res_y = zmk_input_acc_accelerate_axis(
+        data, orig_y, data->prev_mov.y, speed_y, acc_factor, mov_interval, &data->move_remainder.y);
+
+    zmk_input_acc_log_move(config, data, mov_received_at, mov_interval, orig_x, orig_y, speed,
+                           acc_factor, &res_x, &res_y);
+
+    data->prev_mov.x = orig_x;
+    data->prev_mov.y = orig_y;
+    data->prev_mov_received_at = mov_received_at;
+
+    struct input_accelerator_result ret = {.x = res_x.to_send, .y = res_y.to_send};
+
+    return ret;
+}
+
+// Speed of a single axis.
+static float zmk_input_acc_get_axis_speed(const struct input_accelerator_config *config,
+                                          int32_t mov, int64_t mov_interval) {
+    float speed = (float)mov;
+
+    // Check the comments in `zmk_input_acc_get_interval_based_speed` for why
+    // this is necessary.
+    if (config->enable_interval_based_speed) {
+        speed = zmk_input_acc_get_interval_based_speed(speed, mov_interval,
+                                                       config->input_default_sending_rate);
+    }
+
+    return speed;
+}
+
+// Acceleration factor for a speed, using the configured curve.
+static float zmk_input_acc_get_acc_factor(const struct input_accelerator_config *config,
+                                          const struct input_accelerator_data *data, float speed) {
     float acc_factor = 1;
     if (strcmp(config->acc_curve_name, "none") == 0) {
         acc_factor = zmk_input_acc_get_acceleration_factor_none(
@@ -142,31 +192,34 @@ struct input_accelerator_result zmk_accelerate_input(const struct device *accele
         LOG_ERR("Unknown acceleration curve: %s", config->acc_curve_name);
     }
 
+    return acc_factor;
+}
+
+// Applies the acceleration factor to a single axis and updates its remainder.
+static struct input_acc_axis_result
+zmk_input_acc_accelerate_axis(const struct input_accelerator_data *data, int32_t orig,
+                              int32_t prev_orig, float speed, float acc_factor,
+                              int64_t mov_interval, float *remainder) {
+    struct input_acc_axis_result res;
+
     // Calculate the actual movement using the acceleration factor
-    float acc_x = (float)speed_x * acc_factor;
-    float acc_y = (float)speed_y * acc_factor;
+    res.acc = speed * acc_factor;
 
     // Apply the divisor in case the movement needs to be significantly slowed down,
     // such as when the mouse movement is converted into scrolling.
-    float with_divisor_x = acc_x / data->divisor;
-    float with_divisor_y = acc_y / data->divisor;
+    res.with_divisor = res.acc / data->divisor;
 
     // If the previous packet was more than 200ms ago or the direction
     // of the movement changed (e.g. pos to neg), then we consider this
     // a new movement.
-    bool is_new_mov_x = zmk_input_acc_is_new_mov(orig_x, data->prev_mov.x, mov_interval);
-    bool is_new_mov_y = zmk_input_acc_is_new_mov(orig_y, data->prev_mov.y, mov_interval);
+    bool is_new_mov = zmk_input_acc_is_new_mov(orig, prev_orig, mov_interval);
 
     // The zephyr input system uses integers. So, if we need to send
     // a fractional movement like 4.5 we round it down and then store the
     // remainder, which we then add to the next movement.
-    float with_buffer_x = with_divisor_x;
-    if (is_new_mov_x == false) {
-        with_buffer_x += data->move_remainder.x;
-    }
-    float with_buffer_y = with_divisor_y;
-    if (is_new_mov_y == false) {
-        with_buffer_y += data->move_remainder.y;
+    res.with_buffer = res.with_divisor;
+    if (is_new_mov == false) {
+        res.with_buffer += *remainder;
     }
 
     // Make low acc_factor more responsive.
@@ -180,24 +233,29 @@ struct input_accelerator_result zmk_accelerate_input(const struct device *accele
     // value 1 immediately and only decelerate future movements in the same
     // direction.
     if (data->divisor == 1) {
-        if (is_new_mov_x == true && orig_x != 0 && fabsf(with_buffer_x) < 1) {
-            int direction_factor_x = zmk_input_acc_get_direction_factor(orig_x);
-            with_buffer_x = 1 * direction_factor_x;
-        }
-        if (is_new_mov_y == true && orig_y != 0 && fabsf(with_buffer_y) < 1) {
-            int direction_factor_y = zmk_input_acc_get_direction_factor(orig_y);
-            with_buffer_y = 1 * direction_factor_y;
+        if (is_new_mov == true && orig != 0 && fabsf(res.with_buffer) < 1) {
+            int direction_factor = zmk_input_acc_get_direction_factor(orig);
+            res.with_buffer = 1 * direction_factor;
         }
     }
 
     // The zephyr input system uses whole numbers. So, we round down.
-    int32_t to_send_x = (int32_t)with_buffer_x;
-    int32_t to_send_y = (int32_t)with_buffer_y;
+    res.to_send = (int32_t)res.with_buffer;
 
     // Store remainder in buffer
-    data->move_remainder.x = with_buffer_x - (float)to_send_x;
-    data->move_remainder.y = with_buffer_y - (float)to_send_y;
+    *remainder = res.with_buffer - (float)res.to_send;
 
+    return res;
+}
+
+// Logs each accelerated movement and tracks the continuous move for the
+// summary logged by `zmk_input_accelerator_continuous_move_timeout_work`.
+static void zmk_input_acc_log_move(const struct input_accelerator_config *config,
+                                   struct input_accelerator_data *data, int64_t mov_received_at,
+                                   int64_t mov_interval, int32_t orig_x, int32_t orig_y,
+                                   float speed, float acc_factor,
+                                   const struct input_acc_axis_result *res_x,
+                                   const struct input_acc_axis_result *res_y) {
 #if IS_ENABLED(CONFIG_ZMK_INPUT_ACCELERATOR_LOG_ENABLED)
 
     if (data->continuous_move_start_time == 0) {
@@ -218,7 +276,7 @@ struct input_accelerator_result zmk_accelerate_input(const struct device *accele
     char divisor_info[64] = "";
     if (data->divisor != 1) {
         snprintf(divisor_info, sizeof(divisor_info), "Divisor X: %+5.2f, Y: %+5.2f (/ %d); ",
-                 with_divisor_x, with_divisor_y, data->divisor);
+                 res_x->with_divisor, res_y->with_divisor, data->divisor);
     }
 
     LOG_INF("Input Accel %s - "
@@ -230,19 +288,11 @@ struct input_accelerator_result zmk_accelerate_input(const struct device *accele
             "With Buffer X: %+5.2f, Y: %+5.2f; "
             "Final X: %+3d, Y: %+3d; "
             "New Buffer X: %+4.2f, Y: %+4.2f; ",
-            config->acc_curve_name, mov_interval, orig_x, orig_y, speed, acc_x, acc_y,
-            acc_factor_pct, divisor_info, with_buffer_x, with_buffer_y, to_send_x, to_send_y,
-            data->move_remainder.x, data->move_remainder.y);
+            config->acc_curve_name, mov_interval, orig_x, orig_y, speed, res_x->acc, res_y->acc,
+            acc_factor_pct, divisor_info, res_x->with_buffer, res_y->with_buffer, res_x->to_send,
+            res_y->to_send, data->move_remainder.x, data->move_remainder.y);
 
 #endif // CONFIG_ZMK_INPUT_ACCELERATOR_LOG_ENABLED
-
-    data->prev_mov.x = orig_x;
-    data->prev_mov.y = orig_y;
-    data->prev_mov_received_at = mov_received_at;
-
-    struct input_accelerator_result ret = {.x = to_send_x, .y = to_send_y};
-
-    return ret;
 }
 
 #if IS_ENABLED(CONFIG_ZMK_INPUT_ACCELERATOR_LOG_ENABLED)
