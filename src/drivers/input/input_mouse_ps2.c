@@ -7,7 +7,6 @@
 #define DT_DRV_COMPAT zmk_input_mouse_ps2
 
 #include <stdlib.h>
-#include <math.h>
 
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
@@ -18,8 +17,6 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/settings/settings.h>
 #include <zephyr/sys/util.h>
-
-#include <zmk/input_mouse_ps2.h>
 
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
@@ -188,8 +185,6 @@ struct zmk_mouse_ps2_packet {
     bool button_l;
     bool button_m;
     bool button_r;
-
-    int64_t received_at;
 };
 
 struct zmk_mouse_ps2_data {
@@ -203,7 +198,6 @@ struct zmk_mouse_ps2_data {
     uint8_t packet_buffer[4];
     int packet_idx;
     struct zmk_mouse_ps2_packet prev_packet;
-
     struct k_work_delayable packet_buffer_timeout;
 
     bool button_l_is_held;
@@ -265,7 +259,6 @@ static struct zmk_mouse_ps2_data zmk_mouse_ps2_data = {
             .mov_x = 0,
             .mov_y = 0,
             .scroll = 0,
-            .received_at = 0,
         },
 
     .button_l_is_held = false,
@@ -313,7 +306,7 @@ int zmk_mouse_ps2_settings_save();
 void zmk_mouse_ps2_activity_process_cmd(zmk_mouse_ps2_packet_mode packet_mode, uint8_t packet_state,
                                         uint8_t packet_x, uint8_t packet_y, uint8_t packet_extra);
 void zmk_mouse_ps2_activity_abort_cmd();
-void zmk_mouse_ps2_activity_move_mouse(struct zmk_mouse_ps2_packet packet);
+void zmk_mouse_ps2_activity_move_mouse(int16_t mov_x, int16_t mov_y);
 void zmk_mouse_ps2_activity_scroll(int8_t scroll_y);
 void zmk_mouse_ps2_activity_click_buttons(bool button_l, bool button_m, bool button_r);
 void zmk_mouse_ps2_activity_reset_packet_buffer();
@@ -321,6 +314,7 @@ struct zmk_mouse_ps2_packet
 zmk_mouse_ps2_activity_parse_packet_buffer(zmk_mouse_ps2_packet_mode packet_mode,
                                            uint8_t packet_state, uint8_t packet_x, uint8_t packet_y,
                                            uint8_t packet_extra);
+void zmk_mouse_ps2_activity_toggle_layer();
 
 // Called by the PS/2 driver whenver the mouse sends a byte and
 // reporting is enabled through `zmk_mouse_ps2_activity_reporting_enable`.
@@ -453,7 +447,7 @@ void zmk_mouse_ps2_activity_process_cmd(zmk_mouse_ps2_packet_mode packet_mode, u
     }
 #endif
 
-    zmk_mouse_ps2_activity_move_mouse(packet);
+    zmk_mouse_ps2_activity_move_mouse(packet.mov_x, packet.mov_y);
     zmk_mouse_ps2_activity_click_buttons(packet.button_l, packet.button_m, packet.button_r);
 
     data->prev_packet = packet;
@@ -465,7 +459,6 @@ zmk_mouse_ps2_activity_parse_packet_buffer(zmk_mouse_ps2_packet_mode packet_mode
                                            uint8_t packet_extra) {
     struct zmk_mouse_ps2_packet packet;
 
-    packet.received_at = k_uptime_get();
     packet.button_l = MOUSE_PS2_GET_BIT(packet_state, 0);
     packet.button_r = MOUSE_PS2_GET_BIT(packet_state, 1);
     packet.button_m = MOUSE_PS2_GET_BIT(packet_state, 2);
@@ -511,39 +504,25 @@ zmk_mouse_ps2_activity_parse_packet_buffer(zmk_mouse_ps2_packet_mode packet_mode
 }
 
 /*
- * Mouse Movement
+ * Mouse Moving and Clicking
  */
 
-static bool zmk_mouse_ps2_is_non_zero_1d_movement(int mov) { return mov != 0; }
+static bool zmk_mouse_ps2_is_non_zero_1d_movement(int16_t speed) { return speed != 0; }
 
-void zmk_mouse_ps2_activity_move_mouse(struct zmk_mouse_ps2_packet packet) {
+void zmk_mouse_ps2_activity_move_mouse(int16_t mov_x, int16_t mov_y) {
     struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
+    int ret = 0;
 
-#if 0
-
-    struct input_accelerator_result acc_mov = zmk_accelerate_input(
-        packet.mov_x, packet.mov_y, data->prev_packet.mov_x, data->prev_packet.mov_y,
-        packet_interval, config->sampling_rate);
-#else
-
-    int32_t acc_mov_x = packet.mov_x;
-    int32_t acc_mov_y = packet.mov_y;
-#endif
-
-    bool have_x = zmk_mouse_ps2_is_non_zero_1d_movement(acc_mov_x);
-    bool have_y = zmk_mouse_ps2_is_non_zero_1d_movement(acc_mov_y);
+    bool have_x = zmk_mouse_ps2_is_non_zero_1d_movement(mov_x);
+    bool have_y = zmk_mouse_ps2_is_non_zero_1d_movement(mov_y);
 
     if (have_x) {
-        input_report_rel(data->dev, INPUT_REL_X, acc_mov_x, !have_y, K_NO_WAIT);
+        ret = input_report_rel(data->dev, INPUT_REL_X, mov_x, !have_y, K_NO_WAIT);
     }
     if (have_y) {
-        input_report_rel(data->dev, INPUT_REL_Y, acc_mov_y, true, K_NO_WAIT);
+        ret = input_report_rel(data->dev, INPUT_REL_Y, mov_y, true, K_NO_WAIT);
     }
 }
-
-/*
- * Mouse Clicking
- */
 
 void zmk_mouse_ps2_activity_click_buttons(bool button_l, bool button_m, bool button_r) {
     struct zmk_mouse_ps2_data *data = &zmk_mouse_ps2_data;
