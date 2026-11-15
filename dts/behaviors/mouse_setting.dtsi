@@ -5,10 +5,10 @@
  */
 
 / {
-	behaviors {
-		mms: behavior_mouse_setting {
-			compatible = "zmk,behavior-mouse-setting";
-			#binding-cells = <1>;
-		};
-	};
+    behaviors {
+        mms: behavior_mouse_setting {
+            compatible = "zmk,behavior-mouse-setting";
+            #binding-cells = <1>;
+        };
+    };
 };
