@@ -26,9 +26,6 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 // The default rate to use for interval based speed calc
 #define INPUT_ACCELERATOR_DEFAULT_SENDING_RATE 100
 
-// The nearest sigmoid y value we treat as the beginning of the sigmoid curve
-#define SIGMOID_FUNCTION_FROM_ORIGIN_EPSILON 0.01
-
 struct vector2d {
     int32_t x;
     int32_t y;
@@ -76,7 +73,6 @@ struct input_acc_processor_report {
 };
 
 struct input_accelerator_data {
-    const struct device *dev;
     struct vector2d prev_mov;
     int64_t prev_mov_received_at;
     struct vector2df move_remainder;
@@ -123,17 +119,11 @@ float zmk_input_acc_get_interval_based_speed(float mov, int64_t mov_interval,
                                              int input_default_sending_rate);
 float zmk_mouse_ps2_sigmoid_function_with_offset(float x, float limit, float acc_rate,
                                                  float start_offset, float start_offset_y_value);
-float zmk_input_acc_get_acceleration_factor_none(float speed, float acc_factor_base,
-                                                 float acc_factor_max, float acc_rate,
-                                                 int start_offset, int max_speed,
-                                                 bool should_round);
+float zmk_input_acc_get_acceleration_factor_none(float speed, float acc_factor_base, int max_speed);
 float zmk_input_acc_get_acceleration_factor_sigmoid(float speed, float acc_factor_base,
                                                     float acc_factor_max, float acc_rate,
-                                                    int start_offset, int max_speed,
-                                                    bool should_round);
-float zmk_input_acc_get_acc_factor_with_max_speed(float acc_factor, float speed, int max_speed,
-                                                  float acc_factor_base);
-float zmk_input_acc_roundf_2d(float value);
+                                                    int start_offset, int max_speed);
+float zmk_input_acc_get_acc_factor_with_max_speed(float acc_factor, float speed, int max_speed);
 bool zmk_input_acc_is_new_mov(float mov, float prev_mov, int64_t mov_interval);
 int zmk_input_acc_get_direction_factor(int mov_val);
 
@@ -299,13 +289,12 @@ static float zmk_input_acc_get_acc_factor(const struct input_accelerator_config 
                                           const struct input_accelerator_data *data, float speed) {
     float acc_factor = 1;
     if (strcmp(config->acc_curve_name, "none") == 0) {
-        acc_factor = zmk_input_acc_get_acceleration_factor_none(
-            speed, data->acc_factor_base, data->acc_factor_max, data->acc_rate, data->start_offset,
-            data->max_speed, false);
+        acc_factor = zmk_input_acc_get_acceleration_factor_none(speed, data->acc_factor_base,
+                                                                data->max_speed);
     } else if (strcmp(config->acc_curve_name, "sigmoid") == 0) {
         acc_factor = zmk_input_acc_get_acceleration_factor_sigmoid(
             speed, data->acc_factor_base, data->acc_factor_max, data->acc_rate, data->start_offset,
-            data->max_speed, false);
+            data->max_speed);
     } else {
         LOG_ERR("Unknown acceleration curve: %s", config->acc_curve_name);
     }
@@ -477,27 +466,18 @@ float zmk_input_acc_get_interval_based_speed(float mov, int64_t mov_interval,
 
 // Sets acc_factor to acc_factor_base and if necessary limits to max speed
 float zmk_input_acc_get_acceleration_factor_none(float speed, float acc_factor_base,
-                                                 float acc_factor_max, float acc_rate,
-                                                 int start_offset, int max_speed,
-                                                 bool should_round) {
+                                                 int max_speed) {
 
     float acc_factor = acc_factor_base;
 
-    acc_factor =
-        zmk_input_acc_get_acc_factor_with_max_speed(acc_factor, speed, max_speed, acc_factor_base);
-
-    if (should_round) {
-        // Rounded to two decimal places
-        acc_factor = zmk_input_acc_roundf_2d(acc_factor);
-    }
+    acc_factor = zmk_input_acc_get_acc_factor_with_max_speed(acc_factor, speed, max_speed);
 
     return acc_factor;
 }
 
 float zmk_input_acc_get_acceleration_factor_sigmoid(float speed, float acc_factor_base,
                                                     float acc_factor_max, float acc_rate,
-                                                    int start_offset, int max_speed,
-                                                    bool should_round) {
+                                                    int start_offset, int max_speed) {
 
     float speed_abs = fabsf(speed);
     float sigmoid_limit = acc_factor_max - acc_factor_base;
@@ -512,13 +492,7 @@ float zmk_input_acc_get_acceleration_factor_sigmoid(float speed, float acc_facto
 
     acc_factor = acc_factor + acc_factor_base;
 
-    acc_factor =
-        zmk_input_acc_get_acc_factor_with_max_speed(acc_factor, speed, max_speed, acc_factor_base);
-
-    if (should_round) {
-        // Rounded to two decimal places
-        acc_factor = zmk_input_acc_roundf_2d(acc_factor);
-    }
+    acc_factor = zmk_input_acc_get_acc_factor_with_max_speed(acc_factor, speed, max_speed);
 
     return acc_factor;
 }
@@ -567,30 +541,22 @@ float zmk_mouse_ps2_sigmoid_function_with_offset(float x, float limit, float acc
     return acc_factor;
 }
 
-float zmk_input_acc_get_acc_factor_with_max_speed(float acc_factor, float speed, int max_speed,
-                                                  float acc_factor_base) {
-
-    float capped_acc_factor = acc_factor;
+float zmk_input_acc_get_acc_factor_with_max_speed(float acc_factor, float speed, int max_speed) {
 
     if (max_speed <= 0) {
         return acc_factor;
     }
 
+    // `speed_abs` can't be 0 here, because the accelerated speed would be 0
+    // as well and can't exceed a positive `max_speed`.
     float speed_abs = fabsf(speed);
     float sensitive_speed = speed_abs * acc_factor;
     if (sensitive_speed > max_speed) {
-        if (speed_abs == 0) {
-            capped_acc_factor = acc_factor_base;
-        } else {
-            capped_acc_factor = max_speed / speed_abs;
-        }
+        return max_speed / speed_abs;
     }
 
-    return capped_acc_factor;
+    return acc_factor;
 }
-
-// Round float to 2 digits
-float zmk_input_acc_roundf_2d(float value) { return roundf(value * 100) / 100; }
 
 // Returns 1 if positive and 0 if negative. Can be used to multiply another movement and get the
 // correct direction.
@@ -670,7 +636,6 @@ static const struct zmk_input_processor_driver_api zmk_input_accelerator_process
         .input_default_sending_rate = DT_INST_PROP(n, input_default_sending_rate),                 \
     };                                                                                             \
     static struct input_accelerator_data data_##n = {                                              \
-        .dev = DEVICE_DT_INST_GET(n),                                                              \
         .prev_mov = {x : 0, y : 0},                                                                \
         .prev_mov_received_at = 0,                                                                 \
         .move_remainder = {x : 0, y : 0},                                                          \
