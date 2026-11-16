@@ -46,7 +46,6 @@ struct input_accelerator_config {
     int acc_rate;
     int start_offset;
     int max_speed;
-    int divisor;
 
     bool enable_interval_based_speed;
     int input_default_sending_rate;
@@ -55,7 +54,6 @@ struct input_accelerator_config {
 // Intermediate values of `zmk_input_acc_accelerate_axis`, kept for logging
 struct input_acc_axis_result {
     float acc;
-    float with_divisor;
     float with_buffer;
     int32_t to_send;
 };
@@ -98,7 +96,6 @@ struct input_accelerator_data {
     float acc_rate;
     int start_offset;
     int max_speed;
-    int divisor;
 };
 
 static void zmk_input_acc_processor_start_report(const struct input_accelerator_config *config,
@@ -326,10 +323,6 @@ zmk_input_acc_accelerate_axis(const struct input_accelerator_data *data, int32_t
     // Calculate the actual movement using the acceleration factor
     res.acc = speed * acc_factor;
 
-    // Apply the divisor in case the movement needs to be significantly slowed down,
-    // such as when the mouse movement is converted into scrolling.
-    res.with_divisor = res.acc / data->divisor;
-
     // If the previous packet was more than 200ms ago or the direction
     // of the movement changed (e.g. pos to neg), then we consider this
     // a new movement.
@@ -338,7 +331,7 @@ zmk_input_acc_accelerate_axis(const struct input_accelerator_data *data, int32_t
     // The zephyr input system uses integers. So, if we need to send
     // a fractional movement like 4.5 we round it down and then store the
     // remainder, which we then add to the next movement.
-    res.with_buffer = res.with_divisor;
+    res.with_buffer = res.acc;
     if (is_new_mov == false) {
         res.with_buffer += *remainder;
     }
@@ -353,11 +346,9 @@ zmk_input_acc_accelerate_axis(const struct input_accelerator_data *data, int32_t
     // So, here we make sure that whenever a new movement starts we send the
     // value 1 immediately and only decelerate future movements in the same
     // direction.
-    if (data->divisor == 1) {
-        if (is_new_mov == true && orig != 0 && fabsf(res.with_buffer) < 1) {
-            int direction_factor = zmk_input_acc_get_direction_factor(orig);
-            res.with_buffer = 1 * direction_factor;
-        }
+    if (is_new_mov == true && orig != 0 && fabsf(res.with_buffer) < 1) {
+        int direction_factor = zmk_input_acc_get_direction_factor(orig);
+        res.with_buffer = 1 * direction_factor;
     }
 
     // The zephyr input system uses whole numbers. So, we round down.
@@ -394,24 +385,17 @@ static void zmk_input_acc_log_move(const struct input_accelerator_config *config
 
     int acc_factor_pct = (int)(acc_factor * 100);
 
-    char divisor_info[64] = "";
-    if (data->divisor != 1) {
-        snprintf(divisor_info, sizeof(divisor_info), "Divisor X: %+5.2f, Y: %+5.2f (/ %d); ",
-                 res_x->with_divisor, res_y->with_divisor, data->divisor);
-    }
-
     LOG_INF("Input Accel %s - "
             "Interval: %4lld ms; "
             "Received X: %+3d, Y: %+3d; "
             "Speed: %5.2f; "
             "Acceleration X: %+5.2f, Y: %+5.2f (%3d%%); "
-            "%s"
             "With Buffer X: %+5.2f, Y: %+5.2f; "
             "Final X: %+3d, Y: %+3d; "
             "New Buffer X: %+4.2f, Y: %+4.2f; ",
             config->acc_curve_name, mov_interval, orig_x, orig_y, speed, res_x->acc, res_y->acc,
-            acc_factor_pct, divisor_info, res_x->with_buffer, res_y->with_buffer, res_x->to_send,
-            res_y->to_send, data->move_remainder.x, data->move_remainder.y);
+            acc_factor_pct, res_x->with_buffer, res_y->with_buffer, res_x->to_send, res_y->to_send,
+            data->move_remainder.x, data->move_remainder.y);
 
 #endif // CONFIG_ZMK_INPUT_ACCELERATOR_LOG_ENABLED
 }
@@ -661,7 +645,6 @@ static int zmk_input_accelerator_init(const struct device *dev,
     data->acc_rate = (float)config->acc_rate / 100.0;
     data->start_offset = config->start_offset;
     data->max_speed = config->max_speed;
-    data->divisor = config->divisor;
 
 #if IS_ENABLED(CONFIG_ZMK_INPUT_ACCELERATOR_LOG_ENABLED)
     k_work_init_delayable(&data->continuous_move_timeout_delay,
@@ -683,7 +666,6 @@ static const struct zmk_input_processor_driver_api zmk_input_accelerator_process
         .acc_rate = DT_INST_PROP(n, acceleration_factor_rate),                                     \
         .start_offset = DT_INST_PROP(n, acceleration_start_offset),                                \
         .max_speed = DT_INST_PROP(n, max_speed),                                                   \
-        .divisor = DT_INST_PROP(n, divisor),                                                       \
         .enable_interval_based_speed = DT_INST_PROP(n, enable_interval_based_speed),               \
         .input_default_sending_rate = DT_INST_PROP(n, input_default_sending_rate),                 \
     };                                                                                             \
