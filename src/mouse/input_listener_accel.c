@@ -15,6 +15,13 @@
 #include <zephyr/input/input.h>
 #include <zephyr/logging/log.h>
 
+// Zephyr 3.5 generates <version.h>, newer versions <zephyr/version.h>
+#if __has_include(<zephyr/version.h>)
+#include <zephyr/version.h>
+#else
+#include <version.h>
+#endif
+
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
 #include <zephyr/dt-bindings/input/input-event-codes.h>
@@ -33,6 +40,21 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #if IS_ENABLED(CONFIG_ZMK_INPUT_ACCELERATOR)
 #include <zmk/input_accelerator.h>
 #endif // IS_ENABLED(CONFIG_ZMK_INPUT_ACCELERATOR)
+
+// Compatibility with ZMK v0.3 (Zephyr 3.5) and ZMK main (Zephyr 4.1).
+//
+// ZMK main still reports version 0.3.0, so the Zephyr version is used to tell
+// them apart. Zephyr 4.1 adds a `user_data` argument to input callbacks, and
+// ZMK main renames `zmk_endpoints_send_mouse_report`.
+#if ZEPHYR_VERSION_CODE >= ZEPHYR_VERSION(4, 1, 0)
+#define IL_INPUT_CALLBACK_PARAMS struct input_event *evt, void *user_data
+#define IL_INPUT_CALLBACK_DEFINE(dev, callback) INPUT_CALLBACK_DEFINE(dev, callback, NULL)
+#define IL_SEND_MOUSE_REPORT() zmk_endpoint_send_mouse_report()
+#else
+#define IL_INPUT_CALLBACK_PARAMS struct input_event *evt
+#define IL_INPUT_CALLBACK_DEFINE(dev, callback) INPUT_CALLBACK_DEFINE(dev, callback)
+#define IL_SEND_MOUSE_REPORT() zmk_endpoints_send_mouse_report()
+#endif
 
 #define ONE_IF_DEV_OK(n)                                                                           \
     COND_CODE_1(DT_NODE_HAS_STATUS(DT_INST_PHANDLE(n, device), okay), (1 +), (0 +))
@@ -337,7 +359,7 @@ static void input_handler(const struct input_listener_config *config,
             }
         }
 
-        zmk_endpoints_send_mouse_report();
+        IL_SEND_MOUSE_REPORT();
         zmk_hid_mouse_scroll_set(0, 0);
         zmk_hid_mouse_movement_set(0, 0);
 
@@ -414,10 +436,10 @@ static void input_handler(const struct input_listener_config *config,
                  .layer_override_data = {DT_INST_FOREACH_CHILD_SEP_VARGS(n, IL_OVERRIDE_DATA,      \
                                                                          (, ), n)},                \
              };                                                                                    \
-         void input_listener_accel_handler_##n(struct input_event *evt) {                          \
+         void input_listener_accel_handler_##n(IL_INPUT_CALLBACK_PARAMS) {                         \
              input_handler(&config_##n, &data_##n, evt);                                           \
-         } INPUT_CALLBACK_DEFINE(DEVICE_DT_GET(DT_INST_PHANDLE(n, device)),                        \
-                                 input_listener_accel_handler_##n);),                              \
+         } IL_INPUT_CALLBACK_DEFINE(DEVICE_DT_GET(DT_INST_PHANDLE(n, device)),                     \
+                                    input_listener_accel_handler_##n);),                           \
         ())
 
 DT_INST_FOREACH_STATUS_OKAY(IL_INST)
