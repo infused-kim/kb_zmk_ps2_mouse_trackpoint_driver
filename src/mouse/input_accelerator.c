@@ -115,17 +115,20 @@ static void zmk_input_acc_log_move(const struct input_accelerator_config *config
                                    float speed, float acc_factor,
                                    const struct input_acc_axis_result *res_x,
                                    const struct input_acc_axis_result *res_y);
-float zmk_input_acc_get_interval_based_speed(float mov, int64_t mov_interval,
-                                             int input_default_sending_rate);
-float zmk_mouse_ps2_sigmoid_function_with_offset(float x, float limit, float acc_rate,
-                                                 float start_offset, float start_offset_y_value);
-float zmk_input_acc_get_acceleration_factor_none(float speed, float acc_factor_base, int max_speed);
-float zmk_input_acc_get_acceleration_factor_sigmoid(float speed, float acc_factor_base,
-                                                    float acc_factor_max, float acc_rate,
-                                                    int start_offset, int max_speed);
-float zmk_input_acc_get_acc_factor_with_max_speed(float acc_factor, float speed, int max_speed);
-bool zmk_input_acc_is_new_mov(float mov, float prev_mov, int64_t mov_interval);
-int zmk_input_acc_get_direction_factor(int mov_val);
+static float zmk_input_acc_get_interval_based_speed(float mov, int64_t mov_interval,
+                                                    int input_default_sending_rate);
+static float zmk_input_acc_sigmoid_function_with_offset(float x, float limit, float acc_rate,
+                                                        float start_offset,
+                                                        float start_offset_y_value);
+static float zmk_input_acc_get_acceleration_factor_none(float speed, float acc_factor_base,
+                                                        int max_speed);
+static float zmk_input_acc_get_acceleration_factor_sigmoid(float speed, float acc_factor_base,
+                                                           float acc_factor_max, float acc_rate,
+                                                           int start_offset, int max_speed);
+static float zmk_input_acc_get_acc_factor_with_max_speed(float acc_factor, float speed,
+                                                         int max_speed);
+static bool zmk_input_acc_is_new_mov(float mov, float prev_mov, int64_t mov_interval);
+static int zmk_input_acc_get_direction_factor(int mov_val);
 
 struct input_accelerator_result zmk_accelerate_input(const struct device *accelerator_dev,
                                                      int32_t x, int32_t y) {
@@ -391,7 +394,7 @@ static void zmk_input_acc_log_move(const struct input_accelerator_config *config
 
 #if IS_ENABLED(CONFIG_ZMK_INPUT_ACCELERATOR_LOG_ENABLED)
 
-void zmk_input_accelerator_continuous_move_timeout_work(struct k_work *item) {
+static void zmk_input_accelerator_continuous_move_timeout_work(struct k_work *item) {
 
     struct k_work_delayable *d_work = k_work_delayable_from_work(item);
 
@@ -442,8 +445,8 @@ void zmk_input_accelerator_continuous_move_timeout_work(struct k_work *item) {
 //
 // This function calculates the correct speed based on the actual sending
 // interval.
-float zmk_input_acc_get_interval_based_speed(float mov, int64_t mov_interval,
-                                             int input_default_sending_rate) {
+static float zmk_input_acc_get_interval_based_speed(float mov, int64_t mov_interval,
+                                                    int input_default_sending_rate) {
 
     if (input_default_sending_rate <= 0) {
         LOG_ERR("The configured input_default_sending_rate is invalid: %d. Using %d as the new "
@@ -465,8 +468,8 @@ float zmk_input_acc_get_interval_based_speed(float mov, int64_t mov_interval,
 }
 
 // Sets acc_factor to acc_factor_base and if necessary limits to max speed
-float zmk_input_acc_get_acceleration_factor_none(float speed, float acc_factor_base,
-                                                 int max_speed) {
+static float zmk_input_acc_get_acceleration_factor_none(float speed, float acc_factor_base,
+                                                        int max_speed) {
 
     float acc_factor = acc_factor_base;
 
@@ -475,9 +478,9 @@ float zmk_input_acc_get_acceleration_factor_none(float speed, float acc_factor_b
     return acc_factor;
 }
 
-float zmk_input_acc_get_acceleration_factor_sigmoid(float speed, float acc_factor_base,
-                                                    float acc_factor_max, float acc_rate,
-                                                    int start_offset, int max_speed) {
+static float zmk_input_acc_get_acceleration_factor_sigmoid(float speed, float acc_factor_base,
+                                                           float acc_factor_max, float acc_rate,
+                                                           int start_offset, int max_speed) {
 
     float speed_abs = fabsf(speed);
     float sigmoid_limit = acc_factor_max - acc_factor_base;
@@ -487,7 +490,7 @@ float zmk_input_acc_get_acceleration_factor_sigmoid(float speed, float acc_facto
     // 2.5% of the total acceleration-increase-range for that.
     float start_offset_y_value = sigmoid_limit * 0.025;
 
-    float acc_factor = zmk_mouse_ps2_sigmoid_function_with_offset(
+    float acc_factor = zmk_input_acc_sigmoid_function_with_offset(
         speed_abs, sigmoid_limit, acc_rate, start_offset, start_offset_y_value);
 
     acc_factor = acc_factor + acc_factor_base;
@@ -498,11 +501,11 @@ float zmk_input_acc_get_acceleration_factor_sigmoid(float speed, float acc_facto
 }
 
 // Standard sigmoid curve function
-float zmk_mouse_ps2_sigmoid_function(float x, float limit, float acc_rate) {
+static float zmk_input_acc_sigmoid_function(float x, float limit, float acc_rate) {
     return limit / (1 + expf(-acc_rate * x));
 }
 
-float zmk_mouse_ps2_sigmoid_function_inverse(float y, float limit, float acc_rate) {
+static float zmk_input_acc_sigmoid_function_inverse(float y, float limit, float acc_rate) {
 
     if (y <= 0) {
         y = 0.001;
@@ -515,8 +518,9 @@ float zmk_mouse_ps2_sigmoid_function_inverse(float y, float limit, float acc_rat
     return -1 / acc_rate * logf((limit - y) / y);
 }
 
-float zmk_mouse_ps2_sigmoid_function_with_offset(float x, float limit, float acc_rate,
-                                                 float start_offset, float start_offset_y_value) {
+static float zmk_input_acc_sigmoid_function_with_offset(float x, float limit, float acc_rate,
+                                                        float start_offset,
+                                                        float start_offset_y_value) {
 
     // The sigmoid curve is always centered at 0 (meaning x0 = limit/2). We
     // can shift the curve to the right by subtracting x values.
@@ -533,15 +537,16 @@ float zmk_mouse_ps2_sigmoid_function_with_offset(float x, float limit, float acc
     // increase. And then we shift the curve to the right so that the curve
     // has the 2.5% increase at exactly the offset x value.
     float start_offset_addition =
-        zmk_mouse_ps2_sigmoid_function_inverse(start_offset_y_value, limit, acc_rate);
+        zmk_input_acc_sigmoid_function_inverse(start_offset_y_value, limit, acc_rate);
     float final_offset = x - start_offset + start_offset_addition;
 
-    float acc_factor = zmk_mouse_ps2_sigmoid_function(final_offset, limit, acc_rate);
+    float acc_factor = zmk_input_acc_sigmoid_function(final_offset, limit, acc_rate);
 
     return acc_factor;
 }
 
-float zmk_input_acc_get_acc_factor_with_max_speed(float acc_factor, float speed, int max_speed) {
+static float zmk_input_acc_get_acc_factor_with_max_speed(float acc_factor, float speed,
+                                                         int max_speed) {
 
     if (max_speed <= 0) {
         return acc_factor;
@@ -560,7 +565,7 @@ float zmk_input_acc_get_acc_factor_with_max_speed(float acc_factor, float speed,
 
 // Returns 1 if positive and 0 if negative. Can be used to multiply another movement and get the
 // correct direction.
-int zmk_input_acc_get_direction_factor(int mov_val) {
+static int zmk_input_acc_get_direction_factor(int mov_val) {
     if (mov_val == 0) {
         return 0;
     } else {
@@ -570,7 +575,7 @@ int zmk_input_acc_get_direction_factor(int mov_val) {
 
 // Returns 1 if the direction of the current and prev movement are not the
 // same.
-bool zmk_input_acc_direction_changed(float mov, float prev_mov) {
+static bool zmk_input_acc_direction_changed(float mov, float prev_mov) {
 
     if (mov == 0 && prev_mov == 0) {
         return false;
@@ -589,7 +594,7 @@ bool zmk_input_acc_direction_changed(float mov, float prev_mov) {
 
 // Returns true if either the direction of the mov changed or more than 200ms
 // passed since the previous move.
-bool zmk_input_acc_is_new_mov(float mov, float prev_mov, int64_t mov_interval) {
+static bool zmk_input_acc_is_new_mov(float mov, float prev_mov, int64_t mov_interval) {
 
     bool is_new_direction = zmk_input_acc_direction_changed(mov, prev_mov);
 
