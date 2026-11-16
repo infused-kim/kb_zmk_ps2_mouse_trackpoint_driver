@@ -36,7 +36,14 @@ struct vector2df {
     float y;
 };
 
+// Same order as the `acceleration-curve` enum in the binding
+enum input_accelerator_curve {
+    INPUT_ACCELERATOR_CURVE_NONE,
+    INPUT_ACCELERATOR_CURVE_SIGMOID,
+};
+
 struct input_accelerator_config {
+    enum input_accelerator_curve acc_curve;
     char *acc_curve_name;
     int acc_factor_base;
     int acc_factor_max;
@@ -288,19 +295,19 @@ static float zmk_input_acc_get_axis_speed(const struct input_accelerator_config 
 // Acceleration factor for a speed, using the configured curve.
 static float zmk_input_acc_get_acc_factor(const struct input_accelerator_config *config,
                                           const struct input_accelerator_data *data, float speed) {
-    float acc_factor = 1;
-    if (strcmp(config->acc_curve_name, "none") == 0) {
-        acc_factor = zmk_input_acc_get_acceleration_factor_none(speed, data->acc_factor_base,
-                                                                config->max_speed);
-    } else if (strcmp(config->acc_curve_name, "sigmoid") == 0) {
-        acc_factor = zmk_input_acc_get_acceleration_factor_sigmoid(
+    // Read the curve as enum index from the devicetree instead of comparing
+    // the curve name with strcmp on every report. The binding's enum already
+    // guarantees a valid value.
+    switch (config->acc_curve) {
+    case INPUT_ACCELERATOR_CURVE_SIGMOID:
+        return zmk_input_acc_get_acceleration_factor_sigmoid(
             speed, data->acc_factor_base, data->acc_factor_max, data->acc_rate,
             config->start_offset, config->max_speed);
-    } else {
-        LOG_ERR("Unknown acceleration curve: %s", config->acc_curve_name);
+    case INPUT_ACCELERATOR_CURVE_NONE:
+    default:
+        return zmk_input_acc_get_acceleration_factor_none(speed, data->acc_factor_base,
+                                                          config->max_speed);
     }
-
-    return acc_factor;
 }
 
 // Applies the acceleration factor to a single axis and updates its remainder.
@@ -627,6 +634,7 @@ static const struct zmk_input_processor_driver_api zmk_input_accelerator_process
 
 #define IL_INST(n)                                                                                 \
     static const struct input_accelerator_config config_##n = {                                    \
+        .acc_curve = DT_INST_ENUM_IDX(n, acceleration_curve),                                      \
         .acc_curve_name = DT_INST_PROP(n, acceleration_curve),                                     \
         .acc_factor_base = DT_INST_PROP(n, acceleration_factor_base),                              \
         .acc_factor_max = DT_INST_PROP(n, acceleration_factor_max),                                \
