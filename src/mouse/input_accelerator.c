@@ -397,9 +397,10 @@ static void zmk_input_acc_log_move(const struct input_accelerator_config *config
             "With Buffer X: %+5.2f, Y: %+5.2f; "
             "Final X: %+3d, Y: %+3d; "
             "New Buffer X: %+4.2f, Y: %+4.2f; ",
-            config->acc_curve_name, mov_interval, orig_x, orig_y, speed, res_x->acc, res_y->acc,
-            acc_factor_pct, res_x->with_buffer, res_y->with_buffer, res_x->to_send, res_y->to_send,
-            data->move_remainder.x, data->move_remainder.y);
+            config->acc_curve_name, mov_interval, orig_x, orig_y, (double)speed, (double)res_x->acc,
+            (double)res_y->acc, acc_factor_pct, (double)res_x->with_buffer,
+            (double)res_y->with_buffer, res_x->to_send, res_y->to_send,
+            (double)data->move_remainder.x, (double)data->move_remainder.y);
 
 #endif // CONFIG_ZMK_INPUT_ACCELERATOR_LOG_ENABLED
 }
@@ -434,7 +435,7 @@ static void zmk_input_accelerator_continuous_move_timeout_work(struct k_work *it
 
     LOG_INF(
         "Accelerated continuous mouse move ended after %lldms with unaccelerated max speed: %4.2f",
-        continuous_move_period, data->continuous_move_max_speed);
+        continuous_move_period, (double)data->continuous_move_max_speed);
 
 #if !IS_ENABLED(CONFIG_CBPRINTF_COMPLETE)
     LOG_WRN("Enable CONFIG_CBPRINTF_COMPLETE=y to see proper speed values instead of *float*.");
@@ -532,11 +533,11 @@ static float zmk_input_acc_sigmoid_function(float x, float limit, float acc_rate
 static float zmk_input_acc_sigmoid_function_inverse(float y, float limit, float acc_rate) {
 
     if (y <= 0) {
-        y = 0.001;
+        y = 0.001f;
     }
 
     if (y >= limit) {
-        y = limit - 0.001;
+        y = limit - 0.001f;
     }
 
     return -1 / acc_rate * logf((limit - y) / y);
@@ -571,7 +572,7 @@ static float zmk_input_acc_sigmoid_function_with_offset(float x, float limit, fl
 //
 // The result only depends on the config, so it's calculated once at init.
 static float zmk_input_acc_get_sigmoid_start_offset_addition(float limit, float acc_rate) {
-    float start_offset_y_value = limit * 0.025;
+    float start_offset_y_value = limit * 0.025f;
 
     return zmk_input_acc_sigmoid_function_inverse(start_offset_y_value, limit, acc_rate);
 }
@@ -630,9 +631,9 @@ static int zmk_input_accelerator_init(const struct device *dev,
 
     LOG_DBG("Initialized input accelerator: %s", dev->name);
 
-    data->acc_factor_base = (float)config->acc_factor_base / 100.0;
-    data->acc_factor_max = (float)config->acc_factor_max / 100.0;
-    data->acc_rate = (float)config->acc_rate / 100.0;
+    data->acc_factor_base = (float)config->acc_factor_base / 100.0f;
+    data->acc_factor_max = (float)config->acc_factor_max / 100.0f;
+    data->acc_rate = (float)config->acc_rate / 100.0f;
 
     if (config->acc_curve == INPUT_ACCELERATOR_CURVE_SIGMOID) {
         data->sigmoid_start_offset_addition = zmk_input_acc_get_sigmoid_start_offset_addition(
