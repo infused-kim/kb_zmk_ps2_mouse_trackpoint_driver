@@ -586,7 +586,7 @@ float zmk_input_acc_get_acc_factor_with_max_speed(float acc_factor, float speed,
         }
     }
 
-    return acc_factor;
+    return capped_acc_factor;
 }
 
 // Round float to 2 digits

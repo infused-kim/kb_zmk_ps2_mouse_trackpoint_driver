@@ -52,7 +52,7 @@ properties:
     type: int
     required: false
     default: -1
-    description: The maximum movement speed that will be allowed. This is useful to prevent the mouse cursor from accelerating to a speed that you can't follow on the screen anymore.
+    description: The maximum accelerated movement speed that will be allowed, in movement units per report at the `input-default-sending-rate`. The acceleration factor is lowered whenever the input speed multiplied by the factor would exceed it. This is useful to prevent the mouse cursor from accelerating to a speed that you can't follow on the screen anymore, for example when a TrackPoint is pressed very hard. Set to -1 to disable.
 
   enable-interval-based-speed:
     type: boolean
