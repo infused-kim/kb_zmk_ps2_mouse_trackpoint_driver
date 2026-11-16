@@ -97,6 +97,10 @@ struct input_accelerator_data {
     float acc_factor_base;
     float acc_factor_max;
     float acc_rate;
+
+    // Calculated once from the config, see
+    // `zmk_input_acc_get_sigmoid_start_offset_addition`
+    float sigmoid_start_offset_addition;
 };
 
 static void zmk_input_acc_processor_start_report(const struct input_accelerator_config *config,
@@ -124,12 +128,14 @@ static float zmk_input_acc_get_interval_based_speed(float mov, int64_t mov_inter
                                                     int input_default_sending_rate);
 static float zmk_input_acc_sigmoid_function_with_offset(float x, float limit, float acc_rate,
                                                         float start_offset,
-                                                        float start_offset_y_value);
+                                                        float start_offset_addition);
 static float zmk_input_acc_get_acceleration_factor_none(float speed, float acc_factor_base,
                                                         int max_speed);
 static float zmk_input_acc_get_acceleration_factor_sigmoid(float speed, float acc_factor_base,
                                                            float acc_factor_max, float acc_rate,
-                                                           int start_offset, int max_speed);
+                                                           int start_offset,
+                                                           float start_offset_addition,
+                                                           int max_speed);
 static float zmk_input_acc_get_acc_factor_with_max_speed(float acc_factor, float speed,
                                                          int max_speed);
 static bool zmk_input_acc_is_new_mov(float mov, float prev_mov, int64_t mov_interval);
@@ -302,7 +308,7 @@ static float zmk_input_acc_get_acc_factor(const struct input_accelerator_config 
     case INPUT_ACCELERATOR_CURVE_SIGMOID:
         return zmk_input_acc_get_acceleration_factor_sigmoid(
             speed, data->acc_factor_base, data->acc_factor_max, data->acc_rate,
-            config->start_offset, config->max_speed);
+            config->start_offset, data->sigmoid_start_offset_addition, config->max_speed);
     case INPUT_ACCELERATOR_CURVE_NONE:
     default:
         return zmk_input_acc_get_acceleration_factor_none(speed, data->acc_factor_base,
@@ -485,18 +491,15 @@ static float zmk_input_acc_get_acceleration_factor_none(float speed, float acc_f
 
 static float zmk_input_acc_get_acceleration_factor_sigmoid(float speed, float acc_factor_base,
                                                            float acc_factor_max, float acc_rate,
-                                                           int start_offset, int max_speed) {
+                                                           int start_offset,
+                                                           float start_offset_addition,
+                                                           int max_speed) {
 
     float speed_abs = fabsf(speed);
     float sigmoid_limit = acc_factor_max - acc_factor_base;
 
-    // We want to position the curve in such a way that we can see a meaningful,
-    // yet gradual, increase of the acceleration curve after the offset. We use
-    // 2.5% of the total acceleration-increase-range for that.
-    float start_offset_y_value = sigmoid_limit * 0.025;
-
     float acc_factor = zmk_input_acc_sigmoid_function_with_offset(
-        speed_abs, sigmoid_limit, acc_rate, start_offset, start_offset_y_value);
+        speed_abs, sigmoid_limit, acc_rate, start_offset, start_offset_addition);
 
     acc_factor = acc_factor + acc_factor_base;
 
@@ -523,31 +526,38 @@ static float zmk_input_acc_sigmoid_function_inverse(float y, float limit, float 
     return -1 / acc_rate * logf((limit - y) / y);
 }
 
+// Shifts the sigmoid curve to the right, so that it starts rising at the
+// start offset. See `zmk_input_acc_get_sigmoid_start_offset_addition`.
 static float zmk_input_acc_sigmoid_function_with_offset(float x, float limit, float acc_rate,
                                                         float start_offset,
-                                                        float start_offset_y_value) {
+                                                        float start_offset_addition) {
 
-    // The sigmoid curve is always centered at 0 (meaning x0 = limit/2). We
-    // can shift the curve to the right by subtracting x values.
-    //
-    // This function allows us to pass the y value we wish the sigmoid curve
-    // to start with after the offset.
-    //
-    // A reasonable value, for example, is 2.5% of the limit.
-    //
-    // This way, we position the curve in such a way that we can see a meaningful,
-    // yet gradual, increase of the acceleration curve after the offset.
-    //
-    // So, we determine the x value where the sigmoid function returns that
-    // increase. And then we shift the curve to the right so that the curve
-    // has the 2.5% increase at exactly the offset x value.
-    float start_offset_addition =
-        zmk_input_acc_sigmoid_function_inverse(start_offset_y_value, limit, acc_rate);
     float final_offset = x - start_offset + start_offset_addition;
 
     float acc_factor = zmk_input_acc_sigmoid_function(final_offset, limit, acc_rate);
 
     return acc_factor;
+}
+
+// The sigmoid curve is always centered at 0 (meaning x0 = limit/2). We
+// can shift the curve to the right by subtracting x values.
+//
+// We want the sigmoid curve to start with a specific y value after the
+// offset. We use 2.5% of the total acceleration-increase-range (the limit)
+// for that.
+//
+// This way, we position the curve in such a way that we can see a meaningful,
+// yet gradual, increase of the acceleration curve after the offset.
+//
+// So, we determine the x value where the sigmoid function returns that
+// increase. And then we shift the curve to the right so that the curve
+// has the 2.5% increase at exactly the offset x value.
+//
+// The result only depends on the config, so it's calculated once at init.
+static float zmk_input_acc_get_sigmoid_start_offset_addition(float limit, float acc_rate) {
+    float start_offset_y_value = limit * 0.025;
+
+    return zmk_input_acc_sigmoid_function_inverse(start_offset_y_value, limit, acc_rate);
 }
 
 static float zmk_input_acc_get_acc_factor_with_max_speed(float acc_factor, float speed,
@@ -619,6 +629,11 @@ static int zmk_input_accelerator_init(const struct device *dev,
     data->acc_factor_base = (float)config->acc_factor_base / 100.0;
     data->acc_factor_max = (float)config->acc_factor_max / 100.0;
     data->acc_rate = (float)config->acc_rate / 100.0;
+
+    if (config->acc_curve == INPUT_ACCELERATOR_CURVE_SIGMOID) {
+        data->sigmoid_start_offset_addition = zmk_input_acc_get_sigmoid_start_offset_addition(
+            data->acc_factor_max - data->acc_factor_base, data->acc_rate);
+    }
 
 #if IS_ENABLED(CONFIG_ZMK_INPUT_ACCELERATOR_LOG_ENABLED)
     k_work_init_delayable(&data->continuous_move_timeout_delay,
