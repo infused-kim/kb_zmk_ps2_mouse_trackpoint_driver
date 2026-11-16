@@ -39,8 +39,8 @@ properties:
   acceleration-factor-rate:
     type: int
     required: false
-    default: -1
-    description: The rate at which the curve will rise from the base to the max acceleration factor. For the sigmoid curve a default of 0.2 will be used.
+    default: 20
+    description: The rate at which the sigmoid curve will rise from the base to the max acceleration factor, in hundredths. For example, the default of 20 means a rate of 0.2. Higher values make the curve steeper. Not used by the "none" curve.
 
   acceleration-start-offset:
     type: int
