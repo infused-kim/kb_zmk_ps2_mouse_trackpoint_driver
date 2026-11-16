@@ -466,9 +466,9 @@ static float zmk_input_acc_get_interval_based_speed(float mov, int64_t mov_inter
         input_default_sending_rate = INPUT_ACCELERATOR_DEFAULT_SENDING_RATE;
     }
 
-    int64_t default_interval = 1000 / input_default_sending_rate;
+    float default_interval = 1000.0f / input_default_sending_rate;
 
-    int64_t interval = default_interval;
+    float interval = default_interval;
     if (mov_interval != 0 && mov_interval <= INPUT_ACCELERATOR_CONTINUOUS_MOVE_MAX_INTERVAL) {
         interval = mov_interval;
     }
