@@ -19,11 +19,10 @@ properties:
     type: string
     required: false
     default: none
-    description: Which acceleration curve formula should be used. Currently, available options are "none", "sigmoid_accelaration_factor" and "sigmoid_output_speed". "none" will only apply the base acceleration factor, but no curve. "sigmoid_accelaration_factor" will accelerate the input speeds using a sigmoid function that generates an acceleration curve (best for mouse movement). And "sigmoid_output_speed" will apply the sigmoid function to the output speed (best for scroll movement).
+    description: Which acceleration curve formula should be used. Available options are "none" and "sigmoid". "none" will only apply the base acceleration factor, but no curve. "sigmoid" will accelerate the input speeds using a sigmoid function that rises from the base to the max acceleration factor.
     enum:
       - none
       - sigmoid
-      - scroll
 
   acceleration-factor-base:
     type: int

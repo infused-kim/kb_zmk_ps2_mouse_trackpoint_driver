@@ -134,10 +134,6 @@ float zmk_input_acc_get_acceleration_factor_sigmoid(float speed, float acc_facto
                                                     float acc_factor_max, float acc_rate,
                                                     int start_offset, int max_speed,
                                                     bool should_round);
-float zmk_input_acc_get_acceleration_factor_scroll(float speed, float acc_factor_base,
-                                                   float acc_factor_max, float acc_rate,
-                                                   int start_offset, int max_speed,
-                                                   bool should_round);
 float zmk_input_acc_get_acc_factor_with_max_speed(float acc_factor, float speed, int max_speed,
                                                   float acc_factor_base);
 float zmk_input_acc_roundf_2d(float value);
@@ -311,10 +307,6 @@ static float zmk_input_acc_get_acc_factor(const struct input_accelerator_config 
             data->max_speed, false);
     } else if (strcmp(config->acc_curve_name, "sigmoid") == 0) {
         acc_factor = zmk_input_acc_get_acceleration_factor_sigmoid(
-            speed, data->acc_factor_base, data->acc_factor_max, data->acc_rate, data->start_offset,
-            data->max_speed, false);
-    } else if (strcmp(config->acc_curve_name, "scroll") == 0) {
-        acc_factor = zmk_input_acc_get_acceleration_factor_scroll(
             speed, data->acc_factor_base, data->acc_factor_max, data->acc_rate, data->start_offset,
             data->max_speed, false);
     } else {
@@ -538,44 +530,6 @@ float zmk_input_acc_get_acceleration_factor_sigmoid(float speed, float acc_facto
 
     acc_factor =
         zmk_input_acc_get_acc_factor_with_max_speed(acc_factor, speed, max_speed, acc_factor_base);
-
-    if (should_round) {
-        // Rounded to two decimal places
-        acc_factor = zmk_input_acc_roundf_2d(acc_factor);
-    }
-
-    return acc_factor;
-}
-
-float zmk_input_acc_get_acceleration_factor_scroll(float speed, float acc_factor_base,
-                                                   float acc_factor_max, float acc_rate,
-                                                   int start_offset, int max_speed,
-                                                   bool should_round) {
-
-    float speed_abs = fabsf(speed);
-
-    if (speed_abs < 1) {
-        return 1;
-    }
-
-    float speed_new = 1;
-
-    if (speed_abs >= start_offset) {
-        float sigmoid_limit = max_speed - 1;
-
-        // We want to position the curve in such a way that we can see a meaningful,
-        // yet gradual, increase of the acceleration curve after the offset.
-        //
-        // For scrolling we use a smaller rate of just 1% increase (compared to 2.5 for
-        // mouse movement in the sigmoid curve).
-        float start_offset_y_value = sigmoid_limit * 0.025;
-        speed_new = zmk_mouse_ps2_sigmoid_function_with_offset(speed_abs, sigmoid_limit, acc_rate,
-                                                               start_offset, start_offset_y_value);
-
-        speed_new = speed_new + 1 - start_offset_y_value;
-    }
-
-    float acc_factor = speed_new / speed_abs;
 
     if (should_round) {
         // Rounded to two decimal places

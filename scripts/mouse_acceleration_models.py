@@ -142,40 +142,6 @@ def calc_acceleration_factor_sigmoid(speed,
     return acc_factor
 
 
-def calc_acceleration_factor_scroll(speed,
-                                    acc_factor_base,
-                                    acc_factor_max,
-                                    acc_rate,
-                                    max_speed=D_MAX_SPEED,
-                                    start_offset=D_OFFSET,
-                                    should_round=D_SHOULD_ROUND):
-    speed_abs = abs(speed)
-
-    if speed_abs < 1:
-        return 1
-
-    speed_new = 1
-    if speed_abs >= start_offset:
-        sigmoid_limit = max_speed - 1
-
-        start_offset_y_value = sigmoid_limit * 0.01
-        speed_new = sigmoid_function_with_offset(
-            speed_abs,
-            sigmoid_limit,
-            acc_rate,
-            start_offset,
-            start_offset_y_value,
-        )
-        speed_new = speed_new + 1 - start_offset_y_value
-
-    acc_factor = speed_new / speed_abs
-
-    if should_round is True:
-        acc_factor = round(acc_factor, 2)
-
-    return acc_factor
-
-
 def gen_acceleration_factor_range(curve,
                                   range_start,
                                   range_end,
@@ -190,8 +156,6 @@ def gen_acceleration_factor_range(curve,
         calc_curve = calc_acceleration_factor_sigmoid_pure
     elif curve == 'sigmoid':
         calc_curve = calc_acceleration_factor_sigmoid
-    elif curve == 'scroll':
-        calc_curve = calc_acceleration_factor_scroll
     else:
         raise ValueError(f'Unknown curve: {curve}')
 
@@ -285,54 +249,6 @@ def gen_acceleration_factor_sigmoid_df(range_start,
                                        output_title=D_OUTPUT_TITLE):
     return gen_acceleration_factor_df(
         'sigmoid',
-        range_start,
-        range_end,
-        acc_factor_base,
-        acc_factor_max,
-        acc_rate,
-        max_speed=max_speed,
-        start_offset=start_offset,
-        should_round=should_round,
-        x_title=x_title,
-        acc_factor_title=acc_factor_title,
-        output_title=output_title,
-    )
-
-
-def gen_acceleration_factor_scroll_range(range_start,
-                                         range_end,
-                                         acc_factor_base,
-                                         acc_factor_max,
-                                         acc_rate,
-                                         max_speed=D_MAX_SPEED,
-                                         start_offset=D_OFFSET,
-                                         should_round=D_SHOULD_ROUND):
-    return gen_acceleration_factor_range(
-        'scroll',
-        range_start,
-        range_end,
-        acc_factor_base,
-        acc_factor_max,
-        acc_rate,
-        max_speed=max_speed,
-        start_offset=start_offset,
-        should_round=should_round,
-    )
-
-
-def gen_acceleration_factor_scroll_df(range_start,
-                                      range_end,
-                                      acc_factor_base,
-                                      acc_factor_max,
-                                      acc_rate,
-                                      max_speed=D_MAX_SPEED,
-                                      start_offset=D_OFFSET,
-                                      should_round=D_SHOULD_ROUND,
-                                      x_title=D_X_TITLE,
-                                      acc_factor_title=D_ACC_FACTOR_TITLE,
-                                      output_title=D_OUTPUT_TITLE):
-    return gen_acceleration_factor_df(
-        'scroll',
         range_start,
         range_end,
         acc_factor_base,
