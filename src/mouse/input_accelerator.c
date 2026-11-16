@@ -80,6 +80,7 @@ struct input_acc_processor_report {
 };
 
 struct input_accelerator_data {
+    // The last non-zero movement of each axis, used to detect direction changes
     struct vector2d prev_mov;
     int64_t prev_mov_received_at;
     struct vector2df move_remainder;
@@ -124,6 +125,8 @@ static void zmk_input_acc_log_move(const struct input_accelerator_config *config
                                    float speed, float acc_factor,
                                    const struct input_acc_axis_result *res_x,
                                    const struct input_acc_axis_result *res_y);
+static void zmk_input_acc_update_prev_mov(struct input_accelerator_data *data, int32_t mov_x,
+                                          int32_t mov_y);
 static float zmk_input_acc_get_interval_based_speed(float mov, int64_t mov_interval,
                                                     int input_default_sending_rate);
 static float zmk_input_acc_sigmoid_function_with_offset(float x, float limit, float acc_rate,
@@ -174,8 +177,7 @@ struct input_accelerator_result zmk_accelerate_input(const struct device *accele
     zmk_input_acc_log_move(config, data, mov_received_at, mov_interval, orig_x, orig_y, speed,
                            acc_factor, &res_x, &res_y);
 
-    data->prev_mov.x = orig_x;
-    data->prev_mov.y = orig_y;
+    zmk_input_acc_update_prev_mov(data, orig_x, orig_y);
     data->prev_mov_received_at = mov_received_at;
 
     struct input_accelerator_result ret = {.x = res_x.to_send, .y = res_y.to_send};
@@ -274,8 +276,7 @@ static void zmk_input_acc_processor_finish_report(const struct input_accelerator
 
     data->processor_acc_factor = zmk_input_acc_get_acc_factor(config, data, speed);
 
-    data->prev_mov.x = report->x.mov;
-    data->prev_mov.y = report->y.mov;
+    zmk_input_acc_update_prev_mov(data, report->x.mov, report->y.mov);
     data->prev_mov_received_at = report->received_at;
 
     // Start the next report from scratch: Sets `report->started = false` and counts both
@@ -401,6 +402,21 @@ static void zmk_input_acc_log_move(const struct input_accelerator_config *config
             data->move_remainder.x, data->move_remainder.y);
 
 #endif // CONFIG_ZMK_INPUT_ACCELERATOR_LOG_ENABLED
+}
+
+// Remembers the direction of each axis for `zmk_input_acc_is_new_mov`. An
+// axis without movement keeps its previous direction, so that briefly
+// pausing an axis, e.g. during a mostly horizontal movement, doesn't count as
+// a new movement.
+static void zmk_input_acc_update_prev_mov(struct input_accelerator_data *data, int32_t mov_x,
+                                          int32_t mov_y) {
+    if (mov_x != 0) {
+        data->prev_mov.x = mov_x;
+    }
+
+    if (mov_y != 0) {
+        data->prev_mov.y = mov_y;
+    }
 }
 
 #if IS_ENABLED(CONFIG_ZMK_INPUT_ACCELERATOR_LOG_ENABLED)
@@ -588,23 +604,11 @@ static int zmk_input_acc_get_direction_factor(int mov_val) {
     }
 }
 
-// Returns 1 if the direction of the current and prev movement are not the
-// same.
+// Returns true if the current and previous movement go in opposite
+// directions (one is positive and the other negative). A movement of 0 has no
+// direction, so starting or stopping an axis doesn't count as a change.
 static bool zmk_input_acc_direction_changed(float mov, float prev_mov) {
-
-    if (mov == 0 && prev_mov == 0) {
-        return false;
-    }
-
-    // If one value is negative and the other is positive then the result will
-    // be negative, therefore direction did change.
-    // If the result is 0 and the prev statement was not true, then it means
-    // one of the directions was 0 and it changed
-    if (mov * prev_mov <= 0) {
-        return true;
-    }
-
-    return false;
+    return mov * prev_mov < 0;
 }
 
 // Returns true if either the direction of the mov changed or more than 200ms
