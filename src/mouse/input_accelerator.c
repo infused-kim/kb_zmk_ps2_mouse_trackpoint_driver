@@ -90,8 +90,6 @@ struct input_accelerator_data {
     float acc_factor_base;
     float acc_factor_max;
     float acc_rate;
-    int start_offset;
-    int max_speed;
 };
 
 static void zmk_input_acc_processor_start_report(const struct input_accelerator_config *config,
@@ -293,11 +291,11 @@ static float zmk_input_acc_get_acc_factor(const struct input_accelerator_config 
     float acc_factor = 1;
     if (strcmp(config->acc_curve_name, "none") == 0) {
         acc_factor = zmk_input_acc_get_acceleration_factor_none(speed, data->acc_factor_base,
-                                                                data->max_speed);
+                                                                config->max_speed);
     } else if (strcmp(config->acc_curve_name, "sigmoid") == 0) {
         acc_factor = zmk_input_acc_get_acceleration_factor_sigmoid(
-            speed, data->acc_factor_base, data->acc_factor_max, data->acc_rate, data->start_offset,
-            data->max_speed);
+            speed, data->acc_factor_base, data->acc_factor_max, data->acc_rate,
+            config->start_offset, config->max_speed);
     } else {
         LOG_ERR("Unknown acceleration curve: %s", config->acc_curve_name);
     }
@@ -614,8 +612,6 @@ static int zmk_input_accelerator_init(const struct device *dev,
     data->acc_factor_base = (float)config->acc_factor_base / 100.0;
     data->acc_factor_max = (float)config->acc_factor_max / 100.0;
     data->acc_rate = (float)config->acc_rate / 100.0;
-    data->start_offset = config->start_offset;
-    data->max_speed = config->max_speed;
 
 #if IS_ENABLED(CONFIG_ZMK_INPUT_ACCELERATOR_LOG_ENABLED)
     k_work_init_delayable(&data->continuous_move_timeout_delay,
