@@ -15,7 +15,9 @@ ZMK module with a PS/2 mouse/TrackPoint driver.
   compare against the processor version. Its removal is planned as the last
   commit of the acceleration work.
 - `scripts/mouse_acceleration_models.py` + `.ipynb`: Python model of the
-  acceleration curves for plotting. Keep it in sync with the C code.
+  acceleration curves, a typer CLI that plots and tabulates them (the notebook
+  imports its functions). Keep it in sync with the C code. Its dependencies
+  are in its PEP 723 header, so run it directly or with `uv run --script`.
 - `zmk-config-example/` is gitignored and not part of the module.
 
 ## Building and checks
