@@ -194,7 +194,8 @@ And use the same zmk version in `.github/workflows/build.yml`:
 In your `your_keyboard.conf`:
 
 ```diff
-- # Not needed anymore, because zmk has official pointing support
+- # Removed, because zmk has official pointing support. Builds fail if it's
+- # still set.
 - CONFIG_ZMK_INPUT_MOUSE_PS2_ENABLE_UROB_COMPAT=n
 + # Enable zmk's pointing support for mouse keys (`&mkp`, `&mmv`, `&msc`).
 + # The driver enables it automatically on the side with the TrackPoint.
