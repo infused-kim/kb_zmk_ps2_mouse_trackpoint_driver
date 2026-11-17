@@ -20,8 +20,8 @@ devicetree properties without the `acceleration-` prefix and use the same
 units, so you can copy values from the config:
 
     ./mouse_acceleration_models.py plot
-    ./mouse_acceleration_models.py plot --factor-max 150
-    ./mouse_acceleration_models.py plot -b 80 -m 130 -r 40 -o 12
+    ./mouse_acceleration_models.py plot --cap 150
+    ./mouse_acceleration_models.py plot -b 80 -c 130 -r 40 -o 12
     ./mouse_acceleration_models.py table --step 5
     ./mouse_acceleration_models.py all
 
@@ -67,11 +67,11 @@ from rich.table import Table
 
 
 # Match the TrackPoint's `input_accelerator_move` node in the zmk-config
-DEFAULT_ACCELERATION_FACTOR_BASE = 80
-DEFAULT_ACCELERATION_FACTOR_MAX = 130
-DEFAULT_ACCELERATION_FACTOR_RATE = 40
+DEFAULT_ACCELERATION_BASE = 80
+DEFAULT_ACCELERATION_CAP = 130
+DEFAULT_ACCELERATION_RATE = 40
 DEFAULT_ACCELERATION_START_OFFSET = 12
-DEFAULT_MAX_SPEED = -1
+DEFAULT_ACCELERATION_SPEED_CAP = -1
 
 # Highest input speed that the commands show
 DEFAULT_END = 60
@@ -82,7 +82,7 @@ INPUT_SPEED_LABEL = 'Input speed (units per report)'
 
 # Defaults of the functions used by the notebook
 D_EPSILON = 0.01
-D_MAX_SPEED = DEFAULT_MAX_SPEED
+D_SPEED_CAP = DEFAULT_ACCELERATION_SPEED_CAP
 D_OFFSET = 0
 D_SHOULD_ROUND = False
 D_X_TITLE = 'x'
@@ -117,28 +117,28 @@ OUTPUT_PANEL = 'Output'
 # Options shared by the commands. Named like the `zmk,input-accelerator`
 # devicetree properties without the `acceleration-` prefix and in the same
 # units.
-FactorBaseOption = Annotated[
+BaseOption = Annotated[
     int,
     typer.Option(
-        '--factor-base',
+        '--base',
         '-b',
         help='Start of the curve in percent',
         rich_help_panel=ACCELERATION_PANEL,
     ),
 ]
-FactorMaxOption = Annotated[
+CapOption = Annotated[
     int,
     typer.Option(
-        '--factor-max',
-        '-m',
+        '--cap',
+        '-c',
         help='End of the curve in percent',
         rich_help_panel=ACCELERATION_PANEL,
     ),
 ]
-FactorRateOption = Annotated[
+RateOption = Annotated[
     int,
     typer.Option(
-        '--factor-rate',
+        '--rate',
         '-r',
         help='Steepness of the curve in hundredths',
         rich_help_panel=ACCELERATION_PANEL,
@@ -153,10 +153,10 @@ StartOffsetOption = Annotated[
         rich_help_panel=ACCELERATION_PANEL,
     ),
 ]
-MaxSpeedOption = Annotated[
+SpeedCapOption = Annotated[
     int,
     typer.Option(
-        '--max-speed',
+        '--speed-cap',
         '-s',
         help='Maximum output speed, -1 disables it',
         rich_help_panel=ACCELERATION_PANEL,
@@ -223,11 +223,11 @@ WidthOption = Annotated[
 @app.command()
 def plot(
     *,
-    factor_base: FactorBaseOption = DEFAULT_ACCELERATION_FACTOR_BASE,
-    factor_max: FactorMaxOption = DEFAULT_ACCELERATION_FACTOR_MAX,
-    factor_rate: FactorRateOption = DEFAULT_ACCELERATION_FACTOR_RATE,
+    base: BaseOption = DEFAULT_ACCELERATION_BASE,
+    cap: CapOption = DEFAULT_ACCELERATION_CAP,
+    rate: RateOption = DEFAULT_ACCELERATION_RATE,
     start_offset: StartOffsetOption = DEFAULT_ACCELERATION_START_OFFSET,
-    max_speed: MaxSpeedOption = DEFAULT_MAX_SPEED,
+    speed_cap: SpeedCapOption = DEFAULT_ACCELERATION_SPEED_CAP,
     end: EndOption = DEFAULT_END,
     output: OutputOption = None,
     output_separate: OutputSeparateOption = False,
@@ -240,11 +240,11 @@ def plot(
     """
 
     curve = CurveSettings(
-        factor_base,
-        factor_max,
-        factor_rate,
+        base,
+        cap,
+        rate,
         start_offset,
-        max_speed,
+        speed_cap,
     )
     plot_options = PlotOptions(
         end, output_separate, not exclude_settings, theme, width
@@ -255,26 +255,26 @@ def plot(
 @app.command()
 def table(
     *,
-    factor_base: FactorBaseOption = DEFAULT_ACCELERATION_FACTOR_BASE,
-    factor_max: FactorMaxOption = DEFAULT_ACCELERATION_FACTOR_MAX,
-    factor_rate: FactorRateOption = DEFAULT_ACCELERATION_FACTOR_RATE,
+    base: BaseOption = DEFAULT_ACCELERATION_BASE,
+    cap: CapOption = DEFAULT_ACCELERATION_CAP,
+    rate: RateOption = DEFAULT_ACCELERATION_RATE,
     start_offset: StartOffsetOption = DEFAULT_ACCELERATION_START_OFFSET,
-    max_speed: MaxSpeedOption = DEFAULT_MAX_SPEED,
+    speed_cap: SpeedCapOption = DEFAULT_ACCELERATION_SPEED_CAP,
     end: EndOption = DEFAULT_END,
     step: StepOption = DEFAULT_TABLE_STEP,
 ) -> None:
     """
     Show the acceleration factor, gain and output speed as a table.
 
-    Gain values above acceleration-factor-max are highlighted.
+    Gain values above acceleration-cap are highlighted.
     """
 
     curve = CurveSettings(
-        factor_base,
-        factor_max,
-        factor_rate,
+        base,
+        cap,
+        rate,
         start_offset,
-        max_speed,
+        speed_cap,
     )
     print_table(curve, end, step)
 
@@ -282,11 +282,11 @@ def table(
 @app.command('all')
 def show_all(
     *,
-    factor_base: FactorBaseOption = DEFAULT_ACCELERATION_FACTOR_BASE,
-    factor_max: FactorMaxOption = DEFAULT_ACCELERATION_FACTOR_MAX,
-    factor_rate: FactorRateOption = DEFAULT_ACCELERATION_FACTOR_RATE,
+    base: BaseOption = DEFAULT_ACCELERATION_BASE,
+    cap: CapOption = DEFAULT_ACCELERATION_CAP,
+    rate: RateOption = DEFAULT_ACCELERATION_RATE,
     start_offset: StartOffsetOption = DEFAULT_ACCELERATION_START_OFFSET,
-    max_speed: MaxSpeedOption = DEFAULT_MAX_SPEED,
+    speed_cap: SpeedCapOption = DEFAULT_ACCELERATION_SPEED_CAP,
     end: EndOption = DEFAULT_END,
     step: StepOption = DEFAULT_TABLE_STEP,
     output: OutputOption = None,
@@ -300,11 +300,11 @@ def show_all(
     """
 
     curve = CurveSettings(
-        factor_base,
-        factor_max,
-        factor_rate,
+        base,
+        cap,
+        rate,
         start_offset,
-        max_speed,
+        speed_cap,
     )
     plot_options = PlotOptions(
         end, output_separate, not exclude_settings, theme, width
@@ -381,7 +381,7 @@ def save_pngs(pngs: PlotPngs, output: Path) -> None:
 def print_table(curve: 'CurveSettings', end: int, step: int) -> None:
     console.print('\n'.join(curve.describe()), style='dim', highlight=False)
 
-    tbl = Table(caption='Gain values above acceleration-factor-max are yellow')
+    tbl = Table(caption='Gain values above acceleration-cap are yellow')
     tbl.add_column('Speed', justify='right')
     tbl.add_column('Factor', justify='right')
     tbl.add_column('Gain', justify='right')
@@ -405,19 +405,19 @@ class CurveSettings:
     same units: factors in percent and the rate in hundredths.
     """
 
-    acceleration_factor_base: int
-    acceleration_factor_max: int
-    acceleration_factor_rate: int
+    acceleration_base: int
+    acceleration_cap: int
+    acceleration_rate: int
     acceleration_start_offset: int
-    max_speed: int
+    acceleration_speed_cap: int
 
     def acc_factor(self, speed: float) -> float:
         return calc_acceleration_factor_sigmoid(
             speed,
-            self.acceleration_factor_base / 100,
-            self.acceleration_factor_max / 100,
-            self.acceleration_factor_rate / 100,
-            max_speed=self.max_speed,
+            self.acceleration_base / 100,
+            self.acceleration_cap / 100,
+            self.acceleration_rate / 100,
+            speed_cap=self.acceleration_speed_cap,
             start_offset=self.acceleration_start_offset,
         )
 
@@ -442,13 +442,15 @@ class CurveSettings:
         """
 
         lines = [
-            f'acceleration-factor-base = <{self.acceleration_factor_base}>;',
-            f'acceleration-factor-max = <{self.acceleration_factor_max}>;',
-            f'acceleration-factor-rate = <{self.acceleration_factor_rate}>;',
+            f'acceleration-base = <{self.acceleration_base}>;',
+            f'acceleration-cap = <{self.acceleration_cap}>;',
+            f'acceleration-rate = <{self.acceleration_rate}>;',
             f'acceleration-start-offset = <{self.acceleration_start_offset}>;',
         ]
-        if self.max_speed > 0:
-            lines.append(f'max-speed = <{self.max_speed}>;')
+        if self.acceleration_speed_cap > 0:
+            lines.append(
+                f'acceleration-speed-cap = <{self.acceleration_speed_cap}>;'
+            )
 
         return lines
 
@@ -457,7 +459,7 @@ def format_gain(curve: CurveSettings, speed: float) -> str:
     gain = curve.gain(speed)
     text = f'{gain:.2f}'
 
-    if gain > curve.acceleration_factor_max / 100 + 0.005:
+    if gain > curve.acceleration_cap / 100 + 0.005:
         text = f'[yellow]{text}[/yellow]'
 
     return text
@@ -554,7 +556,7 @@ def draw_factor_graph(
         [curve.acc_factor(s) for s in speeds],
         label='acceleration factor',
     )
-    draw_factor_max_line(ax, curve)
+    draw_cap_line(ax, curve)
     finish_graph(ax, curve)
     ax.set_ylabel('Acceleration factor\n(output / input)')
 
@@ -563,7 +565,7 @@ def draw_gain_graph(
     ax: Axes, curve: CurveSettings, speeds: list[float]
 ) -> None:
     ax.plot(speeds, [curve.gain(s) for s in speeds], label='gain')
-    draw_factor_max_line(ax, curve)
+    draw_cap_line(ax, curve)
     finish_graph(ax, curve)
     ax.set_ylabel('Gain\n(change of output speed)')
 
@@ -578,12 +580,12 @@ def draw_output_graph(
     )
     ax.plot(speeds, speeds, ':', color='gray', label='unaccelerated')
 
-    if curve.max_speed > 0:
+    if curve.acceleration_speed_cap > 0:
         ax.axhline(
-            curve.max_speed,
+            curve.acceleration_speed_cap,
             color='orange',
             linestyle=':',
-            label='max-speed',
+            label='acceleration-speed-cap',
         )
 
     finish_graph(ax, curve)
@@ -594,12 +596,12 @@ def draw_output_graph(
 DrawGraph = Callable[[Axes, CurveSettings, list[float]], None]
 
 
-def draw_factor_max_line(ax: Axes, curve: CurveSettings) -> None:
+def draw_cap_line(ax: Axes, curve: CurveSettings) -> None:
     ax.axhline(
-        curve.acceleration_factor_max / 100,
+        curve.acceleration_cap / 100,
         color='gray',
         linestyle='--',
-        label='acceleration-factor-max',
+        label='acceleration-cap',
     )
 
 
@@ -778,29 +780,29 @@ def show_png_in_terminal(png: bytes, columns: int, rows: int) -> None:
 
 def calc_acceleration_factor_sigmoid(
     speed: float,
-    acc_factor_base: float,
-    acc_factor_max: float,
+    acc_base: float,
+    acc_cap: float,
     acc_rate: float,
     *,
-    max_speed: float | None = D_MAX_SPEED,
+    speed_cap: float | None = D_SPEED_CAP,
     start_offset: float = D_OFFSET,
     should_round: bool = D_SHOULD_ROUND,
 ) -> float:
     speed_abs = abs(speed)
-    sigmoid_limit = acc_factor_max - acc_factor_base
+    sigmoid_limit = acc_cap - acc_base
 
     start_offset_y_value = sigmoid_limit * 0.025
     acc_factor = sigmoid_function_with_offset(
         speed_abs, sigmoid_limit, acc_rate, start_offset, start_offset_y_value
     )
 
-    acc_factor = acc_factor + acc_factor_base
+    acc_factor = acc_factor + acc_base
 
-    acc_factor = get_acc_factor_with_max_speed(
+    acc_factor = get_acc_factor_with_speed_cap(
         acc_factor,
         speed,
-        max_speed,
-        acc_factor_base,
+        speed_cap,
+        acc_base,
     )
 
     if should_round is True:
@@ -870,24 +872,24 @@ def sigmoid_function(x: float, limit: float, acc_rate: float) -> float:
     return (limit) / (1 + math.exp(-acc_rate * x))
 
 
-def get_acc_factor_with_max_speed(
+def get_acc_factor_with_speed_cap(
     acc_factor: float,
     speed: float,
-    max_speed: float | None,
-    acc_factor_base: float,
+    speed_cap: float | None,
+    acc_base: float,
 ) -> float:
     capped_acc_factor = acc_factor
 
-    if max_speed is None or max_speed <= 0:
+    if speed_cap is None or speed_cap <= 0:
         return acc_factor
 
     speed_abs = abs(speed)
     sensitive_speed = speed_abs * acc_factor
-    if sensitive_speed > max_speed:
+    if sensitive_speed > speed_cap:
         if speed_abs == 0:
-            capped_acc_factor = acc_factor_base
+            capped_acc_factor = acc_base
         else:
-            capped_acc_factor = max_speed / speed_abs
+            capped_acc_factor = speed_cap / speed_abs
 
     return capped_acc_factor
 
@@ -901,10 +903,10 @@ CurveName = Literal['sigmoid_pure', 'sigmoid']
 
 def display_curve(
     curve: CurveName,
-    acc_factor_base: float,
-    acc_factor_max: float,
+    acc_base: float,
+    acc_cap: float,
     acc_rate: float,
-    max_speed: float | None,
+    speed_cap: float | None,
     start_offset: float,
     *,
     range_start: int = 0,
@@ -917,10 +919,10 @@ def display_curve(
         curve,
         range_start,
         range_end,
-        acc_factor_base,
-        acc_factor_max,
+        acc_base,
+        acc_cap,
         acc_rate,
-        max_speed=max_speed,
+        speed_cap=speed_cap,
         start_offset=start_offset,
         should_round=should_round,
     )
@@ -950,11 +952,11 @@ def gen_acceleration_factor_df(
     curve: CurveName,
     range_start: int,
     range_end: int,
-    acc_factor_base: float,
-    acc_factor_max: float,
+    acc_base: float,
+    acc_cap: float,
     acc_rate: float,
     *,
-    max_speed: float | None = D_MAX_SPEED,
+    speed_cap: float | None = D_SPEED_CAP,
     start_offset: float = D_OFFSET,
     should_round: bool = D_SHOULD_ROUND,
     x_title: str = D_X_TITLE,
@@ -966,10 +968,10 @@ def gen_acceleration_factor_df(
         curve,
         range_start,
         range_end,
-        acc_factor_base,
-        acc_factor_max,
+        acc_base,
+        acc_cap,
         acc_rate,
-        max_speed=max_speed,
+        speed_cap=speed_cap,
         start_offset=start_offset,
         should_round=should_round,
     )
@@ -994,11 +996,11 @@ def gen_acceleration_factor_range(
     curve: CurveName,
     range_start: int,
     range_end: int,
-    acc_factor_base: float,
-    acc_factor_max: float,
+    acc_base: float,
+    acc_cap: float,
     acc_rate: float,
     *,
-    max_speed: float | None = D_MAX_SPEED,
+    speed_cap: float | None = D_SPEED_CAP,
     start_offset: float = D_OFFSET,
     should_round: bool = D_SHOULD_ROUND,
 ) -> tuple[list[int], list[float]]:
@@ -1016,10 +1018,10 @@ def gen_acceleration_factor_range(
     for x in x_values:
         y = calc_curve(
             x,
-            acc_factor_base,
-            acc_factor_max,
+            acc_base,
+            acc_cap,
             acc_rate,
-            max_speed=max_speed,
+            speed_cap=speed_cap,
             start_offset=start_offset,
             should_round=should_round,
         )
@@ -1030,20 +1032,20 @@ def gen_acceleration_factor_range(
 
 def calc_acceleration_factor_sigmoid_pure(
     speed: float,
-    acc_factor_base: float,
-    acc_factor_max: float,
+    acc_base: float,
+    acc_cap: float,
     acc_rate: float,
     *,
     # Unused, but part of the signature that all curves share
-    max_speed: float | None = D_MAX_SPEED,  # noqa: ARG001
+    speed_cap: float | None = D_SPEED_CAP,  # noqa: ARG001
     start_offset: float = D_OFFSET,
     should_round: bool = D_SHOULD_ROUND,  # noqa: ARG001
 ) -> float:
     speed_offset = speed + start_offset
-    sigmoid_limit = acc_factor_max - acc_factor_base
+    sigmoid_limit = acc_cap - acc_base
 
     acc_factor = sigmoid_function(speed_offset, sigmoid_limit, acc_rate)
-    acc_factor = acc_factor + acc_factor_base * 1
+    acc_factor = acc_factor + acc_base * 1
 
     return acc_factor
 
@@ -1051,11 +1053,11 @@ def calc_acceleration_factor_sigmoid_pure(
 def gen_acceleration_factor_sigmoid_df(
     range_start: int,
     range_end: int,
-    acc_factor_base: float,
-    acc_factor_max: float,
+    acc_base: float,
+    acc_cap: float,
     acc_rate: float,
     *,
-    max_speed: float | None = D_MAX_SPEED,
+    speed_cap: float | None = D_SPEED_CAP,
     start_offset: float = D_OFFSET,
     should_round: bool = D_SHOULD_ROUND,
     x_title: str = D_X_TITLE,
@@ -1066,10 +1068,10 @@ def gen_acceleration_factor_sigmoid_df(
         'sigmoid',
         range_start,
         range_end,
-        acc_factor_base,
-        acc_factor_max,
+        acc_base,
+        acc_cap,
         acc_rate,
-        max_speed=max_speed,
+        speed_cap=speed_cap,
         start_offset=start_offset,
         should_round=should_round,
         x_title=x_title,
@@ -1081,11 +1083,11 @@ def gen_acceleration_factor_sigmoid_df(
 def gen_acceleration_factor_sigmoid_range(
     range_start: int,
     range_end: int,
-    acc_factor_base: float,
-    acc_factor_max: float,
+    acc_base: float,
+    acc_cap: float,
     acc_rate: float,
     *,
-    max_speed: float | None = D_MAX_SPEED,
+    speed_cap: float | None = D_SPEED_CAP,
     start_offset: float = D_OFFSET,
     should_round: bool = D_SHOULD_ROUND,
 ) -> tuple[list[int], list[float]]:
@@ -1093,10 +1095,10 @@ def gen_acceleration_factor_sigmoid_range(
         'sigmoid',
         range_start,
         range_end,
-        acc_factor_base,
-        acc_factor_max,
+        acc_base,
+        acc_cap,
         acc_rate,
-        max_speed=max_speed,
+        speed_cap=speed_cap,
         start_offset=start_offset,
         should_round=should_round,
     )

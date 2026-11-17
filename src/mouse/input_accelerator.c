@@ -45,11 +45,11 @@ enum input_accelerator_curve {
 struct input_accelerator_config {
     enum input_accelerator_curve acc_curve;
     char *acc_curve_name;
-    int acc_factor_base;
-    int acc_factor_max;
+    int acc_base;
+    int acc_cap;
     int acc_rate;
     int start_offset;
-    int max_speed;
+    int speed_cap;
 
     bool enable_interval_based_speed;
     int input_default_sending_rate;
@@ -95,8 +95,8 @@ struct input_accelerator_data {
     struct k_work_delayable continuous_move_timeout_delay;
 
     // Config settings converted to float values
-    float acc_factor_base;
-    float acc_factor_max;
+    float acc_base;
+    float acc_cap;
     float acc_rate;
 
     // Calculated once from the config, see
@@ -132,15 +132,14 @@ static float zmk_input_acc_get_interval_based_speed(float mov, int64_t mov_inter
 static float zmk_input_acc_sigmoid_function_with_offset(float x, float limit, float acc_rate,
                                                         float start_offset,
                                                         float start_offset_addition);
-static float zmk_input_acc_get_acceleration_factor_none(float speed, float acc_factor_base,
-                                                        int max_speed);
-static float zmk_input_acc_get_acceleration_factor_sigmoid(float speed, float acc_factor_base,
-                                                           float acc_factor_max, float acc_rate,
+static float zmk_input_acc_get_acceleration_factor_none(float speed, float acc_base, int speed_cap);
+static float zmk_input_acc_get_acceleration_factor_sigmoid(float speed, float acc_base,
+                                                           float acc_cap, float acc_rate,
                                                            int start_offset,
                                                            float start_offset_addition,
-                                                           int max_speed);
-static float zmk_input_acc_get_acc_factor_with_max_speed(float acc_factor, float speed,
-                                                         int max_speed);
+                                                           int speed_cap);
+static float zmk_input_acc_get_acc_factor_with_speed_cap(float acc_factor, float speed,
+                                                         int speed_cap);
 static bool zmk_input_acc_is_new_mov(float mov, float prev_mov, int64_t mov_interval);
 static int zmk_input_acc_get_direction_factor(int mov_val);
 
@@ -308,12 +307,11 @@ static float zmk_input_acc_get_acc_factor(const struct input_accelerator_config 
     switch (config->acc_curve) {
     case INPUT_ACCELERATOR_CURVE_SIGMOID:
         return zmk_input_acc_get_acceleration_factor_sigmoid(
-            speed, data->acc_factor_base, data->acc_factor_max, data->acc_rate,
-            config->start_offset, data->sigmoid_start_offset_addition, config->max_speed);
+            speed, data->acc_base, data->acc_cap, data->acc_rate, config->start_offset,
+            data->sigmoid_start_offset_addition, config->speed_cap);
     case INPUT_ACCELERATOR_CURVE_NONE:
     default:
-        return zmk_input_acc_get_acceleration_factor_none(speed, data->acc_factor_base,
-                                                          config->max_speed);
+        return zmk_input_acc_get_acceleration_factor_none(speed, data->acc_base, config->speed_cap);
     }
 }
 
@@ -495,32 +493,32 @@ static float zmk_input_acc_get_interval_based_speed(float mov, int64_t mov_inter
     return speed;
 }
 
-// Sets acc_factor to acc_factor_base and if necessary limits to max speed
-static float zmk_input_acc_get_acceleration_factor_none(float speed, float acc_factor_base,
-                                                        int max_speed) {
+// Sets acc_factor to acc_base and if necessary limits it to the speed cap
+static float zmk_input_acc_get_acceleration_factor_none(float speed, float acc_base,
+                                                        int speed_cap) {
 
-    float acc_factor = acc_factor_base;
+    float acc_factor = acc_base;
 
-    acc_factor = zmk_input_acc_get_acc_factor_with_max_speed(acc_factor, speed, max_speed);
+    acc_factor = zmk_input_acc_get_acc_factor_with_speed_cap(acc_factor, speed, speed_cap);
 
     return acc_factor;
 }
 
-static float zmk_input_acc_get_acceleration_factor_sigmoid(float speed, float acc_factor_base,
-                                                           float acc_factor_max, float acc_rate,
+static float zmk_input_acc_get_acceleration_factor_sigmoid(float speed, float acc_base,
+                                                           float acc_cap, float acc_rate,
                                                            int start_offset,
                                                            float start_offset_addition,
-                                                           int max_speed) {
+                                                           int speed_cap) {
 
     float speed_abs = fabsf(speed);
-    float sigmoid_limit = acc_factor_max - acc_factor_base;
+    float sigmoid_limit = acc_cap - acc_base;
 
     float acc_factor = zmk_input_acc_sigmoid_function_with_offset(
         speed_abs, sigmoid_limit, acc_rate, start_offset, start_offset_addition);
 
-    acc_factor = acc_factor + acc_factor_base;
+    acc_factor = acc_factor + acc_base;
 
-    acc_factor = zmk_input_acc_get_acc_factor_with_max_speed(acc_factor, speed, max_speed);
+    acc_factor = zmk_input_acc_get_acc_factor_with_speed_cap(acc_factor, speed, speed_cap);
 
     return acc_factor;
 }
@@ -577,19 +575,19 @@ static float zmk_input_acc_get_sigmoid_start_offset_addition(float limit, float 
     return zmk_input_acc_sigmoid_function_inverse(start_offset_y_value, limit, acc_rate);
 }
 
-static float zmk_input_acc_get_acc_factor_with_max_speed(float acc_factor, float speed,
-                                                         int max_speed) {
+static float zmk_input_acc_get_acc_factor_with_speed_cap(float acc_factor, float speed,
+                                                         int speed_cap) {
 
-    if (max_speed <= 0) {
+    if (speed_cap <= 0) {
         return acc_factor;
     }
 
     // `speed_abs` can't be 0 here, because the accelerated speed would be 0
-    // as well and can't exceed a positive `max_speed`.
+    // as well and can't exceed a positive `speed_cap`.
     float speed_abs = fabsf(speed);
     float sensitive_speed = speed_abs * acc_factor;
-    if (sensitive_speed > max_speed) {
-        return max_speed / speed_abs;
+    if (sensitive_speed > speed_cap) {
+        return speed_cap / speed_abs;
     }
 
     return acc_factor;
@@ -631,13 +629,13 @@ static int zmk_input_accelerator_init(const struct device *dev,
 
     LOG_DBG("Initialized input accelerator: %s", dev->name);
 
-    data->acc_factor_base = (float)config->acc_factor_base / 100.0f;
-    data->acc_factor_max = (float)config->acc_factor_max / 100.0f;
+    data->acc_base = (float)config->acc_base / 100.0f;
+    data->acc_cap = (float)config->acc_cap / 100.0f;
     data->acc_rate = (float)config->acc_rate / 100.0f;
 
     if (config->acc_curve == INPUT_ACCELERATOR_CURVE_SIGMOID) {
         data->sigmoid_start_offset_addition = zmk_input_acc_get_sigmoid_start_offset_addition(
-            data->acc_factor_max - data->acc_factor_base, data->acc_rate);
+            data->acc_cap - data->acc_base, data->acc_rate);
     }
 
 #if IS_ENABLED(CONFIG_ZMK_INPUT_ACCELERATOR_LOG_ENABLED)
@@ -656,11 +654,11 @@ static const struct zmk_input_processor_driver_api zmk_input_accelerator_process
     static const struct input_accelerator_config config_##n = {                                    \
         .acc_curve = DT_INST_ENUM_IDX(n, acceleration_curve),                                      \
         .acc_curve_name = DT_INST_PROP(n, acceleration_curve),                                     \
-        .acc_factor_base = DT_INST_PROP(n, acceleration_factor_base),                              \
-        .acc_factor_max = DT_INST_PROP(n, acceleration_factor_max),                                \
-        .acc_rate = DT_INST_PROP(n, acceleration_factor_rate),                                     \
+        .acc_base = DT_INST_PROP(n, acceleration_base),                                            \
+        .acc_cap = DT_INST_PROP(n, acceleration_cap),                                              \
+        .acc_rate = DT_INST_PROP(n, acceleration_rate),                                            \
         .start_offset = DT_INST_PROP(n, acceleration_start_offset),                                \
-        .max_speed = DT_INST_PROP(n, max_speed),                                                   \
+        .speed_cap = DT_INST_PROP(n, acceleration_speed_cap),                                      \
         .enable_interval_based_speed = DT_INST_PROP(n, enable_interval_based_speed),               \
         .input_default_sending_rate = DT_INST_PROP(n, input_default_sending_rate),                 \
     };                                                                                             \
