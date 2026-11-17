@@ -56,12 +56,12 @@ properties:
 
   tp-x-invert:
     type: boolean
-    description: Enables x axis inversion on the trackpoint. Only works with some trackpoint devices, but is properly considered by the trackpoint's acceleration features (which may or may not have an impact). Alternatively consider achieving the same effect using the `zmk,input-configs` feature.
+    description: Enables x axis inversion on the trackpoint. Only works with some trackpoint devices, but is properly considered by the trackpoint's acceleration features (which may or may not have an impact). Alternatively consider achieving the same effect with the `&zip_xy_transform` input processor on the `zmk,input-listener` (`INPUT_TRANSFORM_X_INVERT`).
 
   tp-y-invert:
     type: boolean
-    description: Enables y axis inversion on the trackpoint. Only works with some trackpoint devices, but is properly considered by the trackpoint's acceleration features (which may or may not have an impact). Alternatively consider achieving the same effect using the `zmk,input-configs` feature.
+    description: Enables y axis inversion on the trackpoint. Only works with some trackpoint devices, but is properly considered by the trackpoint's acceleration features (which may or may not have an impact). Alternatively consider achieving the same effect with the `&zip_xy_transform` input processor on the `zmk,input-listener` (`INPUT_TRANSFORM_Y_INVERT`).
 
   tp-xy-swap:
     type: boolean
-    description: Swaps the x and y axis on the trackpoint. Only works with some trackpoint devices, but may properly considered by the trackpoint's acceleration features (which may or may not have an impact). Alternatively consider achieving the same effect using the `zmk,input-configs` feature.
+    description: Swaps the x and y axis on the trackpoint. Only works with some trackpoint devices, but may be properly considered by the trackpoint's acceleration features (which may or may not have an impact). Alternatively consider achieving the same effect with the `&zip_xy_transform` input processor on the `zmk,input-listener` (`INPUT_TRANSFORM_XY_SWAP`).

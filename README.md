@@ -15,6 +15,14 @@ It is a [zmk module](#zmk-module) version of my original PRs:
 
 If you are interested in how this project came to be, [check out the development journey "blog post" at the bottom](#blog-post).
 
+> [!NOTE]
+>
+> **AI Usage Disclosure**
+>
+> The majority of the code and documentation for this project were hand-written back in 2024 before agentic coding was a thing.
+>
+> Later updates were created with the assistance of agents, but reviewed and approved manually. This is not a vibe-coded project.
+
 ## Table Of Contents <!-- omit from toc -->
 
 - [1. Features](#1-features)
@@ -24,44 +32,44 @@ If you are interested in how this project came to be, [check out the development
     - [1.3.1. TrackPoint Configuration with key behaviors](#131-trackpoint-configuration-with-key-behaviors)
     - [1.3.2. Power-On-Reset Support](#132-power-on-reset-support)
     - [1.3.3. Press-To-Select (Clicking by pressing the TrackPoint)](#133-press-to-select-clicking-by-pressing-the-trackpoint)
-- [2. Setup Instructions for users of previous versions](#2-setup-instructions-for-users-of-previous-versions)
-- [3. Setup Instructions for new users](#3-setup-instructions-for-new-users)
-  - [3.1. Check out the example zmk-config](#31-check-out-the-example-zmk-config)
-  - [3.2. Test your TrackPoint with the pre-built firmware](#32-test-your-trackpoint-with-the-pre-built-firmware)
-  - [3.3. How to set up your zmk-config for the driver](#33-how-to-set-up-your-zmk-config-for-the-driver)
-    - [3.3.1. Create a zmk-config (if you don't have one already)](#331-create-a-zmk-config-if-you-dont-have-one-already)
-    - [3.3.2. Create a custom shield definition](#332-create-a-custom-shield-definition)
-    - [3.3.3. Change the central side](#333-change-the-central-side)
-    - [3.3.4. Add the TrackPoint config files](#334-add-the-trackpoint-config-files)
-  - [3.4. How to configure the driver](#34-how-to-configure-the-driver)
-    - [3.4.1. Choose the PS/2 driver: UART vs GPIO](#341-choose-the-ps2-driver-uart-vs-gpio)
-    - [3.4.2. Which pins to use](#342-which-pins-to-use)
-    - [3.4.3. TrackPoint Power-On-Reset](#343-trackpoint-power-on-reset)
-    - [3.4.4. Configure other settings](#344-configure-other-settings)
-    - [3.4.5. Add the PS/2 driver module to your `config/west.yml`](#345-add-the-ps2-driver-module-to-your-configwestyml)
-  - [3.5. Switch to a zmk fork with mouse support](#35-switch-to-a-zmk-fork-with-mouse-support)
-  - [3.6. Build your firmware using GitHub Actions](#36-build-your-firmware-using-github-actions)
-  - [3.7. Or, build your firmware using a local toolchain (for developers only)](#37-or-build-your-firmware-using-a-local-toolchain-for-developers-only)
-- [4. Troubleshooting](#4-troubleshooting)
-  - [4.1. If the firmware fails to build](#41-if-the-firmware-fails-to-build)
-    - [4.1.1. Check if you using a zmk fork that doesn't include mouse support](#411-check-if-you-using-a-zmk-fork-that-doesnt-include-mouse-support)
-    - [4.1.2. error: too few arguments to function 'zmk_keymap_layer_activate'](#412-error-too-few-arguments-to-function-zmk_keymap_layer_activate)
-    - [4.1.3. fatal error: zmk/mouse/types.h: No such file or directory](#413-fatal-error-zmkmousetypesh-no-such-file-or-directory)
-    - [4.1.4. Other build errors](#414-other-build-errors)
-  - [4.2. If the mouse or TrackPoint "doesn't work"](#42-if-the-mouse-or-trackpoint-doesnt-work)
-    - [4.2.1. Check if the driver is compiled into the firmware](#421-check-if-the-driver-is-compiled-into-the-firmware)
-    - [4.2.2. Check if the mouse or TrackPoint communicates with the firmware](#422-check-if-the-mouse-or-trackpoint-communicates-with-the-firmware)
-    - [4.2.3. If the driver can't communicate with the pointing device](#423-if-the-driver-cant-communicate-with-the-pointing-device)
-    - [4.2.4. If the pointing device is initialized, but the mouse is not moving or moving only on USB](#424-if-the-pointing-device-is-initialized-but-the-mouse-is-not-moving-or-moving-only-on-usb)
-  - [4.3. If you get bad battery life](#43-if-you-get-bad-battery-life)
-  - [4.4. If your split keyboard halves refuse to pair](#44-if-your-split-keyboard-halves-refuse-to-pair)
-- [5. Development Journey Blog \& Implementation Details](#5-development-journey-blog--implementation-details)
-- [6. Related Resources](#6-related-resources)
-  - [6.1. Zmk Related](#61-zmk-related)
-  - [6.2. TrackPoint Info](#62-trackpoint-info)
-  - [6.3. How to figure out TrackPoint Pinout](#63-how-to-figure-out-trackpoint-pinout)
-  - [6.4. Datasheets](#64-datasheets)
-  - [6.5. Other Info](#65-other-info)
+- [2. Compatibility with zmk versions](#2-compatibility-with-zmk-versions)
+- [3. Setup Instructions for users of previous versions](#3-setup-instructions-for-users-of-previous-versions)
+- [4. Setup Instructions for new users](#4-setup-instructions-for-new-users)
+  - [4.1. Check out the example zmk-config](#41-check-out-the-example-zmk-config)
+  - [4.2. Test your TrackPoint with the pre-built firmware](#42-test-your-trackpoint-with-the-pre-built-firmware)
+  - [4.3. How to set up your zmk-config for the driver](#43-how-to-set-up-your-zmk-config-for-the-driver)
+    - [4.3.1. Create a zmk-config (if you don't have one already)](#431-create-a-zmk-config-if-you-dont-have-one-already)
+    - [4.3.2. Create a custom shield definition](#432-create-a-custom-shield-definition)
+    - [4.3.3. Change the central side](#433-change-the-central-side)
+    - [4.3.4. Add the TrackPoint config files](#434-add-the-trackpoint-config-files)
+  - [4.4. How to configure the driver](#44-how-to-configure-the-driver)
+    - [4.4.1. Choose the PS/2 driver: UART vs GPIO](#441-choose-the-ps2-driver-uart-vs-gpio)
+    - [4.4.2. Which pins to use](#442-which-pins-to-use)
+    - [4.4.3. TrackPoint Power-On-Reset](#443-trackpoint-power-on-reset)
+    - [4.4.4. Configure other settings](#444-configure-other-settings)
+    - [4.4.5. Add the PS/2 driver module to your `config/west.yml`](#445-add-the-ps2-driver-module-to-your-configwestyml)
+  - [4.5. Use the module version that matches your zmk version](#45-use-the-module-version-that-matches-your-zmk-version)
+  - [4.6. Build your firmware using GitHub Actions](#46-build-your-firmware-using-github-actions)
+  - [4.7. Or, build your firmware using a local toolchain (for developers only)](#47-or-build-your-firmware-using-a-local-toolchain-for-developers-only)
+- [5. Troubleshooting](#5-troubleshooting)
+  - [5.1. If the firmware fails to build](#51-if-the-firmware-fails-to-build)
+    - [5.1.1. Check if you are using a zmk version without pointing support](#511-check-if-you-are-using-a-zmk-version-without-pointing-support)
+    - [5.1.2. Other build errors](#512-other-build-errors)
+  - [5.2. If the mouse or TrackPoint "doesn't work"](#52-if-the-mouse-or-trackpoint-doesnt-work)
+    - [5.2.1. Check if the driver is compiled into the firmware](#521-check-if-the-driver-is-compiled-into-the-firmware)
+    - [5.2.2. Check if the mouse or TrackPoint communicates with the firmware](#522-check-if-the-mouse-or-trackpoint-communicates-with-the-firmware)
+    - [5.2.3. If the driver can't communicate with the pointing device](#523-if-the-driver-cant-communicate-with-the-pointing-device)
+    - [5.2.4. If the pointing device is initialized, but the mouse is not moving or moving only on USB](#524-if-the-pointing-device-is-initialized-but-the-mouse-is-not-moving-or-moving-only-on-usb)
+  - [5.3. If you get bad battery life](#53-if-you-get-bad-battery-life)
+  - [5.4. If your split keyboard halves refuse to pair](#54-if-your-split-keyboard-halves-refuse-to-pair)
+- [6. Development Journey Blog \& Implementation Details](#6-development-journey-blog--implementation-details)
+- [7. Related Resources \& Projects](#7-related-resources--projects)
+  - [7.1. My Other TrackPoint Related Repos](#71-my-other-trackpoint-related-repos)
+  - [7.2. Zmk Related](#72-zmk-related)
+  - [7.3. TrackPoint Info](#73-trackpoint-info)
+  - [7.4. How to figure out TrackPoint Pinout](#74-how-to-figure-out-trackpoint-pinout)
+  - [7.5. Datasheets](#75-datasheets)
+  - [7.6. Other Info](#76-other-info)
 
 ## 1. Features
 
@@ -114,31 +122,103 @@ TrackPoints have an interesting feature that allows you to click by pressing a l
 
 But, unfortunately, not all TrackPoints support this feature. My older Lenovo T430 TP supports it, but my newer, red T460S TP does not.
 
-## 2. Setup Instructions for users of previous versions
+## 2. Compatibility with zmk versions
 
-If you used the previous zmk fork version of this driver, then you only need to make a few small changes.
+This module has a branch for each zmk version it supports, similar to [urob's module versioning](https://github.com/urob/zmk-config/discussions/85). Use the matching `revision` for zmk and this module:
 
-But I would recommend you check out the [new example zmk-config, which shows step-by-step how to set up the module](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver-zmk_config/).
+| zmk version                              | zmk `revision`                                                                                    | Module `revision` |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------- | ----------------- |
+| main (v0.4 pre-release)                  | `main`                                                                                            | `main`            |
+| v0.3                                     | `v0.3`                                                                                            | `v0.3`            |
+| zmk fork with the mouse PR (before v0.2) | [`legacy-mouse-pr`](https://github.com/infused-kim/zmk/tree/legacy-mouse-pr) of `infused-kim/zmk` | `legacy-mouse-pr` |
 
-I made some changes to how the config is structured, which makes it more flexible and easier to use.
+For zmk main and v0.3, the easiest way is to set the `revision` once in the `defaults` of your `config/west.yml` ([see the example zmk-config](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver-zmk_config/blob/ffa5d81fba7de5a96c1c3e0b175b1692809fdfc5/config/west.yml)). The `main` and `v0.3` branches get the updates that are compatible with these zmk versions.
 
-You can also check how I upgraded my personal config from the old zmk fork to this new module in these commits:
+Currently, there are no incompatibilities between `main` and `v0.3` and they both point to the same commit.
 
-1. [Converted zmk-config to new module structure](https://github.com/infused-kim/zmk-config/commit/77b48aa40e95505516053652929936b7a2313cbc)
-2. [Added minimal changes to switch to new PS/2 mouse driver module](https://github.com/infused-kim/zmk-config/commit/b12931a7145445e757812d09106d5896cc99e623)
-3. [Added full changes to switch](https://github.com/infused-kim/zmk-config/commit/47bd2cc46de99f722e57e27e3a28d7ea367a880a)
+`legacy-mouse-pr` is a tag of the last version that works with the zmk forks that had the mouse PR before zmk v0.2. It won't get any updates. The same tag in [my zmk fork](https://github.com/infused-kim/zmk/tree/legacy-mouse-pr) points to the last zmk version that is known to work with it. It's meant for building your firmware if you can't upgrade yet. You can see a full config for it in the [example zmk-config before the upgrade](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver-zmk_config/tree/14b3102d969efb2fc708bba1cfc85eb1c34ac94a).
+
+zmk v0.1 doesn't have pointing support. zmk v0.2 hasn't been tested.
+
+## 3. Setup Instructions for users of previous versions
+
+If you used this module with a zmk fork before pointing support was merged into zmk (before v0.2), then you will need to make a few small changes.
+
+You can see all of them in the [example zmk-config](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver-zmk_config/), which I upgraded in two commits:
+
+1. [Upgrade to zmk v0.3](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver-zmk_config/commit/8745a9f005e53928e1106cb6dea13f70cd43b9be): Switches from the zmk fork to zmk v0.3
+2. [Upgrade to zmk main (v0.4 pre-release)](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver-zmk_config/commit/ffa5d81fba7de5a96c1c3e0b175b1692809fdfc5): The additional changes for zmk main, which uses new board names
 
 But, here are the minimum changes you need to make.
 
-### Change the name of the input-listener... <!-- omit from toc -->
+### Switch to zmk v0.3 and the matching module version... <!-- omit from toc -->
 
-In `boards/shields/your_keyboard/your_keyboard.dtsi` change from `zmk,input-listener` to `zmk,input-listener-ps2`:
+In your `config/west.yml`, switch from the zmk fork to the official zmk and use the [module version that matches your zmk version](#45-use-the-module-version-that-matches-your-zmk-version):
+
+```diff
+manifest:
++ defaults:
++   revision: v0.3
++
+  remotes:
+    - name: zmkfirmware
+      url-base: https://github.com/zmkfirmware
+    - name: infused-kim
+      url-base: https://github.com/infused-kim
+
+  projects:
+    - name: zmk
+-     remote: infused-kim
+-     revision: pr-testing/mouse_ps2_module_base
++     remote: zmkfirmware
+      import: app/west.yml
+
+    # Module for PS/2 mouse & TP driver
+    - name: kb_zmk_ps2_mouse_trackpoint_driver
+      remote: infused-kim
+-     revision: main
+
+  self:
+    path: config
+```
+
+And use the same zmk version in `.github/workflows/build.yml`:
+
+```diff
+-    uses: zmkfirmware/zmk/.github/workflows/build-user-config.yml@main
++    uses: zmkfirmware/zmk/.github/workflows/build-user-config.yml@v0.3
+```
+
+### Adjust your config... <!-- omit from toc -->
+
+In your `your_keyboard.conf`:
+
+```diff
+- # Removed, because zmk has official pointing support. Builds fail if it's
+- # still set.
+- CONFIG_ZMK_INPUT_MOUSE_PS2_ENABLE_UROB_COMPAT=n
++ # Enable zmk's pointing support for mouse keys (`&mkp`, `&mmv`, `&msc`).
++ # The driver enables it automatically on the side with the TrackPoint.
++ CONFIG_ZMK_POINTING=y
+```
+
+If you enabled USB logging with `CONFIG_ZMK_USB_LOGGING=y`, remove it and add the `zmk-usb-logging` snippet to your `build.yaml` entries instead:
+
+```diff
+  - board: nice_nano_v2
+    shield: your_keyboard_right
++   snippet: zmk-usb-logging
+```
+
+### Use ZMK's input listener... <!-- omit from toc -->
+
+This module no longer includes its own `zmk,input-listener-ps2`. Use ZMK's `zmk,input-listener` in `boards/shields/your_keyboard/your_keyboard.dtsi`:
 
 ```diff
 / {
     mouse_ps2_input_listener: mouse_ps2_input_listener {
--       compatible = "zmk,input-listener";
-+       compatible = "zmk,input-listener-ps2";
+-       compatible = "zmk,input-listener-ps2";
++       compatible = "zmk,input-listener";
         status = "disabled";
 
         device = <&mouse_ps2>;
@@ -146,60 +226,42 @@ In `boards/shields/your_keyboard/your_keyboard.dtsi` change from `zmk,input-list
 };
 ```
 
-### Adjust your west.yaml to use the module <!-- omit from toc -->
+Its settings map to [ZMK input processors](https://zmk.dev/docs/keymaps/input-processors):
 
-In your `config/west.yml`, you have to switch to a fork that has [zmk PR #2027 (Mouse pointer movement/scrolling)](https://github.com/zmkfirmware/zmk/pull/2027).
+| `zmk,input-listener-ps2`                  | `zmk,input-listener`                                                                                                        |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `xy-swap`, `x-invert`, `y-invert`         | `input-processors = <&zip_xy_transform (INPUT_TRANSFORM_XY_SWAP \| INPUT_TRANSFORM_X_INVERT \| INPUT_TRANSFORM_Y_INVERT)>;` |
+| `scale-multiplier`, `scale-divisor`       | `<&zip_xy_scaler mul div>`                                                                                                  |
+| `layer-toggle`, `layer-toggle-timeout-ms` | `<&zip_temp_layer layer timeout-ms>`                                                                                        |
+| `layer-toggle-delay-ms`                   | No equivalent. `require-prior-idle-ms` on `&zip_temp_layer` prevents activations right after typing.                        |
 
-In the full setup instructions below you can find a list of forks with their advantages and disadvantages.
+### If you use zmk main... <!-- omit from toc -->
 
-In addition to that, you also need to add this module to the `config/west.yml`:
+zmk main (v0.4 pre-release) uses Zephyr 4.1, which renamed the boards. Set `revision: main` in `config/west.yml` and use `@main` in `.github/workflows/build.yml`.
+
+Then use the new board name in your `build.yaml`:
 
 ```diff
-manifest:
-  remotes:
-    - name: zmkfirmware
-      url-base: https://github.com/zmkfirmware
-+   - name: infused-kim
-+     url-base: https://github.com/infused-kim
-
-  projects:
-    - name: zmk
--     remote: zmkfirmware
--     revision: main
-+     remote: infused-kim
-+     revision: pr-testing/mouse_ps2_module_base
-      import: app/west.yml
-
-+   # Module for PS/2 mouse & TP driver
-+   - name: kb_zmk_ps2_mouse_trackpoint_driver
-+     remote: infused-kim
-+     revision: main
-
-  self:
-    path: config
+-  - board: nice_nano_v2
++  - board: nice_nano//zmk
+     shield: your_keyboard_right
 ```
 
-**3. Change the config if you are using urob's fork...**
+If your shield has board specific overlays, rename them as well. For example, `boards/shields/your_keyboard/boards/nice_nano.overlay` or `nice_nano_v2.overlay` becomes `nice_nano_nrf52840_zmk.overlay`. Zephyr silently ignores overlays with the old names.
 
-If you are using urob's zmk fork, please also edit your keyboard's `keyboard_name.conf` file and add to it:
-
-```conf
-CONFIG_ZMK_INPUT_MOUSE_PS2_ENABLE_UROB_COMPAT=y
-```
-
-Finally, build the firmware using GitHub Actions or the toolchain. No further changes to the configuration should be necessary.
+Finally, build the firmware using GitHub Actions or the toolchain.
 
 Or continue reading for the full instructions...
 
-## 3. Setup Instructions for new users
+## 4. Setup Instructions for new users
 
-### 3.1. Check out the example zmk-config
+### 4.1. Check out the example zmk-config
 
 The configuration is fairly complex, but I created [an example zmk-config that walks you step-by-step through the process](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver-zmk_config/).
 
 You can either fork it or you can [look at the commit history](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver-zmk_config/commits/main/) and just replicate it for your keyboard.
 
-### 3.2. Test your TrackPoint with the pre-built firmware
+### 4.2. Test your TrackPoint with the pre-built firmware
 
 In addition to that, you can find a pre-compiled firmware in the [releases section of the example zmk config](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver-zmk_config/releases).
 
@@ -209,15 +271,17 @@ You can also use it to test your TrackPoint with a breadboard if you are still i
 
 You can find the pins that can be used for the TP with the pre-compiled firmware in the [example zmk-config's readme](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver-zmk_config/#1-pre-built-firmware).
 
-### 3.3. How to set up your zmk-config for the driver
+### 4.3. How to set up your zmk-config for the driver
 
 To help you better understand the example zmk-config, here are the things you have to do to set it up.
 
-#### 3.3.1. Create a zmk-config (if you don't have one already)
+#### 4.3.1. Create a zmk-config (if you don't have one already)
 
 If you don't have a zmk-config yet, then you can [follow the zmk documentation for instructions on how to create a new config](https://zmk.dev/docs/user-setup).
 
-> **Notice for long-time zmk users**
+> [!TIP]
+>
+> **For long-time zmk users**
 >
 > The zmk-config format was recently updated to be a module. If you created your zmk config a long time ago, you may need to update your zmk-config directory structure.
 >
@@ -229,7 +293,7 @@ If you don't have a zmk-config yet, then you can [follow the zmk documentation f
 >
 > You can [check out this commit in my personal zmk-config](https://github.com/infused-kim/zmk-config/commit/77b48aa40e95505516053652929936b7a2313cbc) to see what I had to do to upgrade my config to the new module format.
 
-#### 3.3.2. Create a custom shield definition
+#### 4.3.2. Create a custom shield definition
 
 Zmk supports different keyboards through `shield definitions`, which are stored in [app/boards/shields](https://github.com/zmkfirmware/zmk/tree/main/app/boards/shields).
 
@@ -273,7 +337,7 @@ Next, rename the files in your personal config directory (not the shield directo
 - Keymap, such as `zmk-config/config/corne.keymap` -> `corne_tp.keymap`
 - Config file, such as `zmk-config/config/corne.conf` -> `corne_tp.conf`
 
-> **Important**
+> [!IMPORTANT]
 >
 > The keymap and config files are present in both the `zmk-config/boards/shields` directory, as well as the `zmk-config/config` directory.
 >
@@ -301,7 +365,7 @@ Finally, build your config to see if everything is still working. Just push the 
 
 Make sure the firmware is working. You want to have a "known to work" checkpoint commit that you can return to if it stops building or working in one of the next steps.
 
-#### 3.3.3. Change the central side
+#### 4.3.3. Change the central side
 
 In zmk, split keyboards have a central and peripheral side. The central side is the actual brain of the keyboard, which connects to both your computer and the peripheral side. The peripheral just sends its key presses to the central half.
 
@@ -326,13 +390,18 @@ config ZMK_SPLIT_ROLE_CENTRAL
 endif
 ```
 
-#### 3.3.4. Add the TrackPoint config files
+#### 4.3.4. Add the TrackPoint config files
 
 The next step is to add the TrackPoint configuration to the right files.
 
 These files are quite long and complex. So, instead of explaining every line, I encourage you to look at the following commit [in the example zmk-config](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver-zmk_config/commits/main/):
 
 - Shield & Config: Added PS/2 Mouse & TrackPoint support
+
+That commit still uses the old zmk fork. These two commits upgrade it to the current version:
+
+- [Upgrade to zmk v0.3](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver-zmk_config/commit/8745a9f005e53928e1106cb6dea13f70cd43b9be)
+- [Upgrade to zmk main (v0.4 pre-release)](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver-zmk_config/commit/ffa5d81fba7de5a96c1c3e0b175b1692809fdfc5)
 
 I added A LOT of comments throughout the config files to explain how everything works.
 
@@ -344,7 +413,7 @@ You will need to add the config in these places:
 
 ##### In your config directory... <!-- omit from toc -->
 
-> **Warning**
+> [!TIP]
 >
 > Make sure you edit these files inside the `zmk-config/config/` directory. The same files also exist within the shield directory, but you should edit your personal keymap and config.
 
@@ -352,13 +421,13 @@ You will need to add the config in these places:
 - Edit your config `zmk-config/config/your_keyboard_tp.conf`
 - Add the new file `zmk-config/config/include/mouse_tp.dtsi`
 
-### 3.4. How to configure the driver
+### 4.4. How to configure the driver
 
 All of the options are clearly explained with comments in [your_keyboard_right.overlay](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver-zmk_config/blob/main/boards/shields/corne_tp/corne_tp_right.overlay), [mouse_tp.dtsi](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver-zmk_config/blob/main/config/include/mouse_tp.dtsi) and [your_keyboard.conf](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver-zmk_config/blob/main/config/corne_tp.conf).
 
 But there are a few things I want to highlight here.
 
-#### 3.4.1. Choose the PS/2 driver: UART vs GPIO
+#### 4.4.1. Choose the PS/2 driver: UART vs GPIO
 
 The nrf52 microchip, which is used by the nice!nano controller does not have hardware support for the PS/2 transmission protocol, which is used by TrackPoints.
 
@@ -385,7 +454,7 @@ To enable the UART driver, simply make sure that this line is uncommented:
 
 Or comment it out to enable the GPIO driver.
 
-#### 3.4.2. Which pins to use
+#### 4.4.2. Which pins to use
 
 On the nrf52 microchip that the nice!nano uses, pins can be either high or low frequency.
 
@@ -411,9 +480,9 @@ You can change the pins by editing these lines:
 
 Please refer to the comments in [zmk-config/boards/shields/your_keyboard/your_keyboard_right.overlay](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver-zmk_config/blob/main/boards/shields/corne_tp/corne_tp_right.overlay) for detailed instructions.
 
-You can also find more info in the [example zmk-config's README](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackPoint_driver-zmk_config/).
+You can also find more info in the [example zmk-config's README](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver-zmk_config/).
 
-#### 3.4.3. TrackPoint Power-On-Reset
+#### 4.4.3. TrackPoint Power-On-Reset
 
 Unlike most PS/2 devices, TrackPoints require an additional `Power-On-Reset` (`RST`) pin. A specific electric sequence must be sent to the TrackPoint to let it know that the voltage supply is stable.
 
@@ -433,19 +502,15 @@ In that case, you can simply comment out the following line and the Power-On-Res
 
 You can [learn more about how to build a reset circuit here](https://github.com/alonswartz/trackpoint#2-create-the-reset-circuit-rc).
 
-#### 3.4.4. Configure other settings
+#### 4.4.4. Configure other settings
 
 You can adjust more settings in [mouse_tp.dtsi](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver-zmk_config/blob/main/config/include/mouse_tp.dtsi) as well as [your_keyboard.conf](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver-zmk_config/blob/main/config/corne_tp.conf).
 
 In `mouse_tp.dtsi`, you will find settings such as TP sensitivity, swapping of axes, etc. It's also where you configure automatic layer toggling on mouse movement.
 
-You won't need to adjust most of the settings in `your_keyboard.conf`, but one option that's worth mentioning is `CONFIG_ZMK_INPUT_MOUSE_PS2_ENABLE_UROB_COMPAT`.
-
-It is necessary if you want to use [urob's popular zmk fork](https://github.com/urob/zmk).
-
 <a name="zmk-module"></a>
 
-#### 3.4.5. Add the PS/2 driver module to your `config/west.yml`
+#### 4.4.5. Add the PS/2 driver module to your `config/west.yml`
 
 This version of the driver is a zmk module.
 
@@ -457,6 +522,9 @@ If you are building your firmware using GitHub Actions, then you can just edit y
 
 ```diff
 manifest:
++ defaults:
++   revision: v0.3
++
   remotes:
     - name: zmkfirmware
       url-base: https://github.com/zmkfirmware
@@ -465,99 +533,62 @@ manifest:
   projects:
     - name: zmk
       remote: zmkfirmware
-      revision: main
+-     revision: main
       import: app/west.yml
 +
 +   # zmk module for PS/2 mouse / TP driver
 +   - name: kb_zmk_ps2_mouse_trackpoint_driver
 +     remote: infused-kim
-+     revision: main
 
   self:
     path: config
 ```
+
+The `revision` in `defaults` applies to zmk and this module. See the next section for which one to use.
 
 If you are a developer and are building using a local toolchain, please look for the developer instructions further down.
 
-### 3.5. Switch to a zmk fork with mouse support
+### 4.5. Use the module version that matches your zmk version
 
-Even though the purpose of zmk modules is to not depend on any zmk forks, at the moment that's not entirely possible.
+Use the same `revision` for zmk and this module. You can find the versions in the [compatibility table](#2-compatibility-with-zmk-versions).
 
-This module depends on [zmk PR #2027 (Mouse pointer movement/scrolling)](https://github.com/zmkfirmware/zmk/pull/2027), which is still in active development and has not been merged into zmk main yet.
+The easiest way is to set it once in `defaults`, as shown in the previous section.
 
-This means you must use a fork of zmk that has this PR merged into it.
+Also use the same version for the build workflow in `.github/workflows/build.yml`:
 
-##### Options for zmk forks with mouse support: <!-- omit from toc -->
-
-1. [petejohanson - feat/pointers-move-scroll](https://github.com/petejohanson/zmk/tree/feat/pointers-move-scroll)
-   - Pete is the creator of zmk and is currently the main developer of the mouse pointing feature in zmk.
-   - He usually updates his fork very soon after new features are added to zmk main.
-   - This is the best version to use if you want to stay as up-to-date and as close as possible to zmk's original version.
-2. [infused-kim - pr-testing/mouse_ps2_module_base](https://github.com/infused-kim/zmk/tree/pr-testing/mouse_ps2_module_base)
-   - This is my zmk fork of `petejohanson's feat/pointers-move-scroll` that is "last known to work" with this module.
-   - I won't update it frequently. So it's not good if you want to stay up-to-date with the latest and greatest zmk has to offer.
-   - But if Pete changes his `feat/pointers-move-scroll` implementation in a major way and it becomes incompatible with this module, then this fork will continue to work for you.
-   - I recommend you start with this fork and test your configuration with it first. Once it's working and you know your config is good, you can switch to Pete's to get future updates.
-3. [urob - main](https://github.com/urob/zmk)
-   - Urob's zmk fork is very popular in the community because he adds a lot of cool beta features.
-   - It has traditionally been the recommended fork for people who wanted to add mouse support to their keyboards because urob frequently updates it with the latest improvements that get added to the original zmk main version.
-   - If you are not familiar with it, you should definitely check out [his fork](https://github.com/urob/zmk) and his [zmk-config](https://github.com/urob/zmk-config) to learn about all these extra features and especially his `timeless homerow mods`.
-   - Please also enable `CONFIG_ZMK_INPUT_MOUSE_PS2_ENABLE_UROB_COMPAT=y` to account for API changes in urob's fork.
-4. [infused-kim - pr-testing/mouse_ps2_module_base_urob](https://github.com/infused-kim/zmk/tree/pr-testing/mouse_ps2_module_base_urob)
-   - This fork is the same as #2 above but also includes urob's features on top of the latest mouse implementation.
-   - Please also enable `CONFIG_ZMK_INPUT_MOUSE_PS2_ENABLE_UROB_COMPAT=y` to account for API changes in urob's fork.
-
-##### How to add the zmk fork to your `config/west.yml` <!-- omit from toc -->
-
-Edit your `zmk-config/config/west.yml`:
-
-```diff
-manifest:
-  remotes:
-    - name: zmkfirmware
-      url-base: https://github.com/zmkfirmware
-    - name: infused-kim
-      url-base: https://github.com/infused-kim
-+   - name: petejohanson
-+     url-base: https://github.com/petejohanson
-+   - name: urob
-+     url-base: https://github.com/urob
-  projects:
-    - name: zmk
--     remote: zmkfirmware
--     revision: main
-+     remote: infused-kim
-+     revision: pr-testing/mouse_ps2_module_base
-      import: app/west.yml
-
-+   # zmk module for PS/2 mouse / TP driver
-+   - name: kb_zmk_ps2_mouse_trackpoint_driver
-+     remote: infused-kim
-+     revision: main
-
-  self:
-    path: config
+```yaml
+uses: zmkfirmware/zmk/.github/workflows/build-user-config.yml@v0.3
 ```
 
-I kept the diff above concise, but you can find the full list of all recommended forks with explanations [in the example zmk-config's west.yml](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver-zmk_config/blob/main/config/west.yml).
+zmk main uses new board names, such as `nice_nano//zmk` instead of `nice_nano_v2`. You can see all changes for zmk main in [this commit of the example zmk-config](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver-zmk_config/commit/ffa5d81fba7de5a96c1c3e0b175b1692809fdfc5).
 
-### 3.6. Build your firmware using GitHub Actions
+zmk forks with the old mouse PR are no longer supported, but you can still use the [`legacy-mouse-pr` version](#2-compatibility-with-zmk-versions) with them.
+
+### 4.6. Build your firmware using GitHub Actions
 
 This should be everything you need to configure. If you are using GitHub Actions, push your zmk-config and you will hopefully get a successful build.
 
 If not, please refer to the troubleshooting section below.
 
-### 3.7. Or, build your firmware using a local toolchain (for developers only)
+### 4.7. Or, build your firmware using a local toolchain (for developers only)
 
-> **Notice**
+> [!NOTE]
 >
 > This sub-section is for developers who are building zmk locally on their computers instead of using GitHub Actions. Most people can ignore this sub-section.
 
-#### Set up the toolchain <!-- omit from toc -->
+#### Option 1: Use mise and just <!-- omit from toc -->
+
+The [example zmk-config](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver-zmk_config) has a local toolchain that installs everything it needs (Python, CMake, the Zephyr SDK, ...) with [mise](https://mise.jdx.dev) and runs the builds with [just](https://github.com/casey/just). It builds the targets from your `build.yaml` with the zmk and module versions from your `config/west.yml`, so local builds match GitHub Actions. It works on macOS and Linux (on Windows, use WSL).
+
+[This commit](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver-zmk_config/commit/06c611dd255606119362459f1b4a96539f28f24d) shows how to add it to your own zmk-config, and the [example's README](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver-zmk_config#4-building-locally) explains how to use it.
+
+#### Option 2: Use the zmk docker toolchain <!-- omit from toc -->
+
+##### Set up the toolchain <!-- omit from toc -->
 
 Follow the [toolchain setup instructions in the zmk documentation](https://zmk.dev/docs/development/setup).
 
-#### Add the zmk-config to the toolchain (docker only) <!-- omit from toc -->
+##### Add the zmk-config to the toolchain (docker only) <!-- omit from toc -->
 
 Create a volume with the directory where you will store the zmk-config:
 
@@ -565,11 +596,11 @@ Create a volume with the directory where you will store the zmk-config:
 docker volume create --driver local -o o=bind -o type=none -o device="/full/path/to/your/zmk-config/" zmk-config
 ```
 
-#### Add this module to the toolchain (docker only) <!-- omit from toc -->
+##### Add this module to the toolchain (docker only) <!-- omit from toc -->
 
 At the time of publishing, the docker VSCode toolchain is not set up to work with modules yet.
 
-First, create a volume with the directory of your zmk-config:
+First, create a volume with the directory of your zmk modules:
 
 ```bash
 docker volume create --driver local -o o=bind -o type=none -o device="/full/path/to/your/zmk-modules/" zmk-modules
@@ -599,11 +630,11 @@ Then, in VSCode press `Command + Shift + P` and execute the command `Dev Contain
 
 Once the container is rebuilt, you can delete the above line from your `devcontainer.json` so that it doesn't pollute your git history. The container will continue mounting the `zmk-modules/` volume as long as you don't rebuild it.
 
-#### Switch to a branch that has the mouse PR <!-- omit from toc -->
+##### Switch to the matching zmk version <!-- omit from toc -->
 
-Don't forget to switch the zmk code branch to one that has the mouse PR (see the previous sections for details).
+Don't forget to check out the zmk version that matches the module version you are using (see [the section above](#45-use-the-module-version-that-matches-your-zmk-version)).
 
-#### Build the firmware <!-- omit from toc -->
+##### Build the firmware <!-- omit from toc -->
 
 Run the build command...
 
@@ -611,19 +642,21 @@ Run the build command...
 west build -d build/corne_tp/right -p -b nice_nano_v2 -- -DZMK_EXTRA_MODULES="/workspaces/zmk-config/;/workspaces/zmk-modules/kb_zmk_ps2_mouse_trackpoint_driver/" -DZMK_CONFIG="/workspaces/zmk-config/config" -DSHIELD="corne_tp_right"
 ```
 
+On zmk main, use `-b nice_nano//zmk` instead of `-b nice_nano_v2`.
+
 The important thing to note here is that you have to add the `/workspaces/zmk-config/` to your `-DZMK_EXTRA_MODULES` and use `;` as the separator between multiple modules.
 
 And `-DZMK_CONFIG` must include not just the path to the `zmk-config`, but also the sub-directory `zmk-config/config`.
 
 You can [learn more in the zmk dev documentation](https://zmk.dev/docs/development/build-flash#building-with-external-modules).
 
-## 4. Troubleshooting
+## 5. Troubleshooting
 
-### 4.1. If the firmware fails to build
+### 5.1. If the firmware fails to build
 
 Here are some common build errors that you might encounter and how to solve them.
 
-#### 4.1.1. Check if you using a zmk fork that doesn't include mouse support
+#### 5.1.1. Check if you are using a zmk version without pointing support
 
 If you get an error like this...
 
@@ -636,61 +669,27 @@ In file included from <command-line>:
 compilation terminated.
 ```
 
-Then you are most likely using a zmk fork that doesn't have the mouse PR merged. See the instructions above on [how to switch the fork in config/west.yml](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver-zmk_config/blob/main/config/west.yml).
+Then you are most likely using a zmk version without pointing support. See the instructions above on [which zmk version to use](#45-use-the-module-version-that-matches-your-zmk-version).
 
-#### 4.1.2. error: too few arguments to function 'zmk_keymap_layer_activate'
+#### 5.1.2. Other build errors
 
-If you get an error like this...
+It's possible that this module has become incompatible with the latest zmk main.
 
-```c
-config/kb_zmk_ps2_mouse_trackpoint_driver/src/mouse/input_listener_ps2.c
-/__w/zmk-config/zmk-config/kb_zmk_ps2_mouse_trackpoint_driver/src/mouse/input_listener_ps2.c: In function 'zmk_input_listener_ps2_layer_toggle_activate_layer':
-/__w/zmk-config/zmk-config/kb_zmk_ps2_mouse_trackpoint_driver/src/mouse/input_listener_ps2.c:284:9: error: too few arguments to function 'zmk_keymap_layer_activate'
-  284 |         zmk_keymap_layer_activate(config->layer_toggle);
-      |         ^~~~~~~~~~~~~~~~~~~~~~~~~
-compilation terminated due to -Wfatal-errors.
-```
+In that case, switch zmk and this module to the latest zmk release, such as `v0.3` (see [the section above](#45-use-the-module-version-that-matches-your-zmk-version)).
 
-Then you either are using urob's fork, but didn't enable `CONFIG_ZMK_INPUT_MOUSE_PS2_ENABLE_UROB_COMPAT`.
+If your build succeeds after switching, then the issue is likely an incompatibility with the new zmk code. Please open a GitHub issue or message me on Discord to let me know about the incompatibility.
 
-OR you did enable the option, but are not using his fork.
+### 5.2. If the mouse or TrackPoint "doesn't work"
 
-Edit your keyboard's `keyboard_name.conf` file and adjust this option depending on which fork you are using:
-
-```conf
-CONFIG_ZMK_INPUT_MOUSE_PS2_ENABLE_UROB_COMPAT=y
-```
-
-#### 4.1.3. fatal error: zmk/mouse/types.h: No such file or directory
-
-If you are getting an error like...
-
-```c
-/workspaces/zmk-modules/kb_zmk_ps2_mouse_trackpoint_driver/src/mouse/input_listener_ps2.c:20:10: fatal error: zmk/mouse/types.h: No such file or directory
-   20 | #include <zmk/mouse/types.h>
-      |          ^~~~~~~~~~~~~~~~~~~
-compilation terminated.
-```
-
-Then, it's a sign that you are building using a zmk fork that is using an outdated version of the [zmk mouse PR #2027](https://github.com/zmkfirmware/zmk/pull/2027).
-
-#### 4.1.4. Other build errors
-
-It's possible that this module has become incompatible with the latest zmk version or the [zmk mouse PR](https://github.com/zmkfirmware/zmk/pull/2027).
-
-I maintain [a branch in my fork, that is known to be compatible](https://github.com/infused-kim/zmk/tree/pr-testing/mouse_ps2_module_base), in case this happens. You can find it in the [example zmk-config's west.yml](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver-zmk_config/blob/main/config/west.yml)
-
-If your build succeeds after switching to that known branch, then the issue is likely an incompatiblity with the new zmk code. Please open a GitHub issue or message me on Discord to let me know about the incompatibility.
-
-### 4.2. If the mouse or TrackPoint "doesn't work"
-
-The first thing you should do is enable logging in your keyboard config and connect the keyboard through USB. You can [use the options under the logging section in this example](https://github.com/infused-kim/zmk-config/blob/bde7b27d049b8a9b5a9e914cfd193583298a017e/config/think_corney.conf#L47).
+The first thing you should do is enable logging in your keyboard config and connect the keyboard through USB. You can [use the options under the logging section in this example](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver-zmk_config/blob/ffa5d81fba7de5a96c1c3e0b175b1692809fdfc5/config/corne_tp.conf#L13). On zmk v0.3 and newer, enable USB logging with the `zmk-usb-logging` snippet ([see the example's build.yaml](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver-zmk_config/blob/ffa5d81fba7de5a96c1c3e0b175b1692809fdfc5/build.yaml)).
 
 Make sure to enable `CONFIG_ZMK_LOGGING_MINIMAL=y` or you will get an overwhelming amount of logs.
 
+If you are using the pre-built firmware of the example zmk-config, then you don't need to recompile it, because the options are already enabled.
+
 Then [follow the instructions here to view the logs](https://zmk.dev/docs/development/usb-logging).
 
-#### 4.2.1. Check if the driver is compiled into the firmware
+#### 5.2.1. Check if the driver is compiled into the firmware
 
 If you make a mistake with the configuration, it's possible the driver isn't even compiled into the firmware and never executes.
 
@@ -712,13 +711,13 @@ You want to look for lines like these:
 [00:00:01.984,497] <inf> zmk: Trying to initialize mouse device (attempt 1 / 10)
 ```
 
-You can also try searching the logs for `ps2_uart` pr `ps2_gpio`.
+You can also try searching the logs for `ps2_uart` or `ps2_gpio`.
 
 If you can see them, it means your firmware was compiled with mouse support and the driver is at least trying to initialize the mouse device.
 
 If you don’t see these, then you likely did something wrong in the configuration. Double-check the setup instructions again.
 
-#### 4.2.2. Check if the mouse or TrackPoint communicates with the firmware
+#### 5.2.2. Check if the mouse or TrackPoint communicates with the firmware
 
 If you do see the initialization, but it’s not working, then check what's happening with the communication.
 
@@ -799,18 +798,9 @@ It should look something like the log below. I have added comments so that you k
 # If you move your mouse, it should move on the computer.
 #
 # It won't log each movement for performance reasons unless you enable debug logging.
-
-[...]
-
-# But if you have auto-layer-toggling enabled, then it will show some information about
-# that...
-[00:00:08.984,313] <inf> zmk: Not activating mouse layer 3, because last mouse activity was 250ms ago
-[00:00:10.580,169] <inf> zmk: Not activating mouse layer 3, because last mouse activity was 42ms ago
-[00:00:10.848,449] <inf> zmk: Activating layer 3 due to mouse activity...
-[00:00:15.222,473] <inf> zmk: Deactivating layer 3 due to mouse activity...
 ```
 
-#### 4.2.3. If the driver can't communicate with the pointing device
+#### 5.2.3. If the driver can't communicate with the pointing device
 
 Usually, the device will send the value `0xaa` or `0xfc` after it passes or fails its self-test.
 
@@ -924,7 +914,7 @@ If you are using a TP, that doesn't have a known pinout, don't rely on published
 
 Even with the same chip, the pinouts can vary significantly. You have to reverse engineer each individual TrackPoint.
 
-Check out the bottom of this readme for a [list of resources I found useful for figuring out the pinout of my TrackPoint](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver?tab=readme-ov-file#6-related-resources).
+Check out the bottom of this readme for a [list of resources I found useful for figuring out the pinout of my TrackPoint](#74-how-to-figure-out-trackpoint-pinout).
 
 ##### Try the PS/2 GPIO driver <!-- omit from toc -->
 
@@ -968,6 +958,18 @@ So, if all of the solutions above fail, try soldering the cables again on both s
 
 And make sure to use soldering flux (not just within the solder, but "external") as it really helps to make sure you get a good connection.
 
+##### Make sure to clean the solder flux <!-- omit from toc -->
+
+Solder flux can be conductive and cause tiny shorts that are sometimes not measurable using a multimeter, but are still affecting the circuit.
+
+Keep in mind that we are toggling the power in the data and clock lines on and off at a rate of 15,000 times per second to communicate with the TrackPoint. And flux can disrupt that process.
+
+This is not a theoretical issue. This problem has affected my TrackPoints and other people on Discord have also experienced this. So don't ignore this solution.
+
+You can solve it by cleaning both the TrackPoint PCB as well as your keyboard with isopropyl alcohol. It must be isopropyl even though it is a bit harder to get. I didn't have success with ethynol-based alcohol.
+
+Make sure to clean both the TrackPoint PCB, any connection points on your keyboard PCB, and also the area where you connect the keyboard controller to the PCB.
+
 ##### Debug using a logic analyzer <!-- omit from toc -->
 
 If it's still not working, then you need to look "inside the wires".
@@ -982,7 +984,7 @@ You just want to make sure that the TrackPoint is sending any data at all and on
 
 You can also use it to measure the cycle length on the clock line and then use the instructions in [your_keyboard_right.overlay](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver-zmk_config/blob/main/boards/shields/corne_tp/corne_tp_right.overlay#L120) to calculate the correct UART baud rate for your device..
 
-#### 4.2.4. If the pointing device is initialized, but the mouse is not moving or moving only on USB
+#### 5.2.4. If the pointing device is initialized, but the mouse is not moving or moving only on USB
 
 If the logs show that your pointing device can communicate and got initialized just fine, but is still not working, then...
 
@@ -1014,7 +1016,7 @@ CONFIG_UART_LOG_LEVEL_DBG=y
 
 And observe the logs for hints.
 
-### 4.3. If you get bad battery life
+### 5.3. If you get bad battery life
 
 #### TrackPoint consumption <!-- omit from toc -->
 
@@ -1034,13 +1036,17 @@ But I haven't experimented with this yet to determine if that happens on all Tra
 
 #### Disable logging <!-- omit from toc -->
 
-One thing that you can do to improve battery life is to disable logging.
+One thing that you can do to improve battery life is to disable logging. Remove the `zmk-usb-logging` snippet from your `build.yaml` entries:
 
-```conf
-CONFIG_ZMK_USB_LOGGING=y
+```diff
+  - board: nice_nano_v2
+    shield: your_keyboard_right
+-   snippet: zmk-usb-logging
 ```
 
-### 4.4. If your split keyboard halves refuse to pair
+With the `legacy-mouse-pr` version, remove `CONFIG_ZMK_USB_LOGGING=y` from your config instead.
+
+### 5.4. If your split keyboard halves refuse to pair
 
 When you switch which side is central and peripheral, then the old Bluetooth settings on the flash may interfere with the pairing.
 
@@ -1050,7 +1056,7 @@ You can [download the reset firmware from my example zmk-config releases page](h
 
 <a name="blog-post"></a>
 
-## 5. Development Journey Blog & Implementation Details
+## 6. Development Journey Blog & Implementation Details
 
 Have you ever wondered how cables work? Or how a peripheral communicates with a host?
 
@@ -1343,9 +1349,14 @@ If you have any comments or questions, feel free to find me on the zmk discord s
 
 Kim
 
-## 6. Related Resources
+## 7. Related Resources & Projects
 
-### 6.1. Zmk Related
+### 7.1. My Other TrackPoint Related Repos
+
+- [My TrackPoint Keycap Cutter](https://github.com/infused-kim/kb_keycaps_trackpoint)
+- [My TrackPoint Extensions](https://github.com/infused-kim/kb_trackpoint_extension)
+
+### 7.2. Zmk Related
 
 - [Example zmk-config for this driver](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver-zmk_config)
 - [My personal, more advanced zmk-config](https://github.com/infused-kim/zmk-config)
@@ -1353,13 +1364,14 @@ Kim
 - [Zmk PR #2027: Mouse pointer movement/scrolling](https://github.com/zmkfirmware/zmk/pull/2027)
 - [Zmk PR #1751: Add PS/2 Mouse / TrackPoint / Trackpad / Trackball support](https://github.com/zmkfirmware/zmk/pull/1751)
 
-### 6.2. TrackPoint Info
+### 7.3. TrackPoint Info
 
 - [Deskthority - Trackpoint Pinout Wiki](https://deskthority.net/wiki/TrackPoint_Hardware)
 - [Alon Swartz's TrackPoint Info (Includes Reset Circuit Info)](https://github.com/alonswartz/TrackPoint?tab=readme-ov-file#q-how-do-i-identify-the-trackpoint-pinout)
 - [Manna Harbour's TrackPoint Info](https://github.com/manna-harbour/crkbd/tree/master/trackpoint)
+- [TrackPoint VIK module](https://github.com/sadekbaroudi/vik/tree/master/pcb/trackpoint-2-piece)
 
-### 6.3. How to figure out TrackPoint Pinout
+### 7.4. How to figure out TrackPoint Pinout
 
 Here are a few resources I found useful for figuring out the pinout of my TrackPoint (in no particular order):
 
@@ -1370,13 +1382,13 @@ Here are a few resources I found useful for figuring out the pinout of my TrackP
 - [English version of half of the post](https://geekhack.org/index.php?topic=115912.0)
 - [Another forum thread with people giving tips on how to identify](https://deskthority.net/viewtopic.php?f=7&t=7678&start=)
 
-### 6.4. Datasheets
+### 7.5. Datasheets
 
 - [IBM TrackPoint System Version 4.0 Engineering Specification](https://web.mit.edu/bbaren/Public/ykt3eext.pdf)
 - [Sprintek SK7100 PS/2 Pointing Stick Mouse Encoder](https://cdn.thomasnet.com/ccp/10110462/133782.pdf)
 - [Sprintek SK8702 Trackpoint Datasheet](https://cdn.thomasnet.com/ccp/10110462/133781.pdf)
 
-### 6.5. Other Info
+### 7.6. Other Info
 
 - [TrackPoint Cap Comparison](https://baxterhills.com/blog/trackpoints/)
 - [Aftermarked Cap Shop (Including better, rimmed shape)](https://www.etsy.com/shop/SaotoTech#about)

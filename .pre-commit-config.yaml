@@ -5,10 +5,13 @@ repos:
     hooks:
       - id: remove-tabs
         exclude: "vendor-prefixes\\.txt$"
-  - repo: https://github.com/pocc/pre-commit-hooks
-    rev: v1.3.5
+  # Same as ZMK v0.3. Installs this clang-format version into the hook's own
+  # environment, so it doesn't need to be on PATH.
+  - repo: https://github.com/pre-commit/mirrors-clang-format
+    rev: v18.1.8
     hooks:
       - id: clang-format
+        types_or: [c++, c]
         args:
           - -i
   - repo: https://github.com/pre-commit/mirrors-prettier
@@ -26,3 +29,31 @@ repos:
       - id: check-added-large-files
       - id: check-shebang-scripts-are-executable
         exclude: "\\.mustache$"
+  # Python scripts in scripts/. The tools come from mise.toml, so mise.lock
+  # pins their versions.
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check
+        entry: mise exec -- ruff check --fix
+        language: system
+        types: [python]
+        files: &scripts ^scripts/[^/]+\.py$
+      - id: ruff-format
+        name: ruff format
+        entry: mise exec -- ruff format
+        language: system
+        types: [python]
+        files: *scripts
+      # ty needs each script's PEP 723 environment to resolve its imports
+      - id: ty
+        name: ty check
+        entry: >-
+          bash -c 'for script in "$@"; do
+          mise exec -- uv sync --quiet --script "$script" &&
+          python=$(mise exec -- uv python find --script "$script") &&
+          mise exec -- ty check --python "$python" "$script" || exit 1;
+          done' --
+        language: system
+        types: [python]
+        files: *scripts

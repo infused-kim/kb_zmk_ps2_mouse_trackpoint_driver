@@ -1,0 +1,37 @@
+line-length = 79
+# Same as `requires-python` in the scripts' PEP 723 headers, which ruff doesn't
+# read
+target-version = "py310"
+
+[lint]
+extend-select = [
+    "ALL",
+]
+extend-ignore = [
+    "COM812",  # missing-trailing-comma (done by formatter)
+    "COM819",  # prohibited-trailing-comma (done by formatter)
+    "CPY001",  # missing-copyright-notice
+    "D",       # pydocstyle
+    "PLC1901", # compare-to-empty-string because I like explicit comparisons
+    "PLR0913", # too-many-arguments, the model mirrors the C functions
+    "PLR0917", # too-many-positional-arguments, same reason
+    "RET504",  # unnecessary-assign because I like assigning for debugging
+    "SIM103",  # needless-bool because I like explicit returns
+    "TC001",   # typing-only-first-party-import, typer needs them at runtime
+    "TC002",   # typing-only-third-party-import, same reason
+    "TC003",   # typing-only-standard-library-import, same reason
+]
+
+[lint.flake8-boolean-trap]
+extend-allowed-calls = ["typer.Option"]
+
+[lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+[lint.flake8-quotes]
+inline-quotes = "single"
+
+[format]
+quote-style           = "single"
+indent-style          = "space"
+docstring-code-format = true

@@ -1,92 +1,130 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.10"
+# dependencies = [
+#     "pynput",
+#     "typer",
+# ]
+# ///
+#
+# Find the venv with:
+# uv python find --script scripts/mouse_logger.py
 """
 Script that logs mouse movements to debug mouse performance issues.
-
-Requirements:
-    - pip install pynput
 """
 
-from pynput import mouse
-import time
-import threading
 import statistics
+import threading
+import time
 
-# Global variables to calculate mouse movement
-prev_x, prev_y = 0, 0
-prev_time = time.time()
-prev_time_interval = 0
+import typer
+from pynput import mouse
 
-# Variables for summary task
-time_intervals = []
-lock = threading.Lock()
-delayed_task_thread = None
-prev_summary_interval = None
+# How long the mouse has to stop moving before the summary is printed
+SUMMARY_DELAY_MS = 500
 
-
-def summary_task():
-    summary_intervals = []
-    with lock:
-        if time_intervals:
-            # Ignore the first interval as it includes the time since the
-            # previous movement session.
-            #
-            # And ignore the last 3 as they can be unintentional TP drift
-            # movements.
-            summary_intervals = time_intervals[1:-3]
-            time_intervals.clear()
-
-    median_interval = statistics.median(summary_intervals)
-    average_interval = statistics.mean(summary_intervals)
-    print(
-        f'Time between movements '
-        f'median: {median_interval * 1000:.2f} ms; '
-        f'average: {average_interval * 1000:.2f} ms; '
-        f'\n\n\n'
-    )
+app = typer.Typer(add_completion=False)
 
 
-def schedule_summary_task(delay_ms):
-    global delayed_task_thread
-    if delayed_task_thread is not None and delayed_task_thread.is_alive():
-        delayed_task_thread.cancel()
+@app.command()
+def main() -> None:
+    """
+    Log mouse movements to debug mouse performance issues.
 
-    delayed_task_thread = threading.Timer(delay_ms / 1000, summary_task)
-    delayed_task_thread.start()
+    Prints the distance and time interval of every movement, and a summary of
+    the time intervals whenever the mouse stops moving.
+    """
+
+    logger = MouseLogger()
+    with mouse.Listener(on_move=logger.on_move) as listener:
+        listener.join()
 
 
-def on_move(x, y):
-    global prev_x, prev_y, prev_time, prev_time_interval
+class MouseLogger:
+    """
+    Keeps the state between mouse movements.
+    """
 
-    distance_x = x - prev_x
-    distance_y = y - prev_y
+    def __init__(self) -> None:
+        # To calculate the mouse movement
+        self.prev_x = 0
+        self.prev_y = 0
+        self.prev_time = time.time()
+        self.prev_time_interval = 0.0
 
-    current_time = time.time()
-    time_interval = current_time - prev_time
-    # (8/10-1)*100
-    try:
-        time_interval_change = (
-            f'({time_interval / prev_time_interval - 1:+9.2%})'
+        # For the summary task
+        self.time_intervals: list[float] = []
+        self.lock = threading.Lock()
+        self.delayed_task_thread: threading.Timer | None = None
+
+    def on_move(self, x: int, y: int) -> None:
+        distance_x = x - self.prev_x
+        distance_y = y - self.prev_y
+
+        current_time = time.time()
+        time_interval = current_time - self.prev_time
+        # Change compared to the previous interval, e.g. -20% from 10 to 8 ms
+        try:
+            time_interval_change = (
+                f'({time_interval / self.prev_time_interval - 1:+9.2%})'
+            )
+        except ZeroDivisionError:
+            time_interval_change = ''
+
+        with self.lock:
+            self.time_intervals.append(time_interval)
+
+        typer.echo(
+            f'Mouse moved distance - '
+            f'X: {distance_x:+7.2f}, '
+            f'Y: {distance_y:+7.2f}, '
+            f'time interval: {time_interval * 1000:5.2f} ms '
+            f'{time_interval_change}'
         )
-    except ZeroDivisionError:
-        time_interval_change = ''
 
-    with lock:
+        self.prev_x, self.prev_y = x, y
+        self.prev_time = current_time
+        self.prev_time_interval = time_interval
 
-        time_intervals.append(time_interval)
+        self.schedule_summary_task(SUMMARY_DELAY_MS)
 
-    print(
-        f'Mouse moved distance - '
-        f'X: {distance_x:+7.2f}, '
-        f'Y: {distance_y:+7.2f}, '
-        f'time interval: {time_interval * 1000:5.2f} ms {time_interval_change}'
-    )
+    def schedule_summary_task(self, delay_ms: int) -> None:
+        if (
+            self.delayed_task_thread is not None
+            and self.delayed_task_thread.is_alive()
+        ):
+            self.delayed_task_thread.cancel()
 
-    prev_x, prev_y = x, y
-    prev_time = current_time
-    prev_time_interval = time_interval
+        self.delayed_task_thread = threading.Timer(
+            delay_ms / 1000, self.summary_task
+        )
+        self.delayed_task_thread.start()
 
-    schedule_summary_task(500)
+    def summary_task(self) -> None:
+        summary_intervals = []
+        with self.lock:
+            if self.time_intervals:
+                # Ignore the first interval as it includes the time since the
+                # previous movement session.
+                #
+                # And ignore the last 3 as they can be unintentional TP drift
+                # movements.
+                summary_intervals = self.time_intervals[1:-3]
+                self.time_intervals.clear()
+
+        # Too few movements for a summary
+        if not summary_intervals:
+            return
+
+        median_interval = statistics.median(summary_intervals)
+        average_interval = statistics.mean(summary_intervals)
+        typer.echo(
+            f'Time between movements '
+            f'median: {median_interval * 1000:.2f} ms; '
+            f'average: {average_interval * 1000:.2f} ms; '
+            f'\n\n\n'
+        )
 
 
-with mouse.Listener(on_move=on_move) as listener:
-    listener.join()
+if __name__ == '__main__':
+    app()
