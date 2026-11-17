@@ -3,7 +3,25 @@
 
 rsource "src/drivers/Kconfig"
 
+DT_COMPAT_ZMK_INPUT_ACCELERATOR := zmk,input-accelerator
+config ZMK_INPUT_ACCELERATOR
+        bool
+        default $(dt_compat_enabled,$(DT_COMPAT_ZMK_INPUT_ACCELERATOR))
+
 DT_COMPAT_ZMK_BEHAVIOR_MOUSE_SETTING := zmk,behavior-mouse-setting
 config ZMK_BEHAVIOR_MOUSE_SETTING
         bool
         default ZMK_INPUT_MOUSE_PS2 && $(dt_compat_enabled,$(DT_COMPAT_ZMK_BEHAVIOR_MOUSE_SETTING))
+
+if ZMK_INPUT_ACCELERATOR
+    config INPUT_THREAD_STACK_SIZE
+        default 1024
+
+    # The logs contain float values. To print them instead of `*float*`, also
+    # set `CONFIG_CBPRINTF_COMPLETE=y`. It can't be defaulted here, because
+    # ZMK's `default CBPRINTF_NANO` for the choice is read first and wins.
+    config ZMK_INPUT_ACCELERATOR_LOG_ENABLED
+        bool "Enable logging of accelerated movements."
+        default n
+
+endif # ZMK_INPUT_ACCELERATOR

@@ -7,6 +7,12 @@ ZMK module with a PS/2 mouse/TrackPoint driver.
   PS/2 packets and reports Zephyr input events.
 - `src/behaviors/behavior_mouse_setting.c`: `&mms` behavior to change
   TrackPoint settings at runtime.
+- `src/mouse/input_accelerator.c` (`zmk,input-accelerator`): the pointer
+  acceleration, as a ZMK input processor.
+- `scripts/mouse_acceleration_models.py`: Python model of the acceleration
+  curves, a typer CLI that plots and tabulates them. Keep it in sync with the
+  C code. Its dependencies
+  are in its PEP 723 header, so run it directly or with `uv run --script`.
 - `zmk-config-example/` is gitignored and not part of the module.
 
 ## Building and checks
@@ -43,12 +49,43 @@ ZMK module with a PS/2 mouse/TrackPoint driver.
    returns `ZMK_INPUT_PROC_CONTINUE` or `ZMK_INPUT_PROC_STOP`. It can't hold an
    event back or create new ones.
 
+## Accelerator design
+
+- The factor comes from the combined speed of both axes. The processor can't
+  wait for Y, so it accelerates each axis as it arrives with the **previous
+  report's** factor and calculates the next factor at sync. After a pause of
+  more than 200 ms it starts from the curve's factor at speed 0.
+- An earlier version had a copy of ZMK's listener (`zmk,input-listener-accel`)
+  that accelerated the whole report at sync with the current report's factor.
+  It was removed after the processor felt just as good.
+- Each axis keeps a float remainder. A new movement (change of sign, or a
+  pause of more than 200 ms) discards it and makes the first value at least 1.
+  `prev_mov` is the last non-zero movement of each axis, so a pausing axis
+  keeps its direction and remainder.
+- With `enable-interval-based-speed`, speed is normalized by the time since
+  the previous report. That time is measured when the input thread processes
+  the event, not when the PS/2 packet arrived, so a delayed report reads as a
+  slowdown (seen as ~23 ms gaps in logs). Known, not fixed.
+- Known open edge case: a layer switch between the X and Y events of one
+  report leaves the processor's report open until the next sync.
+
+## Gotchas
+
+- Kconfig: ZMK's `app/Kconfig` sets `default CBPRINTF_NANO` before module
+  Kconfigs are read, so a module can't change that default. Logging floats
+  needs `CONFIG_CBPRINTF_COMPLETE=y` set explicitly.
+- The accelerator binding includes ZMK's `ip_common.yaml`, because ZMK's
+  processor macros read `track-remainders` from every processor node.
+- The curve is selected with `DT_INST_ENUM_IDX`, so
+  `enum input_accelerator_curve` must match the order of the
+  `acceleration-curve` enum in the binding.
+
 ## Code style and working with the user
 
 - **Don't commit unless the user explicitly asks.** Leave a reviewable working
   tree diff. When asked, make small separate commits, one per logical change,
-  each building on its own, in their style: `feat(...): ...`,
-  `refactor(...): ...`, `fix(...)`, `perf(...)`. Never push.
+  each building on its own, in their style: `feat(accelerator): ...`,
+  `refactor(accelerator): ...`, `fix(...)`, `perf(...)`. Never push.
 - Keep diffs minimal and easy to review. Refactors must not change behavior;
   ask before changes that alter how movement feels.
 - Order functions in the order they're used, so a file reads top to bottom.
