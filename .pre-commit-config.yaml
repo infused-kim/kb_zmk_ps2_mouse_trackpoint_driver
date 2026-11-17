@@ -29,3 +29,31 @@ repos:
       - id: check-added-large-files
       - id: check-shebang-scripts-are-executable
         exclude: "\\.mustache$"
+  # Python scripts in scripts/. The tools come from mise.toml, so mise.lock
+  # pins their versions.
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check
+        entry: mise exec -- ruff check --fix
+        language: system
+        types: [python]
+        files: &scripts ^scripts/[^/]+\.py$
+      - id: ruff-format
+        name: ruff format
+        entry: mise exec -- ruff format
+        language: system
+        types: [python]
+        files: *scripts
+      # ty needs each script's PEP 723 environment to resolve its imports
+      - id: ty
+        name: ty check
+        entry: >-
+          bash -c 'for script in "$@"; do
+          mise exec -- uv sync --quiet --script "$script" &&
+          python=$(mise exec -- uv python find --script "$script") &&
+          mise exec -- ty check --python "$python" "$script" || exit 1;
+          done' --
+        language: system
+        types: [python]
+        files: *scripts

@@ -15,10 +15,17 @@ ZMK module with a PS/2 mouse/TrackPoint driver.
   zmk-config at `../../zmk-config` (see its `AGENTS.md`), which uses this
   checkout via `ZMK_LOCAL_MODULES` in its `mise.local.toml`:
   `cd ../../zmk-config && just build think_corney_right`.
-- Hooks: `mise install`, then `prek install`. The
-  hooks run clang-format v18.1.8 (same as ZMK v0.3), prettier, and whitespace
-  checks. Run `mise exec -- prek run --files <files>` before handing over.
-  This repo's `mise.toml` applies even when opened through a symlink, because
+- Checks: `mise install`, then `prek install`. All checks are hooks in
+  `.pre-commit-config.yaml`: clang-format v18.1.8 (same as ZMK v0.3),
+  prettier, whitespace checks, and for the Python scripts ruff (config in
+  `scripts/ruff.toml`) and ty. Run `just check` (all files) or
+  `mise exec -- prek run --files <files>` before handing over.
+  `just check-scripts` runs only ruff and ty.
+- The ruff and ty hooks are local hooks that use mise's tools, so
+  `mise.lock` pins their versions. ty runs in each script's PEP 723
+  environment, otherwise it can't resolve the imports. They check every
+  `.py` file directly in `scripts/`.
+- This repo's `mise.toml` applies even when opened through a symlink, because
   mise resolves the physical path.
 - Testing on the hardware is the user's job. Say what you couldn't verify.
 
