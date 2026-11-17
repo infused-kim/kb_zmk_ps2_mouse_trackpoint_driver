@@ -570,11 +570,19 @@ If not, please refer to the troubleshooting section below.
 >
 > This sub-section is for developers who are building zmk locally on their computers instead of using GitHub Actions. Most people can ignore this sub-section.
 
-#### Set up the toolchain <!-- omit from toc -->
+#### Option 1: Use mise and just <!-- omit from toc -->
+
+The [example zmk-config](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver-zmk_config) has a local toolchain that installs everything it needs (Python, CMake, the Zephyr SDK, ...) with [mise](https://mise.jdx.dev) and runs the builds with [just](https://github.com/casey/just). It builds the targets from your `build.yaml` with the zmk and module versions from your `config/west.yml`, so local builds match GitHub Actions. It works on macOS and Linux (on Windows, use WSL).
+
+[This commit](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver-zmk_config/commit/06c611dd255606119362459f1b4a96539f28f24d) shows how to add it to your own zmk-config, and the [example's README](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver-zmk_config#4-building-locally) explains how to use it.
+
+#### Option 2: Use the zmk docker toolchain <!-- omit from toc -->
+
+##### Set up the toolchain <!-- omit from toc -->
 
 Follow the [toolchain setup instructions in the zmk documentation](https://zmk.dev/docs/development/setup).
 
-#### Add the zmk-config to the toolchain (docker only) <!-- omit from toc -->
+##### Add the zmk-config to the toolchain (docker only) <!-- omit from toc -->
 
 Create a volume with the directory where you will store the zmk-config:
 
@@ -582,7 +590,7 @@ Create a volume with the directory where you will store the zmk-config:
 docker volume create --driver local -o o=bind -o type=none -o device="/full/path/to/your/zmk-config/" zmk-config
 ```
 
-#### Add this module to the toolchain (docker only) <!-- omit from toc -->
+##### Add this module to the toolchain (docker only) <!-- omit from toc -->
 
 At the time of publishing, the docker VSCode toolchain is not set up to work with modules yet.
 
@@ -616,11 +624,11 @@ Then, in VSCode press `Command + Shift + P` and execute the command `Dev Contain
 
 Once the container is rebuilt, you can delete the above line from your `devcontainer.json` so that it doesn't pollute your git history. The container will continue mounting the `zmk-modules/` volume as long as you don't rebuild it.
 
-#### Switch to the matching zmk version <!-- omit from toc -->
+##### Switch to the matching zmk version <!-- omit from toc -->
 
 Don't forget to check out the zmk version that matches the module version you are using (see [the section above](#45-use-the-module-version-that-matches-your-zmk-version)).
 
-#### Build the firmware <!-- omit from toc -->
+##### Build the firmware <!-- omit from toc -->
 
 Run the build command...
 
