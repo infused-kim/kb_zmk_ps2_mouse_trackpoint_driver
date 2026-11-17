@@ -15,6 +15,14 @@ It is a [zmk module](#zmk-module) version of my original PRs:
 
 If you are interested in how this project came to be, [check out the development journey "blog post" at the bottom](#blog-post).
 
+> [!NOTE]
+>
+> **AI Usage Disclosure**
+>
+> The majority of the code and documentation for this project were hand-written back in 2024 before agentic coding was a thing.
+>
+> Later updates were created with the assistance of agents, but reviewed and approved manually. This is not a vibe-coded project.
+
 ## Table Of Contents <!-- omit from toc -->
 
 - [1. Features](#1-features)
