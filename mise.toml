@@ -4,3 +4,10 @@
 [tools]
 # Runs the hooks in .pre-commit-config.yaml (drop-in replacement for pre-commit)
 prek = "latest"
+# Runs the recipes in the justfile
+just = "latest"
+# Runs the Python scripts with the dependencies from their PEP 723 headers
+uv = "latest"
+# Lint, format and type-check the Python scripts (see the justfile)
+ruff = "latest"
+ty = "latest"
