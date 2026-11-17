@@ -397,6 +397,11 @@ These files are quite long and complex. So, instead of explaining every line, I 
 
 - Shield & Config: Added PS/2 Mouse & TrackPoint support
 
+That commit still uses the old zmk fork. These two commits upgrade it to the current version:
+
+- [Upgrade to zmk v0.3](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver-zmk_config/commit/8745a9f005e53928e1106cb6dea13f70cd43b9be)
+- [Upgrade to zmk main (v0.4 pre-release)](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver-zmk_config/commit/ffa5d81fba7de5a96c1c3e0b175b1692809fdfc5)
+
 I added A LOT of comments throughout the config files to explain how everything works.
 
 You will need to add the config in these places:
@@ -474,7 +479,7 @@ You can change the pins by editing these lines:
 
 Please refer to the comments in [zmk-config/boards/shields/your_keyboard/your_keyboard_right.overlay](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver-zmk_config/blob/main/boards/shields/corne_tp/corne_tp_right.overlay) for detailed instructions.
 
-You can also find more info in the [example zmk-config's README](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackPoint_driver-zmk_config/).
+You can also find more info in the [example zmk-config's README](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver-zmk_config/).
 
 #### 4.4.3. TrackPoint Power-On-Reset
 
@@ -594,7 +599,7 @@ docker volume create --driver local -o o=bind -o type=none -o device="/full/path
 
 At the time of publishing, the docker VSCode toolchain is not set up to work with modules yet.
 
-First, create a volume with the directory of your zmk-config:
+First, create a volume with the directory of your zmk modules:
 
 ```bash
 docker volume create --driver local -o o=bind -o type=none -o device="/full/path/to/your/zmk-modules/" zmk-modules
@@ -671,7 +676,7 @@ It's possible that this module has become incompatible with the latest zmk main.
 
 In that case, switch zmk and this module to the latest zmk release, such as `v0.3` (see [the section above](#45-use-the-module-version-that-matches-your-zmk-version)).
 
-If your build succeeds after switching, then the issue is likely an incompatiblity with the new zmk code. Please open a GitHub issue or message me on Discord to let me know about the incompatibility.
+If your build succeeds after switching, then the issue is likely an incompatibility with the new zmk code. Please open a GitHub issue or message me on Discord to let me know about the incompatibility.
 
 ### 5.2. If the mouse or TrackPoint "doesn't work"
 
@@ -705,7 +710,7 @@ You want to look for lines like these:
 [00:00:01.984,497] <inf> zmk: Trying to initialize mouse device (attempt 1 / 10)
 ```
 
-You can also try searching the logs for `ps2_uart` pr `ps2_gpio`.
+You can also try searching the logs for `ps2_uart` or `ps2_gpio`.
 
 If you can see them, it means your firmware was compiled with mouse support and the driver is at least trying to initialize the mouse device.
 
@@ -792,15 +797,6 @@ It should look something like the log below. I have added comments so that you k
 # If you move your mouse, it should move on the computer.
 #
 # It won't log each movement for performance reasons unless you enable debug logging.
-
-[...]
-
-# But if you have auto-layer-toggling enabled, then it will show some information about
-# that...
-[00:00:08.984,313] <inf> zmk: Not activating mouse layer 3, because last mouse activity was 250ms ago
-[00:00:10.580,169] <inf> zmk: Not activating mouse layer 3, because last mouse activity was 42ms ago
-[00:00:10.848,449] <inf> zmk: Activating layer 3 due to mouse activity...
-[00:00:15.222,473] <inf> zmk: Deactivating layer 3 due to mouse activity...
 ```
 
 #### 5.2.3. If the driver can't communicate with the pointing device
@@ -917,7 +913,7 @@ If you are using a TP, that doesn't have a known pinout, don't rely on published
 
 Even with the same chip, the pinouts can vary significantly. You have to reverse engineer each individual TrackPoint.
 
-Check out the bottom of this readme for a [list of resources I found useful for figuring out the pinout of my TrackPoint](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver?tab=readme-ov-file#6-related-resources).
+Check out the bottom of this readme for a [list of resources I found useful for figuring out the pinout of my TrackPoint](#74-how-to-figure-out-trackpoint-pinout).
 
 ##### Try the PS/2 GPIO driver <!-- omit from toc -->
 
@@ -1039,11 +1035,15 @@ But I haven't experimented with this yet to determine if that happens on all Tra
 
 #### Disable logging <!-- omit from toc -->
 
-One thing that you can do to improve battery life is to disable logging.
+One thing that you can do to improve battery life is to disable logging. Remove the `zmk-usb-logging` snippet from your `build.yaml` entries:
 
-```conf
-CONFIG_ZMK_USB_LOGGING=y
+```diff
+  - board: nice_nano_v2
+    shield: your_keyboard_right
+-   snippet: zmk-usb-logging
 ```
+
+With the `legacy-mouse-pr` version, remove `CONFIG_ZMK_USB_LOGGING=y` from your config instead.
 
 ### 5.4. If your split keyboard halves refuse to pair
 
