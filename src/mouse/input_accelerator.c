@@ -14,7 +14,6 @@
 #include <zephyr/logging/log.h>
 
 #include <drivers/input_processor.h>
-#include <zmk/input_accelerator.h>
 
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
@@ -85,7 +84,7 @@ struct input_accelerator_data {
     int64_t prev_mov_received_at;
     struct vector2df move_remainder;
 
-    // Only used by the input processor
+    // Acceleration factor of the previous report
     float processor_acc_factor;
     struct input_acc_processor_report processor_report;
 
@@ -143,57 +142,13 @@ static float zmk_input_acc_get_acc_factor_with_speed_cap(float acc_factor, float
 static bool zmk_input_acc_is_new_mov(float mov, float prev_mov, int64_t mov_interval);
 static int zmk_input_acc_get_direction_factor(int mov_val);
 
-struct input_accelerator_result zmk_accelerate_input(const struct device *accelerator_dev,
-                                                     int32_t x, int32_t y) {
-    const struct input_accelerator_config *config = accelerator_dev->config;
-    struct input_accelerator_data *data = accelerator_dev->data;
-
-    // Rename variables for clarity
-    int32_t orig_x = x;
-    int32_t orig_y = y;
-
-    int64_t mov_received_at = k_uptime_get();
-    int64_t mov_interval = mov_received_at - data->prev_mov_received_at;
-
-    float speed_x = zmk_input_acc_get_axis_speed(config, orig_x, mov_interval);
-    float speed_y = zmk_input_acc_get_axis_speed(config, orig_y, mov_interval);
-
-    // We calculate the acceleration curve on the combined speed of
-    // both the x and y movements. Otherwise we would skew the
-    // movement direction and make diagonal movement way too
-    // fast.
-    float speed = sqrtf(speed_x * speed_x + speed_y * speed_y);
-
-    // We use the speed to calculate the acceleration factor, which we
-    // then apply to the actual movement data
-    float acc_factor = zmk_input_acc_get_acc_factor(config, data, speed);
-
-    struct input_acc_axis_result res_x = zmk_input_acc_accelerate_axis(
-        data, orig_x, data->prev_mov.x, speed_x, acc_factor, mov_interval, &data->move_remainder.x);
-    struct input_acc_axis_result res_y = zmk_input_acc_accelerate_axis(
-        data, orig_y, data->prev_mov.y, speed_y, acc_factor, mov_interval, &data->move_remainder.y);
-
-    zmk_input_acc_log_move(config, data, mov_received_at, mov_interval, orig_x, orig_y, speed,
-                           acc_factor, &res_x, &res_y);
-
-    zmk_input_acc_update_prev_mov(data, orig_x, orig_y);
-    data->prev_mov_received_at = mov_received_at;
-
-    struct input_accelerator_result ret = {.x = res_x.to_send, .y = res_y.to_send};
-
-    return ret;
-}
-
 // Input processor API.
 //
-// Unlike `zmk_accelerate_input`, which receives the x and y movement of a
-// report together, an input processor receives one event at a time and can't
-// hold back the x event until the y event arrives. So, each axis is
+// The acceleration factor is calculated from the combined speed of the x and
+// y movement of a report. But an input processor receives one event at a time
+// and can't hold back the x event until the y event arrives. So, each axis is
 // accelerated as soon as it arrives, using the acceleration factor that was
 // calculated from the combined speed of the previous report.
-//
-// Shares its state with `zmk_accelerate_input`, so a single accelerator node
-// must not be used as input processor and `move-accelerator` at the same time.
 static int zmk_input_acc_handle_event(const struct device *dev, struct input_event *event,
                                       uint32_t param1, uint32_t param2,
                                       struct zmk_input_processor_state *state) {
@@ -261,8 +216,9 @@ static void zmk_input_acc_processor_accelerate_event(const struct input_accelera
 }
 
 // Calculates the acceleration factor for the next report from the combined
-// speed of both axes, the same way `zmk_accelerate_input` does. An axis that
-// wasn't part of the report counts as no movement.
+// speed of both axes. Otherwise diagonal movement would be accelerated more
+// than straight movement. An axis that wasn't part of the report counts as no
+// movement.
 static void zmk_input_acc_processor_finish_report(const struct input_accelerator_config *config,
                                                   struct input_accelerator_data *data) {
     struct input_acc_processor_report *report = &data->processor_report;

@@ -8,15 +8,10 @@ ZMK module with a PS/2 mouse/TrackPoint driver.
 - `src/behaviors/behavior_mouse_setting.c`: `&mms` behavior to change
   TrackPoint settings at runtime.
 - `src/mouse/input_accelerator.c` (`zmk,input-accelerator`): the pointer
-  acceleration. Works as a ZMK input processor and as `move-accelerator` of
-  the listener copy.
-- `src/mouse/input_listener_accel.c` (`zmk,input-listener-accel`): a copy of
-  ZMK v0.3's `input_listener.c` with a `move-accelerator` hook. Kept only to
-  compare against the processor version. Its removal is planned as the last
-  commit of the acceleration work.
-- `scripts/mouse_acceleration_models.py` + `.ipynb`: Python model of the
-  acceleration curves, a typer CLI that plots and tabulates them (the notebook
-  imports its functions). Keep it in sync with the C code. Its dependencies
+  acceleration, as a ZMK input processor.
+- `scripts/mouse_acceleration_models.py`: Python model of the acceleration
+  curves, a typer CLI that plots and tabulates them. Keep it in sync with the
+  C code. Its dependencies
   are in its PEP 723 header, so run it directly or with `uv run --script`.
 - `zmk-config-example/` is gitignored and not part of the module.
 
@@ -56,14 +51,13 @@ ZMK module with a PS/2 mouse/TrackPoint driver.
 
 ## Accelerator design
 
-- The factor comes from the combined speed of both axes. The listener path
-  (`zmk_accelerate_input`) gets both axes at sync and uses the current
-  report's speed. The processor path can't wait for Y, so it accelerates each
-  axis as it arrives with the **previous report's** factor and calculates the
-  next factor at sync. After a pause of more than 200 ms it starts from the
-  curve's factor at speed 0.
-- Both paths share the device state, so one accelerator node must not be used
-  as processor and `move-accelerator` at the same time.
+- The factor comes from the combined speed of both axes. The processor can't
+  wait for Y, so it accelerates each axis as it arrives with the **previous
+  report's** factor and calculates the next factor at sync. After a pause of
+  more than 200 ms it starts from the curve's factor at speed 0.
+- An earlier version had a copy of ZMK's listener (`zmk,input-listener-accel`)
+  that accelerated the whole report at sync with the current report's factor.
+  It was removed after the processor felt just as good.
 - Each axis keeps a float remainder. A new movement (change of sign, or a
   pause of more than 200 ms) discards it and makes the first value at least 1.
   `prev_mov` is the last non-zero movement of each axis, so a pausing axis
@@ -82,10 +76,6 @@ ZMK module with a PS/2 mouse/TrackPoint driver.
   needs `CONFIG_CBPRINTF_COMPLETE=y` set explicitly.
 - The accelerator binding includes ZMK's `ip_common.yaml`, because ZMK's
   processor macros read `track-remainders` from every processor node.
-  `#input-processor-cells` is optional, so nodes used only as
-  `move-accelerator` don't need it.
-- The listener copy registers its own global handler name, because ZMK's
-  upstream listener is still compiled (e.g. for mouse keys).
 - The curve is selected with `DT_INST_ENUM_IDX`, so
   `enum input_accelerator_curve` must match the order of the
   `acceleration-curve` enum in the binding.
