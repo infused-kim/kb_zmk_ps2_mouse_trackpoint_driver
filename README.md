@@ -48,9 +48,8 @@ If you are interested in how this project came to be, [check out the development
     - [4.4.3. TrackPoint Power-On-Reset](#443-trackpoint-power-on-reset)
     - [4.4.4. Configure other settings](#444-configure-other-settings)
     - [4.4.5. Add the PS/2 driver module to your `config/west.yml`](#445-add-the-ps2-driver-module-to-your-configwestyml)
-  - [4.5. Use the module version that matches your zmk version](#45-use-the-module-version-that-matches-your-zmk-version)
-  - [4.6. Build your firmware using GitHub Actions](#46-build-your-firmware-using-github-actions)
-  - [4.7. Or, build your firmware using a local toolchain (for developers only)](#47-or-build-your-firmware-using-a-local-toolchain-for-developers-only)
+  - [4.5. Build your firmware using GitHub Actions](#45-build-your-firmware-using-github-actions)
+  - [4.6. Or, build your firmware using a local toolchain (for developers only)](#46-or-build-your-firmware-using-a-local-toolchain-for-developers-only)
 - [5. Troubleshooting](#5-troubleshooting)
   - [5.1. If the firmware fails to build](#51-if-the-firmware-fails-to-build)
     - [5.1.1. Check if you are using a zmk version without pointing support](#511-check-if-you-are-using-a-zmk-version-without-pointing-support)
@@ -540,29 +539,13 @@ The `revision` in `defaults` applies to zmk and this module. See the next sectio
 
 If you are a developer and are building using a local toolchain, please look for the developer instructions further down.
 
-### 4.5. Use the module version that matches your zmk version
-
-Use the same `revision` for zmk and this module. You can find the versions in the [compatibility table](#2-compatibility-with-zmk-versions).
-
-The easiest way is to set it once in `defaults`, as shown in the previous section.
-
-Also use the same version for the build workflow in `.github/workflows/build.yml`:
-
-```yaml
-uses: zmkfirmware/zmk/.github/workflows/build-user-config.yml@v0.3
-```
-
-zmk main uses new board names, such as `nice_nano//zmk` instead of `nice_nano_v2`. You can see all changes for zmk main in [this commit of the example zmk-config](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver-zmk_config/commit/ffa5d81fba7de5a96c1c3e0b175b1692809fdfc5).
-
-zmk forks with the old mouse PR are no longer supported, but you can still use the [`legacy-mouse-pr` version](#2-compatibility-with-zmk-versions) with them.
-
-### 4.6. Build your firmware using GitHub Actions
+### 4.5. Build your firmware using GitHub Actions
 
 This should be everything you need to configure. If you are using GitHub Actions, push your zmk-config and you will hopefully get a successful build.
 
 If not, please refer to the troubleshooting section below.
 
-### 4.7. Or, build your firmware using a local toolchain (for developers only)
+### 4.6. Or, build your firmware using a local toolchain (for developers only)
 
 > [!NOTE]
 >
