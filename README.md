@@ -285,20 +285,6 @@ To help you better understand the example zmk-config, here are the things you ha
 
 If you don't have a zmk-config yet, then you can [follow the zmk documentation for instructions on how to create a new config](https://zmk.dev/docs/user-setup).
 
-> [!TIP]
->
-> **For long-time zmk users**
->
-> The zmk-config format was recently updated to be a module. If you created your zmk config a long time ago, you may need to update your zmk-config directory structure.
->
-> Just create a new zmk-config and compare whether your config matches the latest version.
->
-> One of the big differences in my config was that I had the shield definitions in `zmk-config/config/boards/shields/`, but in the new version they are in `zmk-config/boards/shields/` (it's in the root dir instead of the `config` dir).
->
-> Another one was the missing `zmk-config/zephyr/` dir, but there may be more.
->
-> You can [check out this commit in my personal zmk-config](https://github.com/infused-kim/zmk-config/commit/77b48aa40e95505516053652929936b7a2313cbc) to see what I had to do to upgrade my config to the new module format.
-
 #### 4.3.2. Create a custom shield definition
 
 Zmk supports different keyboards through `shield definitions`, which are stored in [app/boards/shields](https://github.com/zmkfirmware/zmk/tree/main/app/boards/shields).
