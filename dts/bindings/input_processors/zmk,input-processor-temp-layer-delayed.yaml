@@ -1,7 +1,11 @@
 # Copyright (c) 2024, The ZMK Contributors
 # SPDX-License-Identifier: MIT
 
-description: Input Processor for temporarily enabling a layer after input events
+description: |
+  Input Processor for temporarily enabling a layer after input events.
+
+  Copy of zmk,input-processor-temp-layer that can require a minimum duration
+  of continuous movement before the layer is enabled.
 
 compatible: "zmk,input-processor-temp-layer-delayed"
 
@@ -19,3 +23,15 @@ properties:
     required: false
     default: []
     description: Array of key positions that will NOT trigger layer deactivation when pressed
+
+  require-movement-ms:
+    type: int
+    default: 0
+    description: |
+      Time in milliseconds the movement must last before the layer is enabled.
+      Prevents enabling the layer when the pointing device is touched by
+      accident, e.g. a TrackPoint while typing. 0 enables it on the first
+      movement, like zmk,input-processor-temp-layer.
+
+      A pause of more than 200 ms between two input events starts a new
+      movement. TrackPoints send reports less often during slow movement.
