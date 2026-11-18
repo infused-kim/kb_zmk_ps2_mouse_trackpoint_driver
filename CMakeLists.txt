@@ -1,5 +1,6 @@
 add_subdirectory(src/drivers)
 
 target_sources_ifdef(CONFIG_ZMK_BEHAVIOR_MOUSE_SETTING app PRIVATE src/behaviors/behavior_mouse_setting.c)
+target_sources_ifdef(CONFIG_ZMK_INPUT_PROCESSOR_TEMP_LAYER_DELAYED app PRIVATE src/input_processors/input_processor_temp_layer_delayed.c)
 
 zephyr_include_directories(include)

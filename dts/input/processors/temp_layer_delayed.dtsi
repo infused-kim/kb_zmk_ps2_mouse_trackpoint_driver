@@ -1,0 +1,14 @@
+/*
+ * Copyright (c) 2024 The ZMK Contributors
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
+#include <zephyr/dt-bindings/input/input-event-codes.h>
+
+/ {
+    /omit-if-no-ref/ zip_temp_layer_delayed: zip_temp_layer_delayed {
+        compatible = "zmk,input-processor-temp-layer-delayed";
+        #input-processor-cells = <2>;
+    };
+};

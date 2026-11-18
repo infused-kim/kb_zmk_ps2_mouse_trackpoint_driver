@@ -7,3 +7,14 @@ DT_COMPAT_ZMK_BEHAVIOR_MOUSE_SETTING := zmk,behavior-mouse-setting
 config ZMK_BEHAVIOR_MOUSE_SETTING
         bool
         default ZMK_INPUT_MOUSE_PS2 && $(dt_compat_enabled,$(DT_COMPAT_ZMK_BEHAVIOR_MOUSE_SETTING))
+
+# Copy of ZMK's temp layer input processor (zmk,input-processor-temp-layer)
+DT_COMPAT_ZMK_INPUT_PROCESSOR_TEMP_LAYER_DELAYED := zmk,input-processor-temp-layer-delayed
+config ZMK_INPUT_PROCESSOR_TEMP_LAYER_DELAYED
+        bool
+        default ZMK_POINTING && (!ZMK_SPLIT || ZMK_SPLIT_ROLE_CENTRAL) && $(dt_compat_enabled,$(DT_COMPAT_ZMK_INPUT_PROCESSOR_TEMP_LAYER_DELAYED))
+
+config ZMK_INPUT_PROCESSOR_TEMP_LAYER_DELAYED_MAX_ACTION_EVENTS
+        int "Temporary Layer Delayed Input Processor Max Action Events"
+        default 4
+        depends on ZMK_INPUT_PROCESSOR_TEMP_LAYER_DELAYED
