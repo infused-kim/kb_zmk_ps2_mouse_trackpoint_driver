@@ -89,6 +89,12 @@ If you are interested in how this works, [you can read more about it in the deve
 
 You can also automatically toggle a layer whenever there is mouse movement. This way you can turn your thumb cluster keys into mouse buttons whenever you touch the TrackPoint.
 
+Upstream ZMK offers this now too with the [zip_temp_layer input processor](https://zmk.dev/docs/keymaps/input-processors/temp-layer), but the `zip_temp_layer_delayed` processor in this repo adds a `require-movement-ms` setting that allows you to only activate your mouse button layer if the mouse is moved for more than the specified amount of time.
+
+So, if your Trackpoint is placed between keys and you sometimes accidentally bump it, it won't change your thumb keys to mouse clicks.
+
+You can find an example of how to configure this in the [example zmk-config's `mouse_tp.dtsi`](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver-zmk_config/blob/main/config/include/mouse_tp.dtsi).
+
 ### 1.3. TrackPoint related features
 
 #### 1.3.1. TrackPoint Configuration with key behaviors

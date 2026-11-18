@@ -21,8 +21,15 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 /* Constants and Types */
 #define MAX_LAYERS ZMK_KEYMAP_LAYERS_LEN
 
+// A pause between two input events longer than this starts a new movement for
+// require-movement-ms. TrackPoints send reports less often when they move
+// slowly, so this must be longer than their slowest report interval. Same
+// value as the accelerator's pause detection.
+#define MOVEMENT_TIMEOUT_MS 200
+
 struct temp_layer_config {
     int16_t require_prior_idle_ms;
+    int16_t require_movement_ms;
     const uint16_t *excluded_positions;
     size_t num_positions;
 };
@@ -31,6 +38,8 @@ struct temp_layer_state {
     uint8_t toggle_layer;
     bool is_active;
     int64_t last_tapped_timestamp;
+    int64_t movement_start_timestamp;
+    int64_t last_movement_timestamp;
 };
 
 struct temp_layer_data {
@@ -62,6 +71,24 @@ static bool position_is_excluded(const struct temp_layer_config *config, uint32_
 static bool should_quick_tap(const struct temp_layer_config *config, int64_t last_tapped,
                              int64_t current_time) {
     return (last_tapped + config->require_prior_idle_ms) > current_time;
+}
+
+/* Movement Tracking */
+static void track_movement(struct temp_layer_state *state, int64_t current_time) {
+    bool is_first_movement = state->last_movement_timestamp == 0;
+    bool is_after_pause = (current_time - state->last_movement_timestamp) > MOVEMENT_TIMEOUT_MS;
+
+    if (is_first_movement || is_after_pause) {
+        LOG_DBG("New movement started at %lld", current_time);
+        state->movement_start_timestamp = current_time;
+    }
+
+    state->last_movement_timestamp = current_time;
+}
+
+static bool is_movement_long_enough(const struct temp_layer_config *config,
+                                    const struct temp_layer_state *state, int64_t current_time) {
+    return (current_time - state->movement_start_timestamp) >= config->require_movement_ms;
 }
 
 /* Layer State Management */
@@ -247,8 +274,11 @@ static int temp_layer_handle_event(const struct device *dev, struct input_event 
 
     data->state.toggle_layer = param1;
 
-    if (!data->state.is_active &&
-        !should_quick_tap(cfg, data->state.last_tapped_timestamp, k_uptime_get())) {
+    int64_t now = k_uptime_get();
+    track_movement(&data->state, now);
+
+    if (!data->state.is_active && !should_quick_tap(cfg, data->state.last_tapped_timestamp, now) &&
+        is_movement_long_enough(cfg, &data->state, now)) {
         struct layer_state_action action = {.layer = param1, .activate = true};
 
         int ret = k_msgq_put(&temp_layer_delayed_action_msgq, &action, K_MSEC(10));
@@ -307,6 +337,7 @@ ZMK_SUBSCRIPTION(processor_temp_layer_delayed, zmk_keycode_state_changed);
     static const uint16_t excluded_positions_##n[] = DT_INST_PROP(n, excluded_positions);          \
     static const struct temp_layer_config processor_temp_layer_config_##n = {                      \
         .require_prior_idle_ms = DT_INST_PROP_OR(n, require_prior_idle_ms, 0),                     \
+        .require_movement_ms = DT_INST_PROP(n, require_movement_ms),                               \
         .excluded_positions = excluded_positions_##n,                                              \
         .num_positions = DT_INST_PROP_LEN(n, excluded_positions),                                  \
     };                                                                                             \
