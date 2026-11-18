@@ -1,6 +1,6 @@
 # PS/2 Mouse & TrackPoint Driver for zmk keyboards
 
-This is a driver module that adds support for PS/2 mouse-pointing devices to DIY keyboards running the [zmk firmware](https://zmk.dev).
+This is a driver module that adds support for PS/2 mouse-pointing devices to DIY keyboards running the [ZMK firmware](https://zmk.dev).
 
 You can use this driver for any pointing device that uses the PS/2 protocol, such as an actual mouse, touchpad, or trackball.
 
@@ -8,9 +8,9 @@ But it's most commonly used with TrackPoints such as this one:
 
 ![ThinkCorney keyboard with TrackPoint](img/kb_think_corney.jpg)
 
-It is a [zmk module](#zmk-module) version of my original PRs:
+It is a [ZMK module](#zmk-module) version of my original PRs:
 
-1. [zmk PR #1751](https://github.com/zmkfirmware/zmk/pull/1751) - Add PS/2 Mouse / TrackPoint / Trackpad / Trackball support
+1. [ZMK PR #1751](https://github.com/zmkfirmware/zmk/pull/1751) - Add PS/2 Mouse / TrackPoint / Trackpad / Trackball support
 2. [zephyr PR #15](https://github.com/zmkfirmware/zephyr/pull/15) - Add PS/2 GPIO Bit-banging driver
 
 If you are interested in how this project came to be, [check out the development journey "blog post" at the bottom](#blog-post).
@@ -65,7 +65,7 @@ If you are interested in how this project came to be, [check out the development
 - [6. Development Journey Blog \& Implementation Details](#6-development-journey-blog--implementation-details)
 - [7. Related Resources \& Projects](#7-related-resources--projects)
   - [7.1. My Other TrackPoint Related Repos](#71-my-other-trackpoint-related-repos)
-  - [7.2. Zmk Related](#72-zmk-related)
+  - [7.2. ZMK Related](#72-zmk-related)
   - [7.3. TrackPoint Info](#73-trackpoint-info)
   - [7.4. How to figure out TrackPoint Pinout](#74-how-to-figure-out-trackpoint-pinout)
   - [7.5. Datasheets](#75-datasheets)
@@ -287,13 +287,13 @@ If you don't have a zmk-config yet, then you can [follow the zmk documentation f
 
 #### 4.3.2. Create a custom shield definition
 
-Zmk supports different keyboards through `shield definitions`, which are stored in [app/boards/shields](https://github.com/zmkfirmware/zmk/tree/main/app/boards/shields).
+ZMK supports different keyboards through `shield definitions`, which are stored in [app/boards/shields](https://github.com/zmkfirmware/zmk/tree/main/app/boards/shields).
 
 These shield definitions specify how many keys a keyboard has, what controller pins all the components are using, etc.
 
 These definitions are then combined with your keymap to build the full firmware.
 
-Zmk supports many keyboards (`shields`) out of the box, but to set up the mouse / TrackPoint driver, you'll need to create a custom shield in your `zmk-config/` directory.
+ZMK supports many keyboards (`shields`) out of the box, but to set up the mouse / TrackPoint driver, you'll need to create a custom shield in your `zmk-config/` directory.
 
 I strongly encourage you to look at the [look at the commit history of the example zmk-config](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver-zmk_config/commits/main/) to see how to create the custom shield definition.
 
@@ -1095,7 +1095,7 @@ And as a hobby DIY keyboard designer, I decided that I wanted one of these on my
 
 There were just two problems...
 
-1. Zmk, the firmware running on my keyboards, didn't have a driver for TrackPoints
+1. ZMK, the firmware running on my keyboards, didn't have a driver for TrackPoints
 2. DIY keyboard microcontrollers ("brains" for keyboards) had no hardware support for the old PS/2 protocol
 
 But I didn't let that stop me. Afterall... I am a software engineer...
@@ -1348,13 +1348,13 @@ Kim
 - [My TrackPoint Keycap Cutter](https://github.com/infused-kim/kb_keycaps_trackpoint)
 - [My TrackPoint Extensions](https://github.com/infused-kim/kb_trackpoint_extension)
 
-### 7.2. Zmk Related
+### 7.2. ZMK Related
 
 - [Example zmk-config for this driver](https://github.com/infused-kim/kb_zmk_ps2_mouse_trackpoint_driver-zmk_config)
 - [My personal, more advanced zmk-config](https://github.com/infused-kim/zmk-config)
 - [Urob's zmk fork](https://github.com/urob/zmk) and [his zmk-config](https://github.com/urob/zmk-config)
-- [Zmk PR #2027: Mouse pointer movement/scrolling](https://github.com/zmkfirmware/zmk/pull/2027)
-- [Zmk PR #1751: Add PS/2 Mouse / TrackPoint / Trackpad / Trackball support](https://github.com/zmkfirmware/zmk/pull/1751)
+- [ZMK PR #2027: Mouse pointer movement/scrolling](https://github.com/zmkfirmware/zmk/pull/2027)
+- [ZMK PR #1751: Add PS/2 Mouse / TrackPoint / Trackpad / Trackball support](https://github.com/zmkfirmware/zmk/pull/1751)
 
 ### 7.3. TrackPoint Info
 
