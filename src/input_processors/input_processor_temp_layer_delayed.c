@@ -16,7 +16,29 @@
 #include <zmk/events/keycode_state_changed.h>
 #include <zmk/events/layer_state_changed.h>
 
+// Zephyr 4.1 (ZMK main) generates version.h in the zephyr/ directory, Zephyr
+// 3.5 (ZMK v0.3) at the top level.
+#if __has_include(<zephyr/version.h>)
+#include <zephyr/version.h>
+#else
+#include <version.h>
+#endif
+
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
+
+/* ZMK Compatibility */
+
+// ZMK added the `locking` argument to zmk_keymap_layer_(de)activate() in
+// 5138c6fb, shortly before it moved from Zephyr 3.5 to 4.1 in c06fa48c. ZMK's
+// own version is still 0.3.0 on main, so the Zephyr version tells ZMK v0.3
+// and later apart. ZMK main between those two commits isn't supported.
+#if ZEPHYR_VERSION_CODE >= ZEPHYR_VERSION(4, 1, 0)
+#define ZMK_LAYER_ACTIVATE(layer) zmk_keymap_layer_activate(layer, false)
+#define ZMK_LAYER_DEACTIVATE(layer) zmk_keymap_layer_deactivate(layer, false)
+#else
+#define ZMK_LAYER_ACTIVATE(layer) zmk_keymap_layer_activate(layer)
+#define ZMK_LAYER_DEACTIVATE(layer) zmk_keymap_layer_deactivate(layer)
+#endif
 
 /* Constants and Types */
 #define MAX_LAYERS ZMK_KEYMAP_LAYERS_LEN
@@ -99,10 +121,10 @@ static void update_layer_state(struct temp_layer_state *state, bool activate) {
 
     state->is_active = activate;
     if (activate) {
-        zmk_keymap_layer_activate(state->toggle_layer, false);
+        ZMK_LAYER_ACTIVATE(state->toggle_layer);
         LOG_DBG("Layer %d activated", state->toggle_layer);
     } else {
-        zmk_keymap_layer_deactivate(state->toggle_layer, false);
+        ZMK_LAYER_DEACTIVATE(state->toggle_layer);
         LOG_DBG("Layer %d deactivated", state->toggle_layer);
     }
 }
